@@ -2,7 +2,7 @@
 from flask import Flask, request, jsonify
 import os
 from gevent import monkey
-monkey.patch_all()
+# monkey.patch_all()
 import sys
 from functools import wraps
 from flask_cors import CORS
@@ -47,15 +47,12 @@ CORS(app, resources={
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*",
-    async_mode='gevent',  # Keep this since you're using gevent
+    async_mode='eventlet',  # Use eventlet instead of gevent
     ping_timeout=60,
     ping_interval=25,
     logger=True,
     engineio_logger=True,
-    # Add these for Docker
-    transports=['websocket', 'polling'],  # Support both transport methods
-    allow_upgrades=True,
-    cookie=None  # Disable cookies for Docker
+    transports=['websocket', 'polling']
 )
 
 # Improved Socket.IO event handlers
