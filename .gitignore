@@ -1,0 +1,10 @@
+.venv
+data
+__pycache__
+*.pyc
+.env
+logs
+bse_scraper.log
+nse_scraper.log
+
+
