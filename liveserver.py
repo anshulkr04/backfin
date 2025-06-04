@@ -268,6 +268,16 @@ def getUserEmail(userids):
         except Exception as e:
             logger.error(f"An error occurred: {e}")
 
+def get_all_users(isin, category):
+    """Get all users by ISIN and category."""
+    isinUsers = get_users_by_isin(isin)
+    categoryUsers = get_user_by_category(category)
+
+    # Combine both lists and remove duplicates
+    allUsers = list(set(isinUsers) | set(categoryUsers))
+    
+    return allUsers
+
 def get_all_users_email(isin,category):
     isinUsers = get_users_by_isin(isin)
     categoryUsers = get_user_by_category(category)
@@ -1181,6 +1191,7 @@ def get_corporate_filings():
         category = request.args.get('category', '')
         symbol = request.args.get('symbol', '')
         isin = request.args.get('isin', '')
+        corp_id = request.args.get('corpo_id', '')
         
         logger.info(f"Corporate filings request: start_date={start_date}, end_date={end_date}, category={category}, symbol={symbol}, isin={isin}")
         
@@ -1228,6 +1239,8 @@ def get_corporate_filings():
             query = query.eq('symbol', symbol)
         if isin:
             query = query.eq('isin', isin)
+        if corp_id:
+            query = query.eq('corp_id', corp_id)
         
         # Execute query with error handling
         try:
@@ -1608,15 +1621,25 @@ def insert_new_announcement():
 
         logger.info(f"Broadcasting: {new_announcement}")
         socketio.emit('new_announcement', new_announcement)
-        # isin = data.get('isin')
-        # category = data.get('category')
-        # email_ids = get_all_users_email(isin, category)
-        # if email_ids:
-        #     logger.info(f"Sending batch email to: {email_ids}")
-        #     send_batch_mail(email_ids, new_announcement)
-        #     # Send batch email
-        # else:
-        #     logger.info("No email IDs found for the announcement")
+        isin = data.get('isin')
+        category = data.get('category')
+        corp_id = data.get('corp_id')
+        user_ids = get_all_users(isin, category)
+        for user_id in user_ids:
+            response = supabase.table('UserData').select('emailData').eq('UserID', user_id).single().execute()
+            if response.data:
+                email_data = response.data['emailData'] or []
+                if corp_id not in email_data:
+                    email_data.append(corp_id)
+
+                    supabase.table("UserData").update({"emailData": email_data}).eq("UserID", user_id).execute()
+
+                    print("corp_id added successfully.")
+                else:
+                    print("corp_id already present.")
+            else:
+                print("UserID not found.")
+
         
         return jsonify({'message': 'Test announcement sent successfully!', 'status': 'success'}), 200
 
