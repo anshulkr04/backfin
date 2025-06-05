@@ -1190,7 +1190,6 @@ def get_corporate_filings():
         category = request.args.get('category', '')
         symbol = request.args.get('symbol', '')
         isin = request.args.get('isin', '')
-        corp_id = request.args.get('corpo_id', '')
         
         logger.info(f"Corporate filings request: start_date={start_date}, end_date={end_date}, category={category}, symbol={symbol}, isin={isin}")
         
@@ -1238,8 +1237,7 @@ def get_corporate_filings():
             query = query.eq('symbol', symbol)
         if isin:
             query = query.eq('isin', isin)
-        if corp_id:
-            query = query.eq('corp_id', corp_id)
+
         
         # Execute query with error handling
         try:
@@ -1316,6 +1314,28 @@ def get_corporate_filings():
             'filings': test_filings,
             'note': 'Using test data due to server error'
         }), 200
+    
+@app.route('/api/corporate_filings', methods=['GET', 'OPTIONS'])
+def get_corpFiling():
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    
+    corp_id = request.args.get('corpo_id', '')
+
+    query = supabase.table('corporatefilings').select('*')
+
+    if corp_id:
+        query = query.eq('corp_id', corp_id)
+    
+    response = query.execute()
+    if hasattr(response, 'error') and response.error:
+        logger.error(f"Failed to retrieve corporate filings: {response.error}")
+        return jsonify({'message': 'Failed to retrieve corporate filings!'}), 500
+    if not response.data:
+        logger.warning(f"No corporate filings found for corp_id: {corp_id}")
+        return jsonify({'message': 'No corporate filings found!'}), 404
+    filings = response.data
+    return jsonify(filings), 200
 
 # Helper function to generate test filings
 def generate_test_filings():
