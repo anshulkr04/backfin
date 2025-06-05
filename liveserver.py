@@ -19,7 +19,6 @@ from pathlib import Path
 from flask_socketio import SocketIO, emit
 import time
 import traceback
-from mailer import send_batch_mail
 
 # Configure logging
 logging.basicConfig(
