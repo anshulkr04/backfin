@@ -14,7 +14,7 @@ mailer = AnnouncementMailer()
 
 announcements = []
 
-def fetch_announcements(user_id):
+def process_announcements(user_id):
     response = supabase.table('UserData').select('emailData').eq('UserID', user_id).execute()
 
     if not response.data:
@@ -27,9 +27,6 @@ def fetch_announcements(user_id):
         if response.data:
             announcements.extend(response.data)
     
-    return announcements
-
-def process_announcements(announcements):
     processed = []
     for announcement in announcements:
         corp_id = announcement.get('corp_id', '')
@@ -40,7 +37,7 @@ def process_announcements(announcements):
             'summary': announcement.get('summary', ''),
             'corp_id': corp_id,
             'ai_url': f"https://finfron-main-2.vercel.app/?corpid={corp_id}",
-            'url': announcement.get('url', ''),
+            'url': announcement.get('fileurl', ''),
         }
         processed.append(processed_announcement)
         
@@ -67,7 +64,11 @@ def process_announcements(announcements):
     result = list(grouped_by_isin.values())
     return result
 
-a = fetch_announcements("5616f49c-64b8-42d6-a8a3-3797ae9ce89f")
-b = process_announcements(a)
-print(json.dumps(b, indent=2))
+companies_data_list = process_announcements("5616f49c-64b8-42d6-a8a3-3797ae9ce89f")
+
+
+c = AnnouncementMailer()
+d = c.send_combined_mail("harsh@mailwave.io", companies_data_list)
+
+
 

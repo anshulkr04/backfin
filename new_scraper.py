@@ -240,7 +240,10 @@ def check_for_negative_keywords(summary):
         "Share Certificate(s)", "Share Certificate", "Depositories and Participants", "Depository and Participant",
         "Depository and Participant", "Depository and Participants", "74(5)", "XBRL", "Newspaper Publication",
         "Published in the Newspapers", "Clippings", "Book Closure", "Change in Company Secretary/Compliance Officer",
-        "Record Date",
+        "Record Date","Code of Conduct","Cessation","Deviation","Declared Interim Dividend","IEPF","Investor Education","Registrar & Share Transfer Agent",
+        "Registrar and Share Transfer Agent","Scrutinizers report","Utilisation of Funds","Postal Ballot","Defaults on Payment of Interest",
+        "Newspaper Publication","Sustainability Report","Sustainability Reporting","Trading Plan","Letter of Confirmation","Forfeiture/Cancellation","Price movement",
+        "Spurt","Grievance Redressal","Monitoring Agency","Regulation",
     ]
 
     special_keywords = [
