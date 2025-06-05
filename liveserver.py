@@ -1320,7 +1320,7 @@ def get_corpFiling():
     if request.method == 'OPTIONS':
         return _handle_options()
     
-    corp_id = request.args.get('corpo_id', '')
+    corp_id = request.args.get('corp_id', '')
 
     query = supabase.table('corporatefilings').select('*')
 
