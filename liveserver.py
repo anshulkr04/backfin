@@ -1315,27 +1315,15 @@ def get_corporate_filings():
             'note': 'Using test data due to server error'
         }), 200
     
-@app.route('/api/corporate_filings', methods=['GET', 'OPTIONS'])
-def get_corpFiling():
-    if request.method == 'OPTIONS':
-        return _handle_options()
-    
-    corp_id = request.args.get('corp_id', '')
-
-    query = supabase.table('corporatefilings').select('*')
-
-    if corp_id:
-        query = query.eq('corp_id', corp_id)
-    
+@app.route('/api/corporate_filings/<corp_id>', methods=['GET'])
+def get_filing_by_id(corp_id):
+    query = supabase.table('corporatefilings').select('*').eq('corp_id', corp_id)
     response = query.execute()
     if hasattr(response, 'error') and response.error:
-        logger.error(f"Failed to retrieve corporate filings: {response.error}")
-        return jsonify({'message': 'Failed to retrieve corporate filings!'}), 500
+        return jsonify({'message': 'Error retrieving corporate filing'}), 500
     if not response.data:
-        logger.warning(f"No corporate filings found for corp_id: {corp_id}")
-        return jsonify({'message': 'No corporate filings found!'}), 404
-    filings = response.data
-    return jsonify(filings), 200
+        return jsonify({'message': 'No filing found'}), 404
+    return jsonify(response.data[0]), 200
 
 # Helper function to generate test filings
 def generate_test_filings():
