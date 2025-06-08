@@ -718,7 +718,10 @@ class BseScraper:
             
             if data:  # Check if process_data returned valid data
                 save_latest_announcement(latest_announcement)
-                
+
+                if data.get("category") == "Procedural/Administrative":
+                    logger.info("Announcement is Procedural/Administrative, skipping API call")
+                    return
                 # Send to API endpoint (which will handle websocket communication)
                 try:
                     post_url = "http://localhost:8000/api/insert_new_announcement"

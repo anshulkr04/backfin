@@ -1190,6 +1190,7 @@ def get_corporate_filings():
         category = request.args.get('category', '')
         symbol = request.args.get('symbol', '')
         isin = request.args.get('isin', '')
+        proc = request.args.get('proc', 'false').lower() == 'true'
         
         logger.info(f"Corporate filings request: start_date={start_date}, end_date={end_date}, category={category}, symbol={symbol}, isin={isin}")
         
@@ -1237,6 +1238,9 @@ def get_corporate_filings():
             query = query.eq('symbol', symbol)
         if isin:
             query = query.eq('isin', isin)
+        if not proc:  
+            query = query.neq('category', 'Procedural/Administrative')
+
 
         
         # Execute query with error handling
@@ -2044,7 +2048,7 @@ if __name__ == '__main__':
     logger.info(f"Supabase Connection: {'Successful' if supabase_connected else 'FAILED'}")
     
     # Start scrapers
-    start_scrapers_safely()
+    # start_scrapers_safely()
     
     # Small delay to let threads initialize
     time.sleep(2)

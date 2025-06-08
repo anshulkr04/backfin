@@ -751,6 +751,7 @@ class NseScraper:
                                     logger.info(f"Found newnsecode: {newnsecode} for ISIN: {isin}")
                                 else:
                                     logger.warning(f"No newnsecode found for ISIN: {isin}")
+                                    return
                             else:
                                 logger.warning(f"No data found for ISIN: {isin}")
                         except Exception as e:
@@ -835,6 +836,10 @@ class NseScraper:
                 
                 if data:  # Check if process_data returned valid data
                     save_latest_announcement(latest_announcement)
+
+                    if data.get("category") == "Procedular/Administrative":
+                        logger.info("Announcement is Procedural/Administrative, skipping further processing")
+                        return
                     
                     # Send to API endpoint (which will handle websocket communication)
                     if ENABLE_WEBSOCKET_API:
