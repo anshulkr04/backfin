@@ -2048,7 +2048,7 @@ if __name__ == '__main__':
     logger.info(f"Supabase Connection: {'Successful' if supabase_connected else 'FAILED'}")
     
     # Start scrapers
-    # start_scrapers_safely()
+    start_scrapers_safely()
     
     # Small delay to let threads initialize
     time.sleep(2)
