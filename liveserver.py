@@ -19,6 +19,7 @@ from pathlib import Path
 from flask_socketio import SocketIO, emit
 import time
 import traceback
+from datetime import datetime, timedelta
 
 # Configure logging
 logging.basicConfig(
@@ -1412,20 +1413,48 @@ def get_stock_price(current_user):
     if request.method == 'OPTIONS':
         return _handle_options()
     
-    # Example implementation for stock price retrieval
     isin = request.args.get('isin', '')
+    date_range = request.args.get('range', 'max')  # default is 'max'
+
     if not isin:
         return jsonify({'message': 'Missing isin parameter!'}), 400
-    
-    response = supabase.table('stockpricedata').select('close','date').eq('isin', isin).order('date', desc=True).execute()
+
+    # Determine date filter
+    today = datetime.utcnow().date()
+    date_filter = None
+
+    if date_range == '1w':
+        date_filter = today - timedelta(weeks=1)
+    elif date_range == '1m':
+        date_filter = today - timedelta(days=30)
+    elif date_range == '3m':
+        date_filter = today - timedelta(days=90)
+    elif date_range == '6m':
+        date_filter = today - timedelta(days=180)
+    elif date_range == '1y':
+        date_filter = today - timedelta(days=365)
+    elif date_range == 'max':
+        date_filter = None
+    else:
+        return jsonify({'message': f'Invalid range value: {date_range}'}), 400
+
+    # Build Supabase query
+    query = supabase.table('stockpricedata').select('close', 'date').eq('isin', isin)
+
+    if date_filter:
+        query = query.gte('date', date_filter.isoformat())
+
+    query = query.order('date', desc=True)
+    response = query.execute()
+
     if hasattr(response, 'error') and response.error:
         logger.error(f"Failed to retrieve stock price: {response.error}")
         return jsonify({'message': 'Failed to retrieve stock price!'}), 500
     if not response.data:
         logger.warning(f"No stock price data found for ISIN: {isin}")
         return jsonify({'message': 'No stock price data found!'}), 404
+    
     stock_price = response.data
-
     return jsonify(stock_price), 200
 
 # @# Add this to the top of your liveserver.py file, after the existing imports
@@ -2048,7 +2077,7 @@ if __name__ == '__main__':
     logger.info(f"Supabase Connection: {'Successful' if supabase_connected else 'FAILED'}")
     
     # Start scrapers
-    start_scrapers_safely()
+    # start_scrapers_safely()
     
     # Small delay to let threads initialize
     time.sleep(2)
@@ -2060,4 +2089,4 @@ if __name__ == '__main__':
 else:
     # This runs when imported by Gunicorn
     logger.info("Module imported by WSGI server, initializing scrapers...")
-    start_scrapers_safely()
+    # start_scrapers_safely()
