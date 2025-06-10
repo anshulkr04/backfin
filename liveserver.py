@@ -19,7 +19,6 @@ from pathlib import Path
 from flask_socketio import SocketIO, emit
 import time
 import traceback
-from datetime import timedelta
 
 # Configure logging
 logging.basicConfig(
@@ -1410,52 +1409,82 @@ def test_corporate_filings():
 @auth_required
 def get_stock_price(current_user):
     """Endpoint to get stock price data"""
-    if request.method == 'OPTIONS':
-        return _handle_options()
-    
-    isin = request.args.get('isin', '')
-    date_range = request.args.get('range', 'max')  # default is 'max'
+    try:
+        if request.method == 'OPTIONS':
+            response = jsonify({'status': 'ok'})
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+            response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+            return response
+        
+        # Get and validate parameters
+        isin = request.args.get('isin', '').strip()
+        date_range = request.args.get('range', 'max').lower()
+        
+        if not isin:
+            return jsonify({'error': 'Missing isin parameter'}), 400
+        
+        # Validate date range
+        valid_ranges = ['1w', '1m', '3m', '6m', '1y', 'max']
+        if date_range not in valid_ranges:
+            return jsonify({
+                'error': f'Invalid range value: {date_range}',
+                'valid_ranges': valid_ranges
+            }), 400
 
-    if not isin:
-        return jsonify({'message': 'Missing isin parameter!'}), 400
-
-    # Determine date filter
-    today = datetime.utcnow().date()
-    date_filter = None
-
-    if date_range == '1w':
-        date_filter = today - timedelta(weeks=1)
-    elif date_range == '1m':
-        date_filter = today - timedelta(days=30)
-    elif date_range == '3m':
-        date_filter = today - timedelta(days=90)
-    elif date_range == '6m':
-        date_filter = today - timedelta(days=180)
-    elif date_range == '1y':
-        date_filter = today - timedelta(days=365)
-    elif date_range == 'max':
+        # Determine date filter - fix the datetime issue
+        today = datetime.datetime.now().date()
         date_filter = None
-    else:
-        return jsonify({'message': f'Invalid range value: {date_range}'}), 400
 
-    # Build Supabase query
-    query = supabase.table('stockpricedata').select('close', 'date').eq('isin', isin)
+        if date_range == '1w':
+            date_filter = today - datetime.timedelta(weeks=1)
+        elif date_range == '1m':
+            date_filter = today - datetime.timedelta(days=30)
+        elif date_range == '3m':
+            date_filter = today - datetime.timedelta(days=90)
+        elif date_range == '6m':
+            date_filter = today - datetime.timedelta(days=180)
+        elif date_range == '1y':
+            date_filter = today - datetime.timedelta(days=365)
+        elif date_range == 'max':
+            date_filter = None
 
-    if date_filter:
-        query = query.gte('date', date_filter.isoformat())
+        # Build Supabase query
+        query = supabase.table('stockpricedata').select('close', 'date').eq('isin', isin)
 
-    query = query.order('date', desc=True)
-    response = query.execute()
+        if date_filter:
+            query = query.gte('date', date_filter.isoformat())
 
-    if hasattr(response, 'error') and response.error:
-        logger.error(f"Failed to retrieve stock price: {response.error}")
-        return jsonify({'message': 'Failed to retrieve stock price!'}), 500
-    if not response.data:
-        logger.warning(f"No stock price data found for ISIN: {isin}")
-        return jsonify({'message': 'No stock price data found!'}), 404
-    
-    stock_price = response.data
-    return jsonify(stock_price), 200
+        query = query.order('date', desc=True)
+        response = query.execute()
+
+        # Better error handling for Supabase response
+        if hasattr(response, 'error') and response.error:
+            logger.error(f"Supabase error for ISIN {isin}: {response.error}")
+            return jsonify({'error': 'Failed to retrieve stock price data'}), 500
+            
+        if not response.data:
+            logger.warning(f"No stock price data found for ISIN: {isin}")
+            return jsonify({
+                'error': 'No stock price data found',
+                'isin': isin,
+                'range': date_range
+            }), 404
+        
+        stock_price = response.data
+        return jsonify({
+            'success': True,
+            'data': stock_price,
+            'metadata': {
+                'isin': isin,
+                'range': date_range,
+                'total_records': len(stock_price)
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in get_stock_price: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 # @# Add this to the top of your liveserver.py file, after the existing imports
 
