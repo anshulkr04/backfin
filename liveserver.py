@@ -1407,7 +1407,7 @@ def test_corporate_filings():
 
 @app.route('/api/stock_price', methods=['GET', 'OPTIONS'])
 @auth_required
-def get_stock_price():
+def get_stock_price(current_user):
     """Endpoint to get stock price data"""
     if request.method == 'OPTIONS':
         return _handle_options()
