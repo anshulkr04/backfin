@@ -15,6 +15,7 @@ import traceback
 
 # Configuration
 BASE_URL = "https://fin.anshulkr.com/api"  # Change this to match your server configuration
+# BASE_URL = "http://localhost:8000/api"  # Localhost for testing
 TEST_EMAIL_PREFIX = f"test_announcement_{int(time.time())}"
 TEST_PASSWORD = "Test@123"
 

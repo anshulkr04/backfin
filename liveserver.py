@@ -1238,7 +1238,7 @@ def get_corporate_filings():
             query = query.eq('symbol', symbol)
         if isin:
             query = query.eq('isin', isin)
-        if not proc:  
+        if category != 'Procedural/Administrative':  
             query = query.neq('category', 'Procedural/Administrative')
 
 
@@ -2106,7 +2106,7 @@ if __name__ == '__main__':
     logger.info(f"Supabase Connection: {'Successful' if supabase_connected else 'FAILED'}")
     
     # Start scrapers
-    start_scrapers_safely()
+    # start_scrapers_safely()
     
     # Small delay to let threads initialize
     time.sleep(2)
@@ -2118,4 +2118,4 @@ if __name__ == '__main__':
 else:
     # This runs when imported by Gunicorn
     logger.info("Module imported by WSGI server, initializing scrapers...")
-    start_scrapers_safely()
+    # start_scrapers_safely()
