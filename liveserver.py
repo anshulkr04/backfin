@@ -1780,7 +1780,7 @@ def search_companies():
             return jsonify({'message': 'Database service unavailable. Please try again later.'}), 503
             
         # Initialize the Supabase query
-        supabase_query = supabase.table('dhanstockdata').select('*')
+        supabase_query = supabase.table('stocklistdata').select('*')
         
         # Apply search filters (case-insensitive)
         search_pattern = f"%{query}%"

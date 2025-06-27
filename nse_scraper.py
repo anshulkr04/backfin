@@ -742,15 +742,13 @@ class NseScraper:
                     if supabase:
                         try:
                             # Fetch both securityid and newnsecode
-                            result = supabase.table("dhanstockdata").select("securityid,newnsecode").eq("isin", isin).execute()
+                            result = supabase.table("stocklistdata").select("securityid,newbsecode").eq("isin", isin).execute()
                             if result.data and len(result.data) > 0:
                                 securityid = result.data[0].get("securityid", "")
-                                newnsecode = result.data[0].get("newnsecode")
-                                if newnsecode:  # Check if newnsecode exists and is not null/empty
+                                newbsecode = result.data[0].get("newnsecode")
+                                if newbsecode:  # Check if newbsecode exists and is not null/empty
                                     newnsecode_exists = True
-                                    logger.info(f"Found newnsecode: {newnsecode} for ISIN: {isin}")
-                                else:
-                                    logger.warning(f"No newnsecode found for ISIN: {isin}")
+                                    logger.info(f"Found newnsecode for ISIN {isin}: {newbsecode}")
                                     return
                             else:
                                 logger.warning(f"No data found for ISIN: {isin}")
