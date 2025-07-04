@@ -609,7 +609,7 @@ class NseScraper:
             uploaded_file = genai_client.files.upload(file=filename)
             
             # Create a chat session
-            chat_session = genai_client.chats().create(model="gemini-2.0-flash-exp")
+            chat_session = genai_client.chats().create(model="gemini-2.5-flash-lite-preview-06-17")
             
             prompt = os.getenv("PROMPT", "Please analyze this corporate announcement and provide a category and summary.")
             

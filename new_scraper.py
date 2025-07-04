@@ -353,7 +353,7 @@ def get_category(text):
 ]
 just mention the category , nothing else.
 """
-    chat_session = genai_client.chats().create(model="gemini-2.0-flash")
+    chat_session = genai_client.chats().create(model="gemini-2.5-flash-lite-preview-06-17")
     response = chat_session.send_message(
         [category_prompt, text]
     )
@@ -473,7 +473,7 @@ class BseScraper:
             uploaded_file = genai_client.files.upload(file=filename)
             
             # Create a chat session
-            chat_session = genai_client.chats().create(model="gemini-2.0-flash")
+            chat_session = genai_client.chats().create(model="gemini-2.5-flash-lite-preview-06-17")
             
             prompt = os.getenv("PROMPT")
             
