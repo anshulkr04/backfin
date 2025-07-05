@@ -540,13 +540,14 @@ class BseScraper:
             # Process the PDF if download was successful
             if os.path.exists(filepath):
                 category, ai_summary = self.ai_process(filepath)
+                num_pages = get_pdf_page_count(filepath)
                 if category == "Error":
                     logger.error(f"AI processing error: {ai_summary}")
                     return "Error", ai_summary
                 
                 
                 ai_summary = remove_markdown_tags(ai_summary)
-                return category, ai_summary
+                return category, ai_summary, num_pages
             else:
                 logger.error("PDF file not found after download attempt")
                 return "Error", "PDF file not found after download attempt"
@@ -643,9 +644,13 @@ class BseScraper:
                 return False
             elif check_for_pdf(pdf_file):
                 logger.info(f"Processing PDF: {pdf_file}")
-                category, ai_summary = self.process_pdf(pdf_file) 
+                category, ai_summary, num_pages = self.process_pdf(pdf_file) 
                 ai_summary = remove_markdown_tags(ai_summary)
                 ai_summary = clean_summary(ai_summary)
+            
+            if num_pages > 200:
+                logger.warning(f"PDF has too many pages ({num_pages}), skipping AI processing")
+                return False
             
             # Get ISIN
             isin = self.get_isin(scrip_id)
