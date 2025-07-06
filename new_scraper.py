@@ -93,7 +93,7 @@ def announcements_are_equal(a1, a2):
         return False
         
     # Compare key fields that would indicate it's the same announcement
-    fields_to_compare = ['XML_NAME']
+    fields_to_compare = ['ATTACHMENTNAME' , 'NEWSID']
     
     return all(a1.get(field) == a2.get(field) for field in fields_to_compare)
 
