@@ -1200,7 +1200,7 @@ def get_corporate_filings():
             return jsonify({'message': 'Database service unavailable. Please try again later.', 'status': 'error'}), 503
 
         # Build main query
-        query = supabase.table('corporatefilings2').select('*')
+        query = supabase.table('corporatefilings').select('*')
 
         # Order by date descending - most recent first
         query = query.order('date', desc=True)
@@ -1261,7 +1261,7 @@ def get_corporate_filings():
                 logger.warning("No results found with date filters, trying without filters")
                 try:
                     # Build a simpler query without date filters
-                    simple_query = supabase.table('corporatefilings2').select('*').limit(10)
+                    simple_query = supabase.table('corporatefilings').select('*').limit(10)
                     if category:
                         simple_query = simple_query.eq('category', category)
                     if symbol:
@@ -1322,7 +1322,7 @@ def get_corporate_filings():
 
 @app.route('/api/corporate_filings/<corp_id>', methods=['GET'])
 def get_filing_by_id(corp_id):
-    query = supabase.table('corporatefilings2').select('*').eq('corp_id', corp_id)
+    query = supabase.table('corporatefilings').select('*').eq('corp_id', corp_id)
     response = query.execute()
     if hasattr(response, 'error') and response.error:
         return jsonify({'message': 'Error retrieving corporate filing'}), 500
