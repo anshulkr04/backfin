@@ -1528,6 +1528,11 @@ def save_announcement(current_user):
     }
     
     response = supabase.table("save_items").insert(data).execute()
+    return jsonify({
+        "message": "Item saved successfully",
+        "status": "success",
+        "data": response.data
+    }), 200
 
 @app.route('/calc_price_diff', methods = ['GET', 'OPTIONS'])
 @auth_required
