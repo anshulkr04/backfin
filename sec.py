@@ -79,6 +79,7 @@ def fetch_all_stock_symbols():
 
     return all_records
 
+
 def assign_sectors_to_all_companies():
     logging.info("🚀 Fetching all companies...")
     records = fetch_all_stock_symbols()

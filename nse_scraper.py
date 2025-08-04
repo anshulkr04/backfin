@@ -52,6 +52,8 @@ try:
     PDF_SUPPORT = True
 except ImportError:
     PDF_SUPPORT = False
+from pydantic import BaseModel, Field
+from prompt import *
 
 
 # Configure logging
@@ -180,15 +182,17 @@ class RateLimitedGeminiClient:
 
         self.request_timestamps.append(time.time())
 
-    def generate_content(self, model, contents):
+    def generate_content(self, contents, config):
         """Rate-limited wrapper for generate_content with retries"""
         if not self.client:
             raise Exception("Gemini client not initialized")
+        
+        current_model = "gemini-2.5-flash-lite-preview-06-17"  # Default model, can be overridden
             
         for attempt in range(1, self.max_retries + 1):
             try:
                 self._enforce_rate_limit()
-                return self.client.models.generate_content(model=model, contents=contents)
+                return self.client.models.generate_content(model=current_model, contents=contents, config=config)
             except Exception as e:
                 if attempt == self.max_retries:
                     logger.error(f"Failed to generate content after {self.max_retries} attempts: {e}")
@@ -243,6 +247,16 @@ class RateLimitedChatSession:
                 logger.warning(f"Send message attempt {attempt} failed: {e}. Retrying...")
                 time.sleep(2 * attempt)  # Exponential backoff
 
+
+class StrucOutput(BaseModel):
+    """Schema for structured output from the model."""
+    category: str = Field(... , description = category_prompt)
+    headline: str = Field(..., description= headline_prompt)
+    summary: str = Field(..., description= sum_prompt)
+    findata: str =Field(..., description= financial_data_prompt)
+    individual_investor_list: list[str] = Field(..., description="List of individual investors not company mentioned in the announcement. It should be in a form of an array of strings.")
+    company_investor_list: list[str] = Field(..., description="List of company investors mentioned in the announcement. It should be in a form of an array of strings.")
+    sentiment: str = Field(..., description = "Analyze the sentiment of the announcement and give appropriate output. The output should be only: Postive, Negative and Netural. Nothing other than these." )
 
 def remove_markdown_tags(text):
     """Remove Markdown tags and adjust indentation of the text"""
@@ -589,57 +603,68 @@ class NseScraper:
         """Process PDF with AI, with proper error handling"""
         if not filename:
             logger.error("No valid filename provided for AI processing")
-            return "Error", "No valid filename provided"
+            return "Error", "No valid filename provided", "", "", [], []
             
         if not os.path.exists(filename):
             logger.error(f"File not found: {filename}")
-            return "Error", "File not found"
+            return "Error", "File not found", "", "", [], []
             
         # Handle case where Gemini client failed to initialize
         if not genai_client or not genai_client.client:
             logger.error("Cannot process file: Gemini client not initialized")
-            return "Procedural/Administrative", "AI processing unavailable"
+            return "Procedural/Administrative", "AI processing unavailable", "", "", [], []
 
         uploaded_file = None
-        chat_session = None
         
         try:
             logger.info(f"Uploading file: {filename}")
             # Upload the PDF file
             uploaded_file = genai_client.files.upload(file=filename)
             
-            # Create a chat session
-            chat_session = genai_client.chats().create(model="gemini-2.5-flash-lite-preview-06-17")
-            
-            prompt = os.getenv("PROMPT", "Please analyze this corporate announcement and provide a category and summary.")
-            
-            # Include the file in the message
-            response = chat_session.send_message([prompt, uploaded_file])
+            response = genai_client.generate_content(
+                contents = [all_prompt, uploaded_file],
+                config = {
+                    "response_mime_type": "application/json",
+                    "response_schema": list[StrucOutput]
+                },
+            )
             
             if not hasattr(response, 'text'):
                 logger.error("AI response missing text attribute")
-                return "Error", "AI processing failed: invalid response format"
+                return "Error", "AI processing failed: invalid response format", "", "", [], []
                 
-            summary_text = response.text.strip()
+            # Parse JSON response
+            summary = json.loads(response.text.strip())
             
-            # Extract category from the summary
+            # Extract all fields from the summary
             try:
-                category_text = summary_text.split("**Category:**")[1].split("**Headline:**")[0].strip()
-                logger.info(f"Category: {category_text}")
-                return category_text, summary_text
-            except IndexError:
-                logger.error("Failed to extract category from AI response")
-                return "Procedural/Administrative", summary_text
+                category_text = summary[0]['category']
+                headline = summary[0]['headline']
+                summary_text = summary[0]['summary']
+                findata = summary[0]['findata']
+                individual_investor_list = summary[0]['individual_investor_list']
+                company_investor_list = summary[0]['company_investor_list']
+                sentiment = summary[0]['sentiment']
                 
+                logger.info(f"AI processing completed successfully for {filename}")
+                logger.info(f"Category: {category_text}")
+                return category_text, summary_text, headline, findata, individual_investor_list, company_investor_list, sentiment
+            except (IndexError, KeyError) as e:
+                logger.error(f"Failed to extract fields from AI response: {e}")
+                return "Error", "Failed to extract fields from AI response", "", "", [], []
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON from AI response: {e}")
+            return "Error", "Failed to parse AI response", "", "", [], []
         except Exception as e:
             logger.error(f"Error in AI processing: {e}")
-            return "Error", f"Error processing file: {str(e)}"
+            return "Error", f"Error processing file: {str(e)}", "", "", [], []
 
     def process_pdf(self, url, max_pages=200):
         """Download and process PDF with error handling"""
         if not url:
             logger.error("No PDF file specified")
-            return "Error", "No PDF file specified"
+            return "Error", "No PDF file specified", "", "", [], []
             
         # Use the temp directory for downloads
         filepath = os.path.join(self.temp_dir, url.split("/")[-1])
@@ -659,17 +684,17 @@ class NseScraper:
                     logger.warning(f"PDF download timed out (attempt {attempt}/{self.max_retries})")
                 except requests.exceptions.HTTPError as e:
                     logger.error(f"HTTP error downloading PDF: {e}")
-                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}"
+                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], []
                 except requests.exceptions.RequestException as e:
                     logger.error(f"Error downloading PDF (attempt {attempt}/{self.max_retries}): {e}")
                 
                 if attempt < self.max_retries:
-                    wait_time = 2 ** attempt
+                    wait_time = 5  # Fixed 5-second wait as requested
                     logger.info(f"Retrying download in {wait_time} seconds...")
                     time.sleep(wait_time)
                 else:
                     logger.error("Failed to download PDF after all retries")
-                    return "Error", "Failed to download PDF after multiple attempts"
+                    return "Error", "Failed to download PDF after multiple attempts", "", "", [], []
                     
             # Process the PDF if download was successful
             if os.path.exists(filepath):
@@ -677,25 +702,25 @@ class NseScraper:
                 page_count = get_pdf_page_count(filepath)
                 if page_count is not None and page_count > max_pages:
                     logger.warning(f"PDF has {page_count} pages, exceeding {max_pages} page limit. Skipping AI processing.")
-                    return None  # Return None for ai_summary
+                    return "Procedural/Administrative", f"PDF too large ({page_count} pages)", "", "", [], []
                 elif page_count is None and PDF_SUPPORT:
                     logger.warning("Could not determine PDF page count, proceeding with AI processing")
-                
-                category, ai_summary = self.ai_process(filepath)
+
+                category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment = self.ai_process(filepath)
                 if category == "Error":
                     logger.error(f"AI processing error: {ai_summary}")
-                    return "Error", ai_summary
+                    return "Error", ai_summary, "", "", [], []
                 
                 if ai_summary:
                     ai_summary = remove_markdown_tags(ai_summary)
-                return category, ai_summary
+                return category, ai_summary, headline, findata, individual_investor_list, company_investor_list,sentiment
             else:
                 logger.error("PDF file not found after download attempt")
-                return "Error", "PDF file not found after download attempt"
+                return "Error", "PDF file not found after download attempt", "", "", [], []
                 
         except Exception as e:
             logger.error(f"Unexpected error processing PDF: {e}")
-            return "Error", f"Unexpected error: {str(e)}"
+            return "Error", f"Unexpected error: {str(e)}", "", "", [], []
         finally:
             # Clean up even if an error occurred
             if os.path.exists(filepath):
@@ -730,11 +755,16 @@ class NseScraper:
             if isinstance(company_name, str) and company_name.endswith(" LTD"):
                 company_name = company_name[:-4]
             
-            # Initialize variables
+            # Initialize variables with default values
             ai_summary = None
             category = "Procedural/Administrative"
+            headline = ""
+            findata = '{"period": "", "sales_current": "", "sales_previous_year": "", "pat_current": "", "pat_previous_year": ""}'
+            individual_investor_list = []
+            company_investor_list = []
             securityid = ""
             newnsecode_exists = False
+            company_id = ""
             
             # Validate ISIN format and check for newnsecode
             if isin and isin != "N/A" and len(isin) >= 3:
@@ -742,14 +772,17 @@ class NseScraper:
                     if supabase:
                         try:
                             # Fetch both securityid and newnsecode
-                            result = supabase.table("stocklistdata").select("securityid,newbsecode").eq("isin", isin).execute()
+                            result = supabase.table("stocklistdata").select("securityid,newbsecode,company_id").eq("isin", isin).execute()
                             if result.data and len(result.data) > 0:
                                 securityid = result.data[0].get("securityid", "")
-                                newbsecode = result.data[0].get("newnsecode")
+                                newbsecode = result.data[0].get("newbsecode")
+                                company_id = result.data[0].get("company_id", "")
+                                # FIXED: Check if newbsecode exists and set flag correctly
                                 if newbsecode:  # Check if newbsecode exists and is not null/empty
-                                    newnsecode_exists = True
-                                    logger.info(f"Found newnsecode for ISIN {isin}: {newbsecode}")
-                                    return
+                                    newnsecode_exists = True  # FIXED: Set to True when found
+                                    logger.info(f"Found newbsecode for ISIN {isin}: {newbsecode}")
+                                else:
+                                    logger.info(f"No newbsecode found for ISIN {isin}")
                             else:
                                 logger.warning(f"No data found for ISIN: {isin}")
                         except Exception as e:
@@ -759,9 +792,9 @@ class NseScraper:
             
             # Process PDF only if it exists and newnsecode exists
             if check_for_pdf(url):
-                if newnsecode_exists:
+                if newnsecode_exists:  # FIXED: Now this will work correctly
                     logger.info(f"Processing PDF: {url}")
-                    category, ai_summary = self.process_pdf(url) 
+                    category, ai_summary, headline, findata, individual_investor_list, company_investor_list,sentiment = self.process_pdf(url)
                     if ai_summary and category != "Error":
                         ai_summary = remove_markdown_tags(ai_summary)
                         if ai_summary:  # Check again after removing markdown
@@ -770,9 +803,11 @@ class NseScraper:
                     logger.info(f"Skipping PDF processing - no newnsecode found for ISIN: {isin}")
                     # Still prepare data but without AI processing
             
+            corp_id = str(uuid.uuid4())  # Generate a unique ID for the announcement
+            
             # Prepare data for upload
             data = {
-                "corp_id": str(uuid.uuid4()),
+                "corp_id": corp_id,
                 "securityid": securityid,
                 "summary": summary,
                 "fileurl": url,
@@ -781,26 +816,69 @@ class NseScraper:
                 "category": category,
                 "isin": isin,
                 "companyname": company_name,
-                "symbol": symbol
+                "symbol": symbol,
+                "headline": headline,
+                "sentiment": sentiment  # FIXED: Now properly initialized
             }
+
+            # FIXED: Safe JSON parsing for financial data
+            try:
+                findata_parsed = json.loads(findata)
+                period = findata_parsed.get("period", "")
+                sales_current = findata_parsed.get("sales_current", "")
+                sales_previous_year = findata_parsed.get("sales_previous_year", "")
+                pat_current = findata_parsed.get("pat_current", "")
+                pat_previous_year = findata_parsed.get("pat_previous_year", "")
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Failed to parse financial data: {e}")
+                period = sales_current = sales_previous_year = pat_current = pat_previous_year = ""
+
+            financial_data = {
+                "corp_id": corp_id,
+                "company_id": company_id,
+                "period": period,
+                "sales_current": sales_current,
+                "sales_previous_year": sales_previous_year,
+                "pat_current": pat_current,
+                "pat_previous": pat_previous_year,
+                "fileurl": url,
+            }
+
             
             # Only upload to Supabase if we have a connection
             if supabase:
                 # Upload to Supabase with retries
                 for attempt in range(1, self.max_retries + 1):
                     try:
-                        response = supabase.table("corporatefilings").insert(data).execute()
+                        response = supabase.table("corporatefilings2").insert(data).execute()
                         logger.info(f"Data uploaded to Supabase for {symbol} (ISIN: {isin})")
                         break
                     except Exception as e:
                         logger.error(f"Error uploading to Supabase (attempt {attempt}/{self.max_retries}): {e}")
                         
                         if attempt < self.max_retries:
-                            wait_time = 2 ** attempt
+                            wait_time = 5  # Fixed 5-second wait for consistency
                             logger.info(f"Retrying upload in {wait_time} seconds...")
                             time.sleep(wait_time)
                         else:
                             logger.error(f"Failed to upload after {self.max_retries} attempts")
+                
+                # Upload financial data only if we have meaningful data
+                if any([period, sales_current, sales_previous_year, pat_current, pat_previous_year]):
+                    for attempt in range(1, self.max_retries + 1):
+                        try:
+                            response = supabase.table("financial_results").insert(financial_data).execute()
+                            logger.info(f"Financial data uploaded to Supabase for {symbol} (ISIN: {isin})")
+                            break
+                        except Exception as e:
+                            logger.error(f"Error uploading financial data to Supabase (attempt {attempt}/{self.max_retries}): {e}")
+                            
+                            if attempt < self.max_retries:
+                                wait_time = 5  # Fixed 5-second wait for consistency
+                                logger.info(f"Retrying financial data upload in {wait_time} seconds...")
+                                time.sleep(wait_time)
+                            else:
+                                logger.error(f"Failed to upload financial data after {self.max_retries} attempts")
             else:
                 logger.warning("Supabase not connected, skipping database upload")
 
@@ -835,9 +913,10 @@ class NseScraper:
                 if data:  # Check if process_data returned valid data
                     save_latest_announcement(latest_announcement)
 
-                    if data.get("category") == "Procedular/Administrative":
+                    # FIXED: Correct typo in category name
+                    if data.get("category") == "Procedural/Administrative":
                         logger.info("Announcement is Procedural/Administrative, skipping further processing")
-                        return
+                        return True  # FIXED: Return True to indicate successful processing
                     
                     # Send to API endpoint (which will handle websocket communication)
                     if ENABLE_WEBSOCKET_API:

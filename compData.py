@@ -40,16 +40,23 @@ def get_bse_company_data(url):
             print("Error decoding JSON response")
             return None
         
-def get_nse_company_data(url):
+def get_nse_company_data(url_array):
     """
-    Fetch NSE company data from the given API URL.
+    Fetch NSE company data from multiple API URLs using a single session.
     
     Args:
-        url (str): The NSE API URL to fetch data from
+        url_array (list): List of NSE API URLs to fetch data from
         
     Returns:
-        dict: JSON response data if successful, None if failed
+        dict: Dictionary mapping URLs to their JSON response data.
+              Failed requests will have None as their value.
     """
+    if not url_array or not isinstance(url_array, list):
+        logger.error("url_array must be a non-empty list")
+        return {}
+    
+    results = {}
+    
     with requests.Session() as session:
         retry_strategy = Retry(
             total=3,
@@ -74,7 +81,7 @@ def get_nse_company_data(url):
         }
         session.headers.update(headers)
 
-        logger.info("Initializing session...")
+        logger.info(f"Initializing session for {len(url_array)} URLs...")
         
         try:
             # Step 1: Visit NSE homepage to establish session and get cookies
@@ -100,73 +107,93 @@ def get_nse_company_data(url):
             # Add another delay
             time.sleep(random.uniform(1, 2))
             
-            # Step 3: Visit the specific quote page for the symbol
-            symbol = url.split('symbol=')[1].split('&')[0] if 'symbol=' in url else 'RELIANCE'
-            quote_page_url = f"https://www.nseindia.com/get-quotes/equity?symbol={symbol}"
-            
-            logger.info(f"Visiting quote page for {symbol}...")
+            # Step 3: Visit equity quotes page (general page that covers all symbols)
+            logger.info("Visiting equity quotes page...")
             session.headers.update({
                 "Referer": "https://www.nseindia.com/market-data/live-equity-market"
             })
             
-            quote_resp = session.get(quote_page_url, timeout=30)
-            quote_resp.raise_for_status()
-            logger.info(f"Quote page status: {quote_resp.status_code}")
+            quotes_resp = session.get("https://www.nseindia.com/get-quotes/equity", timeout=30)
+            quotes_resp.raise_for_status()
+            logger.info(f"Equity quotes page status: {quotes_resp.status_code}")
             
             # Add another delay
             time.sleep(random.uniform(1, 2))
             
-            # Step 4: Update headers for API call
+            # Step 4: Update headers for API calls
             session.headers.update({
                 "Accept": "*/*",
                 "Accept-Language": "en-US,en;q=0.9",
                 "Accept-Encoding": "gzip, deflate, br",
-                "Referer": quote_page_url,
+                "Referer": "https://www.nseindia.com/get-quotes/equity",
                 "Sec-Fetch-Dest": "empty",
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "same-origin",
                 "X-Requested-With": "XMLHttpRequest"
             })
             
-            logger.info(f"Fetching data from: {url}")
-            resp = session.get(url, timeout=30)
-            resp.raise_for_status()
-            logger.info(f"API response status: {resp.status_code}")
+            logger.info("Session established successfully. Starting batch API calls...")
             
-            # Parse JSON response
-            try:
-                data = resp.json()
-                logger.info("Successfully retrieved and parsed JSON data")
-                return data
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON response: {e}")
-                logger.error(f"Response content: {resp.text[:500]}...")
-                return None
+            # Step 5: Fetch data from all URLs
+            for i, url in enumerate(url_array, 1):
+                logger.info(f"Fetching data from URL {i}/{len(url_array)}: {url}")
+                
+                try:
+                    # Extract symbol for logging
+                    symbol = url.split('symbol=')[1].split('&')[0] if 'symbol=' in url else 'Unknown'
+                    logger.info(f"Processing symbol: {symbol}")
+                    
+                    resp = session.get(url, timeout=30)
+                    resp.raise_for_status()
+                    logger.info(f"API response status for {symbol}: {resp.status_code}")
+                    
+                    # Parse JSON response
+                    try:
+                        data = resp.json()
+                        results[url] = data
+                        logger.info(f"Successfully retrieved data for {symbol}")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON for {symbol}: {e}")
+                        results[url] = None
+                
+                except requests.exceptions.HTTPError as e:
+                    logger.error(f"HTTP error for {symbol}: {e}")
+                    if hasattr(e.response, 'status_code'):
+                        logger.error(f"Status code: {e.response.status_code}")
+                    results[url] = None
+                
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"Request error for {symbol}: {e}")
+                    results[url] = None
+                
+                except Exception as e:
+                    logger.error(f"Unexpected error for {symbol}: {e}")
+                    results[url] = None
+                
+                # Add small delay between API calls to avoid overwhelming the server
+                if i < len(url_array):  # Don't delay after the last request
+                    time.sleep(random.uniform(0.5, 1.5))
 
         except requests.exceptions.Timeout:
-            logger.error("Request timed out")
-            return None
+            logger.error("Session initialization timed out")
+            return {}
         except requests.exceptions.ConnectionError:
-            logger.error("Connection error occurred")
-            return None
+            logger.error("Connection error during session initialization")
+            return {}
         except requests.exceptions.HTTPError as e:
-            if resp.status_code == 401:
-                logger.error("401 Unauthorized - NSE API requires additional authentication")
-                logger.error("This might be due to:")
-                logger.error("1. Missing required cookies or tokens")
-                logger.error("2. Rate limiting or IP blocking")
-                logger.error("3. Changes in NSE's authentication mechanism")
-                logger.error("Try accessing the website manually in a browser first")
-            else:
-                logger.error(f"HTTP error occurred: {e}")
-                logger.error(f"Response status: {resp.status_code}")
-            return None
+            logger.error(f"HTTP error during session initialization: {e}")
+            return {}
         except requests.exceptions.RequestException as e:
-            logger.error(f"Request error occurred: {e}")
-            return None
+            logger.error(f"Request error during session initialization: {e}")
+            return {}
         except Exception as e:
-            logger.error(f"Unexpected error occurred: {e}")
-            return None
+            logger.error(f"Unexpected error during session initialization: {e}")
+            return {}
+    
+    success_count = sum(1 for result in results.values() if result is not None)
+    logger.info(f"Batch processing completed. Successfully fetched {success_count}/{len(url_array)} URLs")
+    
+    return results
         
 url = "https://www.nseindia.com/api/quote-equity?symbol=RELIANCE&section=trade_info"
 
@@ -177,40 +204,46 @@ mcap_url = f"https://api.bseindia.com/BseIndiaAPI/api/StockTrading/w?flag=&quote
 fifty_two_week_url = f"https://api.bseindia.com/BseIndiaAPI/api/HighLow/w?Type=EQ&flag=C&scripcode={scrip_code}"
 
 nse_mcap_url = "https://www.nseindia.com/api/quote-equity?symbol=RELIANCE&section=trade_info"
+nse_com_url = "https://www.nseindia.com/api/quote-equity?symbol=RELIANCE"
+
+nse_url_array = [nse_com_url, nse_mcap_url]
+
+data = get_nse_company_data(nse_url_array)
+print(data)
 
 
-def get_nse_mcap_data(url):
-    data = get_nse_company_data(url)
+# def get_nse_mcap_data(url):
+#     data = get_nse_company_data(url)
     
-    if data and isinstance(data, dict):
-        try:
-            # The response structure is: data -> marketDeptOrderBook -> tradeInfo -> totalMarketCap
-            mcap = data["marketDeptOrderBook"]["tradeInfo"]["totalMarketCap"]
-            logger.info(f"Successfully retrieved market cap: {mcap}")
-            return mcap
+#     if data and isinstance(data, dict):
+#         try:
+#             # The response structure is: data -> marketDeptOrderBook -> tradeInfo -> totalMarketCap
+#             mcap = data["marketDeptOrderBook"]["tradeInfo"]["totalMarketCap"]
+#             logger.info(f"Successfully retrieved market cap: {mcap}")
+#             return mcap
             
-        except KeyError as e:
-            logger.error(f"KeyError: {e} - Data structure may have changed")
-            logger.error("Available keys in response:")
-            logger.error(f"Top level keys: {list(data.keys())}")
+#         except KeyError as e:
+#             logger.error(f"KeyError: {e} - Data structure may have changed")
+#             logger.error("Available keys in response:")
+#             logger.error(f"Top level keys: {list(data.keys())}")
             
-            # Try to show the actual structure for debugging
-            if "marketDeptOrderBook" in data:
-                logger.error(f"marketDeptOrderBook keys: {list(data['marketDeptOrderBook'].keys())}")
-                if "tradeInfo" in data["marketDeptOrderBook"]:
-                    logger.error(f"tradeInfo keys: {list(data['marketDeptOrderBook']['tradeInfo'].keys())}")
+#             # Try to show the actual structure for debugging
+#             if "marketDeptOrderBook" in data:
+#                 logger.error(f"marketDeptOrderBook keys: {list(data['marketDeptOrderBook'].keys())}")
+#                 if "tradeInfo" in data["marketDeptOrderBook"]:
+#                     logger.error(f"tradeInfo keys: {list(data['marketDeptOrderBook']['tradeInfo'].keys())}")
             
-            return None
-        except TypeError as e:
-            logger.error(f"TypeError: {e} - Unexpected data type in response")
-            return None
-    else:
-        logger.error("No valid data received from API")
-        return None
+#             return None
+#         except TypeError as e:
+#             logger.error(f"TypeError: {e} - Unexpected data type in response")
+#             return None
+#     else:
+#         logger.error("No valid data received from API")
+#         return None
     
 
 
-result = get_nse_mcap_data(nse_mcap_url)
-print(result)
+# result = get_nse_mcap_data(nse_mcap_url)
+# print(result)
 
 
