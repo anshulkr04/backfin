@@ -706,7 +706,7 @@ class BseScraper:
                 # Upload to Supabase with retries
                 for attempt in range(1, self.max_retries + 1):
                     try:
-                        response = supabase.table("corporatefilings2").insert(data).execute()
+                        response = supabase.table("corporatefilings").insert(data).execute()
                         logger.info(f"Data uploaded to Supabase for {scrip_id}")
                         break
                     except Exception as e:

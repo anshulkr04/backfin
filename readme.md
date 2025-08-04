@@ -599,6 +599,12 @@ curl -X GET "https://api.example.com/api/stock_price?isin=US0378331005&range=1m"
 | `/api/test_announcement` | POST | Send test announcement via WebSocket | No |
 | `/calc_price_diff` | GET | Calculate price difference for saved item | Yes |
 
+# API Endpoints
+
+## Save Announcement
+
+Saves announcements or large deals to the database with stock price tracking.
+
 #### Save Announcement Example
 ```bash
 curl -X POST http://localhost:5001/api/save_announcement \
@@ -611,6 +617,103 @@ curl -X POST http://localhost:5001/api/save_announcement \
     "note": "Important announcement"
   }'
 ```
+
+#### Save Large Deal Example
+```bash
+curl -X POST http://localhost:5001/api/save_announcement \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your_access_token" \
+  -d '{
+    "item_type": "LARGE_DEALS",
+    "item_id": "deal-456",
+    "isin": "US0378331005",
+    "note": "Major acquisition deal"
+  }'
+```
+
+**Required Fields:**
+- `item_type`: Must be either "ANNOUNCEMENT" or "LARGE_DEALS"
+- `item_id`: Unique identifier for the item
+- `isin`: International Securities Identification Number
+
+**Optional Fields:**
+- `note`: Additional notes (defaults to empty string)
+
+**Response:**
+```json
+{
+  "message": "Item saved successfully",
+  "status": "success",
+  "data": {
+    "saved_item": {
+      "user_id": 123,
+      "item_type": "ANNOUNCEMENT",
+      "related_announcement_id": "corp-123",
+      "note": "Important announcement",
+      "saved_price": 150.75,
+      "saved_at": "2025-08-05T10:30:00"
+    },
+    "stock_price": 150.75
+  }
+}
+```
+
+## Calculate Price Difference
+
+Calculates the percentage and absolute price difference between a saved price and the current stock price.
+
+#### Calculate Price Difference Example
+```bash
+curl -X POST http://localhost:5001/api/calc_price_diff \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your_access_token" \
+  -d '{
+    "saved_price": 100.50,
+    "isin": "US0378331005"
+  }'
+```
+
+**Required Fields:**
+- `saved_price`: The original saved price (must be a positive number)
+- `isin`: International Securities Identification Number
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "stockDiff": 15.42,
+    "percentage_change": 15.42,
+    "absolute_change": 15.50,
+    "saved_price": 100.50,
+    "current_price": 116.00,
+    "isin": "US0378331005",
+    "calculation_time": "2025-08-05T10:30:00"
+  }
+}
+```
+
+## Authentication
+
+Both endpoints require authentication using Bearer tokens in the Authorization header:
+```
+Authorization: Bearer your_access_token
+```
+
+## Error Responses
+
+All endpoints return consistent error responses:
+```json
+{
+  "message": "Error description",
+  "status": "error"
+}
+```
+
+Common HTTP status codes:
+- `400`: Bad Request (missing/invalid fields)
+- `404`: Not Found (no stock data available)
+- `500`: Server Error (database or calculation errors)
 
 #### Insert New Announcement Example
 ```bash
@@ -628,16 +731,6 @@ curl -X POST http://localhost:5001/api/insert_new_announcement \
   }'
 ```
 
-#### Calculate Price Difference Example
-```bash
-curl -X GET http://localhost:5001/calc_price_diff \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your_access_token" \
-  -d '{
-    "saved_price": 100.50,
-    "isin": "US0378331005"
-  }'
-```
 
 ### Admin Endpoints
 
