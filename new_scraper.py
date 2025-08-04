@@ -456,7 +456,7 @@ class BseScraper:
                 
                 logger.info(f"AI processing completed successfully for {filename}")
                 logger.info(f"Category: {category_text}")
-                return category_text, summary_text, headline, financial_data, individual_investor_list, company_investor_list
+                return category_text, summary_text, headline, financial_data, individual_investor_list, company_investor_list,sentiment
             except (IndexError, KeyError) as e:
                 logger.error(f"Failed to extract fields from AI response: {e}")
                 return "Error", "Failed to extract fields from AI response", "", "", [], []
