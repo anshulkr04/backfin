@@ -1488,81 +1488,81 @@ def get_stock_price(current_user):
         return jsonify({'error': 'Internal server error'}), 500
 
 
-@app.route('/api/save_announcement', methods=['POST', 'OPTIONS'])
-@auth_required
-def save_announcement(current_user):
-    """Endpoint to save announcements to the database without WebSocket broadcast"""
-    if request.method == 'OPTIONS':
-        return _handle_options()
+# @app.route('/api/save_announcement', methods=['POST', 'OPTIONS'])
+# @auth_required
+# def save_announcement(current_user):
+#     """Endpoint to save announcements to the database without WebSocket broadcast"""
+#     if request.method == 'OPTIONS':
+#         return _handle_options()
     
-    data = request.get_json()
+#     data = request.get_json()
 
-    user_id = current_user['UserID']
-    item_type = data.get('item_type')
-    item_id = data.get('item_id')
-    isin = data.get('isin')
-    note = data.get('note')
+#     user_id = current_user['UserID']
+#     item_type = data.get('item_type')
+#     item_id = data.get('item_id')
+#     isin = data.get('isin')
+#     note = data.get('note')
 
-    stockResponse = (
-        supabase.table("stockpricedata")
-        .select("*")
-        .eq("isin", isin)
-        .order("date", desc=True)
-        .limit(1)
-        .execute()
-    )
-    stockData = stockResponse.data[0]
-    stock_price = stockData.get("close")
+#     stockResponse = (
+#         supabase.table("stockpricedata")
+#         .select("*")
+#         .eq("isin", isin)
+#         .order("date", desc=True)
+#         .limit(1)
+#         .execute()
+#     )
+#     stockData = stockResponse.data[0]
+#     stock_price = stockData.get("close")
 
-    if(item_type == "LARGE_DEALS"):
-        item_cell = "related_deal_id"
-    else:
-        item_cell = "related_announcement_id"
+#     if(item_type == "LARGE_DEALS"):
+#         item_cell = "related_deal_id"
+#     else:
+#         item_cell = "related_announcement_id"
 
-    data = {
-        "user_id": user_id,
-        "item_type" : item_type,
-        item_cell: item_id,
-        "note": note,
-        "saved_price": stock_price
-    }
+#     data = {
+#         "user_id": user_id,
+#         "item_type" : item_type,
+#         item_cell: item_id,
+#         "note": note,
+#         "saved_price": stock_price
+#     }
     
-    response = supabase.table("save_items").insert(data).execute()
-    return jsonify({
-        "message": "Item saved successfully",
-        "status": "success",
-        "data": response.data
-    }), 200
+#     response = supabase.table("save_items").insert(data).execute()
+#     return jsonify({
+#         "message": "Item saved successfully",
+#         "status": "success",
+#         "data": response.data
+#     }), 200
 
-@app.route('/calc_price_diff', methods = ['GET', 'OPTIONS'])
-@auth_required
-def calc_price_diff():
+# @app.route('/calc_price_diff', methods = ['GET', 'OPTIONS'])
+# @auth_required
+# def calc_price_diff():
 
-    if request.method == 'OPTIONS':
-        return _handle_options()
+#     if request.method == 'OPTIONS':
+#         return _handle_options()
     
-    data = request.get_json()
+#     data = request.get_json()
 
-    saved_price = data.get("saved_price")
+#     saved_price = data.get("saved_price")
 
-    isin = data.get("isin")
-    stockResponse = (
-        supabase.table("stockpricedata")
-        .select("*")
-        .eq("isin", isin)
-        .order("date", desc=True)
-        .limit(1)
-        .execute()
-    )
-    stockData = stockResponse.data[0]
-    latest_price = stockData.get("close")
+#     isin = data.get("isin")
+#     stockResponse = (
+#         supabase.table("stockpricedata")
+#         .select("*")
+#         .eq("isin", isin)
+#         .order("date", desc=True)
+#         .limit(1)
+#         .execute()
+#     )
+#     stockData = stockResponse.data[0]
+#     latest_price = stockData.get("close")
 
-    diff = ((latest_price - saved_price)/saved_price) * 100
-    diff = round(diff, 2)
+#     diff = ((latest_price - saved_price)/saved_price) * 100
+#     diff = round(diff, 2)
 
-    return jsonify ({
-        'stockDiff': diff
-    })
+#     return jsonify ({
+#         'stockDiff': diff
+#     })
 
 
 @app.route('/api/insert_new_announcement', methods=['POST', 'OPTIONS'])
