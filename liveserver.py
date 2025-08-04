@@ -1607,6 +1607,42 @@ def save_announcement(current_user):
             "message": f"Server error: {str(e)}",
             "status": "error"
         }), 500
+    
+# @app.route('/api/fetch_saved_announcements', methods=['GET', 'OPTIONS'])
+# @auth_required
+# def fetch_saved_announcements(current_user):
+#     """Fetch saved announcements for the current user"""
+#     if request.method == 'OPTIONS':
+#         return _handle_options()
+    
+#     try:
+#         user_id = current_user['UserID']
+#         logger.info(f"Fetching saved announcements for user: {user_id}")
+
+#         # Query to get saved items
+#         response = supabase.table("saved_info").select("*").eq("user_id", user_id).execute()
+        
+#         # Check for errors in the response
+#         if hasattr(response, 'error') and response.error:
+#             logger.error(f"Error fetching saved items: {response.error}")
+#             return jsonify({
+#                 "message": "Failed to fetch saved items",
+#                 "status": "error"
+#             }), 500
+            
+#         # Return the data
+#         return jsonify({
+#             "message": "Saved items fetched successfully",
+#             "status": "success",
+#             "data": response.data
+#         }), 200
+        
+#     except Exception as e:
+#         logger.error(f"Unexpected error in fetch_saved_announcements: {str(e)}")
+#         return jsonify({
+#             "message": f"Server error: {str(e)}",
+#             "status": "error"
+#         }), 500
 
 
 @app.route('/api/calc_price_diff', methods=['POST', 'OPTIONS'])  # Changed to POST
