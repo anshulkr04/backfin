@@ -1487,6 +1487,356 @@ def get_stock_price(current_user):
         return jsonify({'error': 'Internal server error'}), 500
 
 # @# Add this to the top of your liveserver.py file, after the existing imports
+#!/usr/bin/env python3
+"""
+Fixed Save Announcement Endpoints
+
+These are the corrected versions of your save_announcement and calc_price_diff endpoints
+with proper error handling and data validation.
+"""
+
+@app.route('/api/save_announcement', methods=['POST', 'OPTIONS'])
+@auth_required
+def save_announcement(current_user):
+    """Endpoint to save announcements to the database without WebSocket broadcast"""
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    
+    try:
+        # Get request data
+        request_data = request.get_json()
+        
+        if not request_data:
+            return jsonify({
+                "message": "No data provided",
+                "status": "error"
+            }), 400
+
+        user_id = current_user['UserID']
+        item_type = request_data.get('item_type')
+        item_id = request_data.get('item_id')
+        isin = request_data.get('isin')
+        note = request_data.get('note', '')  # Default to empty string
+
+        # Validate required fields
+        if not item_type or not item_id or not isin:
+            return jsonify({
+                "message": "Missing required fields: item_type, item_id, isin",
+                "status": "error"
+            }), 400
+
+        # Validate item_type
+        valid_item_types = ["LARGE_DEALS", "ANNOUNCEMENT"]  # Add other valid types
+        if item_type not in valid_item_types:
+            return jsonify({
+                "message": f"Invalid item_type. Must be one of: {valid_item_types}",
+                "status": "error"
+            }), 400
+
+        # Get stock price with proper error handling
+        stock_price = None
+        try:
+            stockResponse = (
+                supabase.table("stockpricedata")
+                .select("close")  # Only select what we need
+                .eq("isin", isin)
+                .order("date", desc=True)
+                .limit(1)
+                .execute()
+            )
+            
+            # Check if we got data
+            if stockResponse.data and len(stockResponse.data) > 0:
+                stock_price = stockResponse.data[0].get("close")
+                if stock_price is None:
+                    logger.warning(f"No close price found for ISIN: {isin}")
+            else:
+                logger.warning(f"No stock data found for ISIN: {isin}")
+                
+        except Exception as e:
+            logger.error(f"Error fetching stock price for ISIN {isin}: {str(e)}")
+            # Continue without stock price rather than failing completely
+
+        # Determine the correct field name for item_id
+        if item_type == "LARGE_DEALS":
+            item_cell = "related_deal_id"
+        else:
+            item_cell = "related_announcement_id"
+
+        # Prepare data for insertion (don't overwrite the request_data variable)
+        save_data = {
+            "user_id": user_id,
+            "item_type": item_type,
+            item_cell: item_id,
+            "note": note,
+            "saved_price": stock_price,  # This might be None, which is OK
+            "saved_at": datetime.datetime.now().isoformat()  # Add timestamp
+        }
+        
+        # Insert into database with error handling
+        try:
+            response = supabase.table("save_items").insert(save_data).execute()
+            
+            # Check if insertion was successful
+            if hasattr(response, 'error') and response.error:
+                logger.error(f"Database error saving item: {response.error}")
+                return jsonify({
+                    "message": "Failed to save item to database",
+                    "status": "error"
+                }), 500
+            
+            return jsonify({
+                "message": "Item saved successfully",
+                "status": "success",
+                "data": {
+                    "saved_item": response.data[0] if response.data else save_data,
+                    "stock_price": stock_price
+                }
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error inserting into save_items: {str(e)}")
+            return jsonify({
+                "message": f"Database error: {str(e)}",
+                "status": "error"
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Unexpected error in save_announcement: {str(e)}")
+        return jsonify({
+            "message": f"Server error: {str(e)}",
+            "status": "error"
+        }), 500
+
+
+@app.route('/api/calc_price_diff', methods=['POST', 'OPTIONS'])  # Changed to POST
+@auth_required
+def calc_price_diff(current_user):
+    """Calculate price difference between saved price and current price"""
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    
+    try:
+        # Get request data - changed to POST so we can use JSON body
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "message": "No data provided",
+                "status": "error"
+            }), 400
+
+        saved_price = data.get("saved_price")
+        isin = data.get("isin")
+
+        # Validate required fields
+        if saved_price is None or not isin:
+            return jsonify({
+                "message": "Missing required fields: saved_price, isin",
+                "status": "error"
+            }), 400
+
+        # Validate saved_price is a number
+        try:
+            saved_price = float(saved_price)
+            if saved_price <= 0:
+                return jsonify({
+                    "message": "saved_price must be a positive number",
+                    "status": "error"
+                }), 400
+        except (ValueError, TypeError):
+            return jsonify({
+                "message": "saved_price must be a valid number",
+                "status": "error"
+            }), 400
+
+        # Get current stock price with error handling
+        try:
+            stockResponse = (
+                supabase.table("stockpricedata")
+                .select("close")
+                .eq("isin", isin)
+                .order("date", desc=True)
+                .limit(1)
+                .execute()
+            )
+            
+            # Check if we got data
+            if not stockResponse.data or len(stockResponse.data) == 0:
+                return jsonify({
+                    "message": f"No current stock data found for ISIN: {isin}",
+                    "status": "error"
+                }), 404
+                
+            current_stock_data = stockResponse.data[0]
+            latest_price = current_stock_data.get("close")
+            
+            if latest_price is None:
+                return jsonify({
+                    "message": f"No close price available for ISIN: {isin}",
+                    "status": "error"
+                }), 404
+                
+            # Validate latest_price
+            try:
+                latest_price = float(latest_price)
+                if latest_price <= 0:
+                    return jsonify({
+                        "message": "Invalid current stock price",
+                        "status": "error"
+                    }), 500
+            except (ValueError, TypeError):
+                return jsonify({
+                    "message": "Invalid current stock price format",
+                    "status": "error"
+                }), 500
+                
+        except Exception as e:
+            logger.error(f"Error fetching current stock price for ISIN {isin}: {str(e)}")
+            return jsonify({
+                "message": f"Error fetching current stock price: {str(e)}",
+                "status": "error"
+            }), 500
+
+        # Calculate price difference
+        try:
+            price_diff = ((latest_price - saved_price) / saved_price) * 100
+            price_diff = round(price_diff, 2)
+            
+            # Calculate absolute change as well
+            absolute_change = round(latest_price - saved_price, 2)
+            
+            return jsonify({
+                "status": "success",
+                "data": {
+                    "stockDiff": price_diff,
+                    "percentage_change": price_diff,  # Alias for backward compatibility
+                    "absolute_change": absolute_change,
+                    "saved_price": saved_price,
+                    "current_price": latest_price,
+                    "isin": isin,
+                    "calculation_time": datetime.datetime.now().isoformat()
+                }
+            }), 200
+            
+        except ZeroDivisionError:
+            return jsonify({
+                "message": "Cannot calculate percentage change: saved_price is zero",
+                "status": "error"
+            }), 400
+        except Exception as e:
+            logger.error(f"Error calculating price difference: {str(e)}")
+            return jsonify({
+                "message": f"Calculation error: {str(e)}",
+                "status": "error"
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Unexpected error in calc_price_diff: {str(e)}")
+        return jsonify({
+            "message": f"Server error: {str(e)}",
+            "status": "error"
+        }), 500
+
+
+# Alternative GET version of calc_price_diff using query parameters
+@app.route('/api/calc_price_diff_get', methods=['GET', 'OPTIONS'])
+@auth_required
+def calc_price_diff_get(current_user):
+    """Calculate price difference using GET with query parameters"""
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    
+    try:
+        # Get query parameters
+        saved_price = request.args.get("saved_price")
+        isin = request.args.get("isin")
+
+        # Validate required fields
+        if not saved_price or not isin:
+            return jsonify({
+                "message": "Missing required query parameters: saved_price, isin",
+                "status": "error"
+            }), 400
+
+        # Validate saved_price is a number
+        try:
+            saved_price = float(saved_price)
+            if saved_price <= 0:
+                return jsonify({
+                    "message": "saved_price must be a positive number",
+                    "status": "error"
+                }), 400
+        except (ValueError, TypeError):
+            return jsonify({
+                "message": "saved_price must be a valid number",
+                "status": "error"
+            }), 400
+
+        # Get current stock price with error handling
+        try:
+            stockResponse = (
+                supabase.table("stockpricedata")
+                .select("close")
+                .eq("isin", isin)
+                .order("date", desc=True)
+                .limit(1)
+                .execute()
+            )
+            
+            if not stockResponse.data or len(stockResponse.data) == 0:
+                return jsonify({
+                    "message": f"No current stock data found for ISIN: {isin}",
+                    "status": "error"
+                }), 404
+                
+            latest_price = stockResponse.data[0].get("close")
+            
+            if latest_price is None:
+                return jsonify({
+                    "message": f"No close price available for ISIN: {isin}",
+                    "status": "error"
+                }), 404
+                
+            latest_price = float(latest_price)
+                
+        except Exception as e:
+            logger.error(f"Error fetching current stock price for ISIN {isin}: {str(e)}")
+            return jsonify({
+                "message": f"Error fetching current stock price: {str(e)}",
+                "status": "error"
+            }), 500
+
+        # Calculate price difference
+        try:
+            price_diff = ((latest_price - saved_price) / saved_price) * 100
+            price_diff = round(price_diff, 2)
+            absolute_change = round(latest_price - saved_price, 2)
+            
+            return jsonify({
+                "status": "success",
+                "data": {
+                    "stockDiff": price_diff,
+                    "percentage_change": price_diff,
+                    "absolute_change": absolute_change,
+                    "saved_price": saved_price,
+                    "current_price": latest_price,
+                    "isin": isin
+                }
+            }), 200
+            
+        except ZeroDivisionError:
+            return jsonify({
+                "message": "Cannot calculate percentage change: saved_price is zero",
+                "status": "error"
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Unexpected error in calc_price_diff_get: {str(e)}")
+        return jsonify({
+            "message": f"Server error: {str(e)}",
+            "status": "error"
+        }), 500
 
 # Advanced in-memory cache for deduplication
 class AnnouncementCache:
@@ -1600,67 +1950,67 @@ announcement_cache = AnnouncementCache(max_size=5000)
 
 # Then replace your insert_new_announcement function with this improved version:
 
-@app.route('/api/save_announcement', methods=['POST', 'OPTIONS'])
-def save_announcement():
-    """Endpoint to save announcements to the database without WebSocket broadcast"""
-    if request.method == 'OPTIONS':
-        return _handle_options()
+# @app.route('/api/save_announcement', methods=['POST', 'OPTIONS'])
+# def save_announcement():
+#     """Endpoint to save announcements to the database without WebSocket broadcast"""
+#     if request.method == 'OPTIONS':
+#         return _handle_options()
         
-    try:
-        data = request.get_json()
+#     try:
+#         data = request.get_json()
         
-        if not data:
-            logger.warning("Received empty announcement data")
-            return jsonify({'message': 'Missing data!', 'status': 'error'}), 400
+#         if not data:
+#             logger.warning("Received empty announcement data")
+#             return jsonify({'message': 'Missing data!', 'status': 'error'}), 400
         
-        # Add timestamp if not present
-        if 'timestamp' not in data:
-            data['timestamp'] = datetime.datetime.now().isoformat()
+#         # Add timestamp if not present
+#         if 'timestamp' not in data:
+#             data['timestamp'] = datetime.datetime.now().isoformat()
         
-        # Add a unique ID if not present
-        if 'id' not in data and 'corp_id' not in data:
-            data['id'] = f"announcement-{datetime.datetime.now().timestamp()}"
+#         # Add a unique ID if not present
+#         if 'id' not in data and 'corp_id' not in data:
+#             data['id'] = f"announcement-{datetime.datetime.now().timestamp()}"
             
-        # Log the save operation
-        logger.info(f"Saving announcement to database (no broadcast): {data.get('companyname', 'Unknown')}: {data.get('summary', '')[:100]}...")
+#         # Log the save operation
+#         logger.info(f"Saving announcement to database (no broadcast): {data.get('companyname', 'Unknown')}: {data.get('summary', '')[:100]}...")
         
-        # Save to database if we have Supabase connection
-        if supabase_connected:
-            try:
-                # Check if the announcement already exists
-                search_id =data.get('corp_id')
-                exists = False
+#         # Save to database if we have Supabase connection
+#         if supabase_connected:
+#             try:
+#                 # Check if the announcement already exists
+#                 search_id =data.get('corp_id')
+#                 exists = False
                 
-                if search_id:
-                    response = supabase.table('corporatefilings').select('corp_id').eq('corp_id', search_id).execute()
-                    exists = response.data and len(response.data) > 0
+#                 if search_id:
+#                     response = supabase.table('corporatefilings').select('corp_id').eq('corp_id', search_id).execute()
+#                     exists = response.data and len(response.data) > 0
                 
-                if not exists:
-                    # Insert into database
-                    supabase.table('corporatefilings').insert(data).execute()
-                    logger.debug(f"Announcement saved to database with ID: {search_id}")
-                else:
-                    logger.debug(f"Announcement already exists in database, skipping insert: {search_id}")
+#                 if not exists:
+#                     # Insert into database
+#                     supabase.table('corporatefilings').insert(data).execute()
+#                     logger.debug(f"Announcement saved to database with ID: {search_id}")
+#                 else:
+#                     logger.debug(f"Announcement already exists in database, skipping insert: {search_id}")
                     
-                return jsonify({
-                    'message': 'Announcement saved to database successfully',
-                    'status': 'success',
-                    'is_new': False,
-                    'exists': exists
-                }), 200
+#                 return jsonify({
+#                     'message': 'Announcement saved to database successfully',
+#                     'status': 'success',
+#                     'is_new': False,
+#                     'exists': exists
+#                 }), 200
                 
-            except Exception as e:
-                logger.error(f"Database error saving announcement: {str(e)}")
-                return jsonify({'message': f'Database error: {str(e)}', 'status': 'error'}), 500
-        else:
-            logger.warning("Supabase not connected, announcement not saved to database")
-            return jsonify({'message': 'Database not connected', 'status': 'error'}), 503
+#             except Exception as e:
+#                 logger.error(f"Database error saving announcement: {str(e)}")
+#                 return jsonify({'message': f'Database error: {str(e)}', 'status': 'error'}), 500
+#         else:
+#             logger.warning("Supabase not connected, announcement not saved to database")
+#             return jsonify({'message': 'Database not connected', 'status': 'error'}), 503
             
-    except Exception as e:
-        # Log the full error trace for debugging
-        logger.error(f"Error saving announcement: {str(e)}")
-        logger.error(traceback.format_exc())
-        return jsonify({'message': f'Error saving announcement: {str(e)}', 'status': 'error'}), 500
+#     except Exception as e:
+#         # Log the full error trace for debugging
+#         logger.error(f"Error saving announcement: {str(e)}")
+#         logger.error(traceback.format_exc())
+#         return jsonify({'message': f'Error saving announcement: {str(e)}', 'status': 'error'}), 500
 
 @app.route('/api/insert_new_announcement', methods=['POST', 'OPTIONS'])
 def insert_new_announcement():
@@ -2106,7 +2456,7 @@ if __name__ == '__main__':
     logger.info(f"Supabase Connection: {'Successful' if supabase_connected else 'FAILED'}")
     
     # Start scrapers
-    start_scrapers_safely()
+    # start_scrapers_safely()
     
     # Small delay to let threads initialize
     time.sleep(2)
@@ -2118,4 +2468,4 @@ if __name__ == '__main__':
 else:
     # This runs when imported by Gunicorn
     logger.info("Module imported by WSGI server, initializing scrapers...")
-    start_scrapers_safely()
+    # start_scrapers_safely()
