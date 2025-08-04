@@ -755,7 +755,7 @@ class NseScraper:
             if isinstance(company_name, str) and company_name.endswith(" LTD"):
                 company_name = company_name[:-4]
             
-            # Initialize variables with default values
+            # FIXED: Initialize ALL variables with default values at the start
             ai_summary = None
             category = "Procedural/Administrative"
             headline = ""
@@ -765,6 +765,7 @@ class NseScraper:
             securityid = ""
             newnsecode_exists = False
             company_id = ""
+            sentiment = "Neutral"  # FIXED: Initialize sentiment at the beginning
             
             # Validate ISIN format and check for newnsecode
             if isin and isin != "N/A" and len(isin) >= 3:
@@ -794,18 +795,28 @@ class NseScraper:
             if check_for_pdf(url):
                 if newnsecode_exists:  # FIXED: Now this will work correctly
                     logger.info(f"Processing PDF: {url}")
-                    category, ai_summary, headline, findata, individual_investor_list, company_investor_list,sentiment = self.process_pdf(url)
-                    if ai_summary and category != "Error":
-                        ai_summary = remove_markdown_tags(ai_summary)
-                        if ai_summary:  # Check again after removing markdown
-                            ai_summary = clean_summary(ai_summary)
+                    try:
+                        # FIXED: Expect 7 values from process_pdf, with proper error handling
+                        result = self.process_pdf(url)
+                        if len(result) == 7:
+                            category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment = result
+                            if ai_summary and category != "Error":
+                                ai_summary = remove_markdown_tags(ai_summary)
+                                if ai_summary:  # Check again after removing markdown
+                                    ai_summary = clean_summary(ai_summary)
+                        else:
+                            logger.error(f"process_pdf returned {len(result)} values, expected 7")
+                            # Keep default values, don't reassign sentiment
+                    except Exception as e:
+                        logger.error(f"Error processing PDF: {e}")
+                        # Keep default values including sentiment = "Neutral"
                 else:
                     logger.info(f"Skipping PDF processing - no newnsecode found for ISIN: {isin}")
-                    # Still prepare data but without AI processing
+                    # Still prepare data but without AI processing - sentiment remains "Neutral"
             
             corp_id = str(uuid.uuid4())  # Generate a unique ID for the announcement
             
-            # Prepare data for upload
+            # Prepare data for upload - sentiment is guaranteed to be initialized here
             data = {
                 "corp_id": corp_id,
                 "securityid": securityid,
@@ -818,7 +829,7 @@ class NseScraper:
                 "companyname": company_name,
                 "symbol": symbol,
                 "headline": headline,
-                "sentiment": sentiment  # FIXED: Now properly initialized
+                "sentiment": sentiment  # FIXED: Now guaranteed to be initialized
             }
 
             # FIXED: Safe JSON parsing for financial data
