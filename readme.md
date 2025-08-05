@@ -86,7 +86,7 @@ pip install -r requirements.txt
 python liveserver.py
 ```
 
-The server will start on http://localhost:5001 by default.
+The server will start on http://fin.anshulkr.com by default.
 
 ## Authentication
 
@@ -137,7 +137,7 @@ The API uses a custom token-based authentication system. All protected endpoints
 
 #### Register User Example
 ```bash
-curl -X POST http://localhost:5001/api/register \
+curl -X POST https://fin.anshulkr.com/api/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -157,7 +157,7 @@ curl -X POST http://localhost:5001/api/register \
 
 #### Login Example
 ```bash
-curl -X POST http://localhost:5001/api/login \
+curl -X POST https://fin.anshulkr.com/api/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -167,7 +167,7 @@ curl -X POST http://localhost:5001/api/login \
 
 #### Get User Profile Example
 ```bash
-curl -X GET http://localhost:5001/api/user \
+curl -X GET https://fin.anshulkr.com/api/user \
   -H "Authorization: Bearer your_access_token"
 ```
 
@@ -184,7 +184,7 @@ curl -X GET http://localhost:5001/api/user \
 
 #### Get All Watchlists Example
 ```bash
-curl -X GET http://localhost:5001/api/watchlist \
+curl -X GET https://fin.anshulkr.com/api/watchlist \
   -H "Authorization: Bearer your_access_token"
 ```
 
@@ -210,7 +210,7 @@ curl -X GET http://localhost:5001/api/watchlist \
 
 #### Create New Watchlist Example
 ```bash
-curl -X POST http://localhost:5001/api/watchlist \
+curl -X POST https://fin.anshulkr.com/api/watchlist \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_access_token" \
   -d '{
@@ -221,7 +221,7 @@ curl -X POST http://localhost:5001/api/watchlist \
 
 #### Add ISIN to Watchlist Example
 ```bash
-curl -X POST http://localhost:5001/api/watchlist \
+curl -X POST https://fin.anshulkr.com/api/watchlist \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_access_token" \
   -d '{
@@ -326,7 +326,7 @@ This API endpoint allows you to add multiple ISINs to a watchlist in a single op
 ### cURL Example
 
 ```bash
-curl -X POST http://localhost:5001/api/watchlist/bulk_add \
+curl -X POST https://fin.anshulkr.com/api/watchlist/bulk_add \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_access_token" \
   -d '{
@@ -345,7 +345,7 @@ curl -X POST http://localhost:5001/api/watchlist/bulk_add \
 
 ```javascript
 async function bulkAddIsins() {
-  const response = await fetch('http://localhost:5001/api/watchlist/bulk_add', {
+  const response = await fetch('http://fin.anshulkr.com/api/watchlist/bulk_add', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -374,7 +374,7 @@ async function bulkAddIsins() {
 import requests
 
 def bulk_add_isins(token, watchlist_id, isins, category=None):
-    url = 'http://localhost:5001/api/watchlist/bulk_add'
+    url = 'https://fin.anshulkr.com/api/watchlist/bulk_add'
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {token}'
@@ -421,7 +421,7 @@ print(result)
 
 #### Get Corporate Filings Example
 ```bash
-curl -X GET "http://localhost:5001/api/corporate_filings?start_date=2025-01-01&end_date=2025-05-20&category=Financial%20Results&symbol=AAPL" \
+curl -X GET "https://fin.anshulkr.com/api/corporate_filings?start_date=2025-01-01&end_date=2025-05-20&category=Financial%20Results&symbol=AAPL" \
   -H "Authorization: Bearer your_access_token"
 ```
 
@@ -449,7 +449,7 @@ curl -X GET "http://localhost:5001/api/corporate_filings?start_date=2025-01-01&e
 
 #### Get Filing by ID Example
 ```bash
-curl -X GET http://localhost:5001/api/corporate_filings/corp-123
+curl -X GET https://fin.anshulkr.com/api/corporate_filings/corp-123
 ```
 
 ### Company Search
@@ -460,7 +460,7 @@ curl -X GET http://localhost:5001/api/corporate_filings/corp-123
 
 #### Search Companies Example
 ```bash
-curl -X GET "http://localhost:5001/api/company/search?q=Apple&limit=5"
+curl -X GET "https://fin.anshulkr.com/api/company/search?q=Apple&limit=5"
 ```
 
 #### Response
@@ -567,7 +567,7 @@ Example error response:
 ### Example Request
 
 ```bash
-curl -X GET "https://api.example.com/api/stock_price?isin=US0378331005&range=1m" \
+curl -X GET "https://fin.anshulkr.com/api/stock_price?isin=US0378331005&range=1m" \
   -H "Authorization: Bearer your_token_here"
 ```
 
@@ -607,7 +607,7 @@ Saves announcements or large deals to the database with stock price tracking.
 
 #### Save Announcement Example
 ```bash
-curl -X POST http://localhost:5001/api/save_announcement \
+curl -X POST https://fin.anshulkr.com/api/save_announcement \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_access_token" \
   -d '{
@@ -620,7 +620,7 @@ curl -X POST http://localhost:5001/api/save_announcement \
 
 #### Save Large Deal Example
 ```bash
-curl -X POST http://localhost:5001/api/save_announcement \
+curl -X POST https://fin.anshulkr.com/api/save_announcement \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_access_token" \
   -d '{
@@ -658,13 +658,100 @@ curl -X POST http://localhost:5001/api/save_announcement \
 }
 ```
 
+## Fetch Saved Announcements
+
+Retrieves all saved announcements and large deals for the authenticated user.
+
+#### Fetch Saved Announcements Example
+```bash
+curl -X GET https://fin.anshulkr.com/api/fetch_saved_announcements \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+**Response:**
+```json
+{
+  "message": "Saved announcements fetched successfully",
+  "status": "success",
+  "data": [
+    {
+      "ai_summary": null,
+      "category": "Procedural/Administrative",
+      "companyname": "Pilani Investment and Industries Corporation Limited",
+      "corp_id": "000c3ff0-4448-4a0c-a7b6-b9fc0bdb2de3",
+      "date": "2025-06-30T20:25:31",
+      "fileurl": "https://nsearchives.nseindia.com/corporate/PILANIINVS_30062025202329_Pilani_AGM_proceedings_30062025.pdf",
+      "headline": null,
+      "isin": "INE417C01014",
+      "note": "Saving corp_id 2",
+      "saved_at": "2025-08-05T12:47:44.808068",
+      "saved_item_id": "da40c318-ff9c-4f90-918a-3e7dffc8cf1d",
+      "saved_price": 522.5,
+      "securityid": "539883",
+      "sentiment": null,
+      "summary": "Pilani Investment and Industries Corporation Limited has informed the Exchange regarding Proceedings of Annual General Meeting held on Jun 30, 2025",
+      "symbol": "PILANIINVS",
+      "user_id": "a4147001-ab8f-4913-9495-7e968c4f51ca"
+    },
+    {
+      "ai_summary": null,
+      "category": "Procedural/Administrative",
+      "companyname": "Capital Small Finance Bank Limited",
+      "corp_id": "0003279d-2d5b-4280-aef8-cb2601b1d7da",
+      "date": "2025-08-01T17:45:50",
+      "fileurl": "https://nsearchives.nseindia.com/corporate/CAPITALSFB_01082025174401_Intimationofproceedingsigned.pdf",
+      "headline": null,
+      "isin": "INE646H01017",
+      "note": "Saving corp_id 1",
+      "saved_at": "2025-08-05T12:47:05.708566",
+      "saved_item_id": "18238b8e-d765-46eb-9b27-05704969d2be",
+      "saved_price": 522.5,
+      "securityid": "544120",
+      "sentiment": null,
+      "summary": "Capital Small Finance Bank Limited has informed the Exchange regarding Proceedings of  Annual General Meeting held on August 01, 2025.",
+      "symbol": "CAPITALSFB",
+      "user_id": "a4147001-ab8f-4913-9495-7e968c4f51ca"
+    }
+  ]
+}
+```
+
+**Response Fields:**
+- `ai_summary`: AI-generated summary (may be null)
+- `category`: Type/category of the announcement
+- `companyname`: Full company name
+- `corp_id`: Corporate identifier
+- `date`: Original announcement date
+- `fileurl`: URL to the original document/filing
+- `headline`: Announcement headline (may be null)
+- `isin`: International Securities Identification Number
+- `note`: User's note when saving the item
+- `saved_at`: Timestamp when item was saved
+- `saved_item_id`: Unique identifier for the saved item
+- `saved_price`: Stock price when the item was saved
+- `securityid`: Security identifier
+- `sentiment`: Sentiment analysis result (may be null)
+- `summary`: Brief summary of the announcement
+- `symbol`: Stock symbol
+- `user_id`: User identifier
+
+**Empty Response (No saved items):**
+```json
+{
+  "message": "No saved announcements found",
+  "status": "success",
+  "data": []
+}
+```
+
 ## Calculate Price Difference
 
 Calculates the percentage and absolute price difference between a saved price and the current stock price.
 
 #### Calculate Price Difference Example
 ```bash
-curl -X POST http://localhost:5001/api/calc_price_diff \
+curl -X POST https://fin.anshulkr.com/api/calc_price_diff \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your_access_token" \
   -d '{
@@ -717,7 +804,7 @@ Common HTTP status codes:
 
 #### Insert New Announcement Example
 ```bash
-curl -X POST http://localhost:5001/api/insert_new_announcement \
+curl -X POST https://fin.anshulkr.com/api/insert_new_announcement \
   -H "Content-Type: application/json" \
   -d '{
     "corp_id": "corp-123",
@@ -740,7 +827,7 @@ curl -X POST http://localhost:5001/api/insert_new_announcement \
 
 #### List All Users Example
 ```bash
-curl -X GET http://localhost:5001/api/users
+curl -X GET https://fin.anshulkr.com/api/users
 ```
 
 #### Response
@@ -769,7 +856,7 @@ curl -X GET http://localhost:5001/api/users
 
 #### Socket Health Check Example
 ```bash
-curl -X GET http://localhost:5001/api/socket/health
+curl -X GET https://fin.anshulkr.com/api/socket/health
 ```
 
 #### Response
@@ -785,7 +872,7 @@ curl -X GET http://localhost:5001/api/socket/health
 
 #### Scraper Status Example
 ```bash
-curl -X GET http://localhost:5001/api/scraper_status
+curl -X GET https://fin.anshulkr.com/api/scraper_status
 ```
 
 #### Response
@@ -819,7 +906,7 @@ The server provides real-time updates via WebSockets using Socket.IO. Clients ca
 Using JavaScript with Socket.IO client:
 
 ```javascript
-const socket = io('http://localhost:5001');
+const socket = io('https://fin.anshulkr.com');
 
 socket.on('connect', () => {
   console.log('Connected to server');
