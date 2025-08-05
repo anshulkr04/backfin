@@ -1608,15 +1608,42 @@ def save_announcement(current_user):
             "status": "error"
         }), 500
     
-# @app.route('/api/fetch_saved_announcements', methods=['GET', 'OPTIONS'])
-# @auth_required
-# def fetch_saved_announcements(current_user):
-#     """Fetch saved announcements for the current user"""
-#     user_id = current_user['UserID']
-#     logger.info(f"Fetching saved announcements for user: {user_id}")
-#     if request.method == 'OPTIONS':
-#         return _handle_options()
-#     try:
+@app.route('/api/fetch_saved_announcements', methods=['GET', 'OPTIONS'])
+@auth_required
+def fetch_saved_announcements(current_user):
+    """Fetch saved announcements for the current user"""
+    user_id = current_user['UserID']
+    logger.info(f"Fetching saved announcements for user: {user_id}")
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    try:
+
+        response = supabase.rpc("fetch_saved_announcements", {"user_id_input": user_id}).execute()
+        if hasattr(response, 'error') and response.error:
+            logger.error(f"Error fetching saved announcements: {response.error}")
+            return jsonify({
+                "message": "Failed to fetch saved announcements",
+                "status": "error"
+            }), 500
+        if not response.data:
+            logger.info("No saved announcements found")
+            return jsonify({
+                "message": "No saved announcements found",
+                "status": "success",
+                "data": []
+            }), 200
+        logger.info(f"Found {len(response.data)} saved announcements for user: {user_id}")
+        return jsonify({
+            "message": "Saved announcements fetched successfully",
+            "status": "success",
+            "data": response.data
+        }), 200
+    except Exception as e:
+        logger.error(f"Error fetching saved announcements: {str(e)}")
+        return jsonify({
+            "message": f"Error fetching saved announcements: {str(e)}",
+            "status": "error"
+        }), 500
 
 
 
@@ -2370,7 +2397,7 @@ if __name__ == '__main__':
     logger.info(f"Supabase Connection: {'Successful' if supabase_connected else 'FAILED'}")
     
     # Start scrapers
-    start_scrapers_safely()
+    # start_scrapers_safely()
     
     # Small delay to let threads initialize
     time.sleep(2)
@@ -2382,4 +2409,4 @@ if __name__ == '__main__':
 else:
     # This runs when imported by Gunicorn
     logger.info("Module imported by WSGI server, initializing scrapers...")
-    start_scrapers_safely()
+    # start_scrapers_safely()
