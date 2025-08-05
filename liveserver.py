@@ -1611,13 +1611,12 @@ def save_announcement(current_user):
 @app.route('/api/fetch_saved_announcements', methods=['GET', 'OPTIONS'])
 @auth_required
 def fetch_saved_announcements(current_user):
-    """Fetch saved announcements for the current user"""
+    """Fetch saved announcements for the current user with price differences"""
     user_id = current_user['UserID']
     logger.info(f"Fetching saved announcements for user: {user_id}")
     if request.method == 'OPTIONS':
         return _handle_options()
     try:
-
         response = supabase.rpc("fetch_saved_announcements", {"user_id_input": user_id}).execute()
         if hasattr(response, 'error') and response.error:
             logger.error(f"Error fetching saved announcements: {response.error}")
@@ -1632,19 +1631,77 @@ def fetch_saved_announcements(current_user):
                 "status": "success",
                 "data": []
             }), 200
-        logger.info(f"Found {len(response.data)} saved announcements for user: {user_id}")
+
+        # Enhance each announcement with price difference calculations
+        enhanced_data = []
+        for announcement in response.data:
+            enhanced_announcement = announcement.copy()
+            
+            # Only calculate price diff if we have saved_price and isin
+            saved_price = announcement.get('saved_price')
+            isin = announcement.get('isin')
+            
+            if saved_price is not None and isin:
+                try:
+                    # Get current stock price
+                    stockResponse = (
+                        supabase.table("stockpricedata")
+                        .select("close")
+                        .eq("isin", isin)
+                        .order("date", desc=True)
+                        .limit(1)
+                        .execute()
+                    )
+                    
+                    if stockResponse.data and len(stockResponse.data) > 0:
+                        current_stock_data = stockResponse.data[0]
+                        latest_price = current_stock_data.get("close")
+                        
+                        if latest_price is not None:
+                            try:
+                                latest_price = float(latest_price)
+                                saved_price_float = float(saved_price)
+                                
+                                if latest_price > 0 and saved_price_float > 0:
+                                    # Calculate price difference
+                                    price_diff = ((latest_price - saved_price_float) / saved_price_float) * 100
+                                    price_diff = round(price_diff, 2)
+                                    absolute_change = round(latest_price - saved_price_float, 2)
+                                    
+                                    # Add calculated fields to the announcement
+                                    enhanced_announcement['current_price'] = latest_price
+                                    enhanced_announcement['percentage_change'] = price_diff
+                                    enhanced_announcement['absolute_change'] = absolute_change
+                                    enhanced_announcement['price_calculation_time'] = datetime.datetime.now().isoformat()
+                                else:
+                                    logger.warning(f"Invalid prices for ISIN {isin}: saved={saved_price}, current={latest_price}")
+                                    
+                            except (ValueError, TypeError) as e:
+                                logger.warning(f"Error converting prices for ISIN {isin}: {str(e)}")
+                        else:
+                            logger.warning(f"No close price found for ISIN {isin}")
+                    else:
+                        logger.warning(f"No current stock data found for ISIN {isin}")
+                        
+                except Exception as e:
+                    logger.error(f"Error fetching/calculating price for ISIN {isin}: {str(e)}")
+                    # Continue processing other announcements even if one fails
+            
+            enhanced_data.append(enhanced_announcement)
+
+        logger.info(f"Found {len(enhanced_data)} saved announcements for user: {user_id}")
         return jsonify({
             "message": "Saved announcements fetched successfully",
             "status": "success",
-            "data": response.data
+            "data": enhanced_data
         }), 200
+        
     except Exception as e:
         logger.error(f"Error fetching saved announcements: {str(e)}")
         return jsonify({
             "message": f"Error fetching saved announcements: {str(e)}",
             "status": "error"
         }), 500
-
 
 
 @app.route('/api/calc_price_diff', methods=['POST', 'OPTIONS'])  # Changed to POST
@@ -2397,7 +2454,7 @@ if __name__ == '__main__':
     logger.info(f"Supabase Connection: {'Successful' if supabase_connected else 'FAILED'}")
     
     # Start scrapers
-    start_scrapers_safely()
+    # start_scrapers_safely()
     
     # Small delay to let threads initialize
     time.sleep(2)
@@ -2409,4 +2466,4 @@ if __name__ == '__main__':
 else:
     # This runs when imported by Gunicorn
     logger.info("Module imported by WSGI server, initializing scrapers...")
-    start_scrapers_safely()
+    # start_scrapers_safely()

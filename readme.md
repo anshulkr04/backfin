@@ -692,7 +692,11 @@ curl -X GET https://fin.anshulkr.com/api/fetch_saved_announcements \
       "sentiment": null,
       "summary": "Pilani Investment and Industries Corporation Limited has informed the Exchange regarding Proceedings of Annual General Meeting held on Jun 30, 2025",
       "symbol": "PILANIINVS",
-      "user_id": "a4147001-ab8f-4913-9495-7e968c4f51ca"
+      "user_id": "a4147001-ab8f-4913-9495-7e968c4f51ca",
+      "current_price": 545.75,
+      "percentage_change": 4.45,
+      "absolute_change": 23.25,
+      "price_calculation_time": "2025-08-05T15:30:00"
     },
     {
       "ai_summary": null,
@@ -711,7 +715,11 @@ curl -X GET https://fin.anshulkr.com/api/fetch_saved_announcements \
       "sentiment": null,
       "summary": "Capital Small Finance Bank Limited has informed the Exchange regarding Proceedings of  Annual General Meeting held on August 01, 2025.",
       "symbol": "CAPITALSFB",
-      "user_id": "a4147001-ab8f-4913-9495-7e968c4f51ca"
+      "user_id": "a4147001-ab8f-4913-9495-7e968c4f51ca",
+      "current_price": 498.20,
+      "percentage_change": -4.65,
+      "absolute_change": -24.30,
+      "price_calculation_time": "2025-08-05T15:30:00"
     }
   ]
 }
@@ -735,6 +743,12 @@ curl -X GET https://fin.anshulkr.com/api/fetch_saved_announcements \
 - `summary`: Brief summary of the announcement
 - `symbol`: Stock symbol
 - `user_id`: User identifier
+- `current_price`: Current stock price (calculated automatically)
+- `percentage_change`: Percentage change from saved price to current price
+- `absolute_change`: Absolute price change (current - saved)
+- `price_calculation_time`: Timestamp when price difference was calculated
+
+**Note:** Price calculation fields (`current_price`, `percentage_change`, `absolute_change`, `price_calculation_time`) are only included if both `saved_price` and `isin` are available and current stock data can be retrieved.
 
 **Empty Response (No saved items):**
 ```json
@@ -742,41 +756,6 @@ curl -X GET https://fin.anshulkr.com/api/fetch_saved_announcements \
   "message": "No saved announcements found",
   "status": "success",
   "data": []
-}
-```
-
-## Calculate Price Difference
-
-Calculates the percentage and absolute price difference between a saved price and the current stock price.
-
-#### Calculate Price Difference Example
-```bash
-curl -X POST https://fin.anshulkr.com/api/calc_price_diff \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your_access_token" \
-  -d '{
-    "saved_price": 100.50,
-    "isin": "US0378331005"
-  }'
-```
-
-**Required Fields:**
-- `saved_price`: The original saved price (must be a positive number)
-- `isin`: International Securities Identification Number
-
-**Response:**
-```json
-{
-  "status": "success",
-  "data": {
-    "stockDiff": 15.42,
-    "percentage_change": 15.42,
-    "absolute_change": 15.50,
-    "saved_price": 100.50,
-    "current_price": 116.00,
-    "isin": "US0378331005",
-    "calculation_time": "2025-08-05T10:30:00"
-  }
 }
 ```
 
@@ -789,7 +768,7 @@ Authorization: Bearer your_access_token
 
 ## Error Responses
 
-All endpoints return consistent error responses:
+Both endpoints return consistent error responses:
 ```json
 {
   "message": "Error description",
