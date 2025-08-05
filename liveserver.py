@@ -1526,7 +1526,7 @@ def save_announcement(current_user):
             }), 400
 
         # Validate item_type
-        valid_item_types = ["LARGE_DEALS", "ANNOUNCEMENT"]  # Add other valid types
+        valid_item_types = ["LARGE_DEAL", "ANNOUNCEMENT", "FINANCIAL_RESULT" , "CONCALL_TRANSCRIPT" , "ANNUAL_REPORT" , "INVESTOR_PRESENTATION"]  # Add other valid types
         if item_type not in valid_item_types:
             return jsonify({
                 "message": f"Invalid item_type. Must be one of: {valid_item_types}",
@@ -1575,7 +1575,7 @@ def save_announcement(current_user):
         
         # Insert into database with error handling
         try:
-            response = supabase.table("save_items").insert(save_data).execute()
+            response = supabase.table("saved_items").insert(save_data).execute()
             
             # Check if insertion was successful
             if hasattr(response, 'error') and response.error:
@@ -1612,37 +1612,12 @@ def save_announcement(current_user):
 # @auth_required
 # def fetch_saved_announcements(current_user):
 #     """Fetch saved announcements for the current user"""
+#     user_id = current_user['UserID']
+#     logger.info(f"Fetching saved announcements for user: {user_id}")
 #     if request.method == 'OPTIONS':
 #         return _handle_options()
-    
 #     try:
-#         user_id = current_user['UserID']
-#         logger.info(f"Fetching saved announcements for user: {user_id}")
 
-#         # Query to get saved items
-#         response = supabase.table("saved_info").select("*").eq("user_id", user_id).execute()
-        
-#         # Check for errors in the response
-#         if hasattr(response, 'error') and response.error:
-#             logger.error(f"Error fetching saved items: {response.error}")
-#             return jsonify({
-#                 "message": "Failed to fetch saved items",
-#                 "status": "error"
-#             }), 500
-            
-#         # Return the data
-#         return jsonify({
-#             "message": "Saved items fetched successfully",
-#             "status": "success",
-#             "data": response.data
-#         }), 200
-        
-#     except Exception as e:
-#         logger.error(f"Unexpected error in fetch_saved_announcements: {str(e)}")
-#         return jsonify({
-#             "message": f"Server error: {str(e)}",
-#             "status": "error"
-#         }), 500
 
 
 @app.route('/api/calc_price_diff', methods=['POST', 'OPTIONS'])  # Changed to POST
