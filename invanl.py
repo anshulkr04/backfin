@@ -20,109 +20,165 @@ gemini_api_key = os.getenv("GEMINI_API_KEY")
 
 supabase = create_client(supabase_url, supabase_key)
 
-
-def getInvestorLinks(list_of_investors,list_of_institutions, corp_id):
+def uploadInvestor(list_of_investors, list_of_institutions, corp_id):
+    print(f"Starting uploadInvestor with {len(list_of_investors)} investors and {len(list_of_institutions)} institutions")
+    print(f"Corporation ID: {corp_id}")
 
     investorList = []
 
     for investor in list_of_investors:
-        response = supabase.table("investor_aliases").select("*").or_(f"investor_name.eq.\"{investor}\",alias_name.eq.\"{investor}\"").execute()
+        print(f"Processing individual investor: {investor}")
+        
+        investorResponse = supabase.table("smart_investors").select("*").eq("investor_name", investor).execute()
+        
+        if investorResponse.data:
+            data = investorResponse.data[0]
+            investor_id = data.get("investor_id")
+            investor_name = data.get("investor_name")
+            alias_id = data.get("alias_id")
+            alias = "False"
+            alias_name = ""
 
-        if not response.data :
-            supData = {
-                "investor_id": str(uuid.uuid4()),
-                "investor_name": investor,
+            investorList.append({
                 "corp_id": corp_id,
-            }
-            resp  = supabase.table("unverified_investors").select("*").eq("investor_name", investor).execute()
-            if resp.data:
-                return
-            
-            unverfiedInvestor = supabase.table("unverified_investors").insert(supData).execute()
-            data = {
-                "investor_id": supData["investor_id"],
-                "investor_name": investor,
-                "corp_id": corp_id,
-                "verified": False,
+                "investor_id": investor_id,
+                "investor_name": investor_name,
+                "aliasBool": alias,
+                "aliasName": alias_name,
+                "alias_id": alias_id,
+                "verified": True,
                 "type": "individual"
-            }
-            investorList.append(data)
-            continue
-
-        data = response.data[0]
-        investor_id = data.get("investor_id")
-        investor_name = data.get("investor_name")
-        alias_id = data.get("alias_id")
-        alias = "False"
-        alias_name = ""
-        for row in response.data:
-            if row["alias_name"] == investor:
+            })
+        else:
+            aliasResponse = supabase.table("investor_aliases").select("*").eq("alias_name", investor).execute()
+            
+            if aliasResponse.data:
+                data = aliasResponse.data[0]
+                investor_id = data.get("investor_id")
+                investor_name = data.get("investor_name")
+                alias_id = data.get("alias_id")
                 alias = "True"
                 alias_name = investor
-        investorList.append({
-            "corp_id": corp_id,
-            "investor_id": investor_id,
-            "investor_name": investor_name,
-            "aliasBool": alias,
-            "aliasName": alias_name,
-            "alias_id": alias_id,
-            "verified": True,
-            "type": "individual"
-        })
-    
-    for institution in list_of_institutions:
-        inst = supabase.table("investor_aliases").select("*").or_(f"investor_name.eq.\"{institution}\",alias_name.eq.\"{institution}\"").execute()
 
-        if not inst.data :
-            data = {
-                "investor_id": str(uuid.uuid4()),
-                "investor_name": institution,
-                "corp_id": corp_id
-            }
-            unverfiedInvestor = supabase.table("unverified_investors").insert(data).execute()
-            data = {
-                "investor_id": str(uuid.uuid4()),
-                "investor_name": institution,
+                print(f"Found existing alias for {investor}: ID={investor_id}, Name={investor_name}")
+
+                investorList.append({
+                    "corp_id": corp_id,
+                    "investor_id": investor_id,
+                    "investor_name": investor_name,
+                    "aliasBool": alias,
+                    "aliasName": alias_name,
+                    "alias_id": alias_id,
+                    "verified": True,
+                    "type": "individual"
+                })
+            else:
+                print(f"No existing records found for {investor}, creating new entry")
+                
+                new_investor_id = str(uuid.uuid4())
+                supData = {
+                    "investor_id": new_investor_id,
+                    "investor_name": investor,
+                    "corp_id": corp_id,
+                }
+            
+                unverifiedInvestor = supabase.table("unverified_investors").insert(supData).execute()
+                print(f"Added {investor} to unverified_investors with ID: {new_investor_id}")
+                
+                investorList.append({
+                    "investor_id": new_investor_id,
+                    "investor_name": investor,
+                    "corp_id": corp_id,
+                    "aliasBool": "False",
+                    "aliasName": "",
+                    "alias_id": None,
+                    "verified": False,
+                    "type": "individual"
+                })
+
+    for institution in list_of_institutions:
+        print(f"Processing institution: {institution}")
+        
+        inst = supabase.table("smart_investors").select("*").eq("investor_name", institution).execute()
+        
+        if inst.data:
+            data = inst.data[0]
+            investor_id = data.get("investor_id")
+            investor_name = data.get("investor_name")
+            alias_id = data.get("alias_id")
+            alias = "False"
+            alias_name = ""
+            
+            print(f"Found existing institution record: ID={investor_id}, Name={investor_name}")
+            
+            investorList.append({
                 "corp_id": corp_id,
-                "verified": False,
+                "investor_id": investor_id,
+                "investor_name": investor_name,
+                "aliasBool": alias,
+                "aliasName": alias_name,
+                "alias_id": alias_id,
+                "verified": True,
                 "type": "institution"
-            }
-            investorList.append(data)
-            continue
-        instData = inst.data[0]
-        investor_id = instData.get("investor_id")
-        investor_name = instData.get("investor_name")
-        alias_id = instData.get("alias_id")
-        alias = "False"
-        alias_name = ""
-        for row in inst.data:
-            if row["alias_name"] == institution:
+            })
+        else:
+            aliasInst = supabase.table("investor_aliases").select("*").eq("alias_name", institution).execute()
+            
+            if aliasInst.data:
+                data = aliasInst.data[0]
+                investor_id = data.get("investor_id")
+                investor_name = data.get("investor_name")
+                alias_id = data.get("alias_id")
                 alias = "True"
                 alias_name = institution
-        investorList.append({
-            "corp_id": corp_id,
-            "investor_id": investor_id,
-            "investor_name": investor_name,
-            "aliasBool": alias,
-            "aliasName": alias_name,
-            "alias_id": alias_id,
-            "verified": True,
-            "type": "institution"
-        })
+
+                print(f"Found existing alias for {institution}: ID={investor_id}, Name={investor_name}")
+
+                investorList.append({
+                    "corp_id": corp_id,
+                    "investor_id": investor_id,
+                    "investor_name": investor_name,
+                    "aliasBool": alias,
+                    "aliasName": alias_name,
+                    "alias_id": alias_id,
+                    "verified": True,
+                    "type": "institution"
+                })
+            else:
+                print(f"No existing records found for institution {institution}, creating new entry")
+                
+                new_investor_id = str(uuid.uuid4())
+                data = {
+                    "investor_id": new_investor_id,
+                    "investor_name": institution,
+                    "corp_id": corp_id
+                }
+                
+                unverifiedInvestor = supabase.table("unverified_investors").insert(data).execute()
+                print(f"Added {institution} to unverified_investors with ID: {new_investor_id}")
+                
+                investorList.append({
+                    "investor_id": new_investor_id,
+                    "investor_name": institution,
+                    "corp_id": corp_id,
+                    "aliasBool": "False",
+                    "aliasName": "",
+                    "alias_id": None,
+                    "verified": False,
+                    "type": "institution"
+                })
+    
+    # Upload all investor records
+    print(f"Preparing to upload {len(investorList)} investor records to investorCorp table")
     dataUpload = supabase.table("investorCorp").insert(investorList).execute()
+    
     if dataUpload.data:
-        print("Investor links successfully uploaded.")
+        print(f"Success: {len(dataUpload.data)} investor links successfully uploaded")
     else:
-        print("Failed to upload investor links.")
-        print(dataUpload.error)
+        print("Failed to upload investor links")
+        print(f"Error details: {dataUpload}")
 
     return True
-
-# inv_list = ['Manish Adukia', 'Aditya Soman', 'Swapnil Potdukhe', 'Sachin Salgaonkar', 'Aditya Suresh', 'Gaurav Rateria', 'Vijit Jain', 'Ankur Rudra', 'Gaurav Malhotra', 'Abhisek Banerjee', 'Big Bull']
-# inst_list = ['HDFC Bank', 'ICICI Bank', 'Axis Bank', 'State Bank of India']
-
-# corp_id = str(uuid.uuid4())
-# getInvestorLinks(inv_list, inst_list, corp_id)
 
 def getAliases(investor_name):
     # Configure the client
@@ -216,10 +272,20 @@ def addAlias(investor_id, alias_name):
 
     return True
 
+def createInvestor(investor_name, aliasArray, invType):
 
+    investor_id = str(uuid.uuid4())
+    data = {
+        "investor_id": investor_id,
+        "investor_name": investor_name,
+        "type": invType
+    }
+    response = supabase.table("smart_investors").insert(data).execute()
 
-
-
+    if aliasArray:
+        for alias in aliasArray:
+            addAlias(investor_id, alias)
+    return True
 
 
 

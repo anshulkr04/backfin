@@ -216,8 +216,13 @@ curl -X POST https://fin.anshulkr.com/api/watchlist \
   -d '{
     "operation": "create",
     "watchlistName": "Tech Portfolio"
+    "watchlistType": "DS"
   }'
 ```
+#### watchlistType could be only:
+* "DS" : "Daily Summary"(Email at 9PM)
+* "SM" : "Smart Alerts"(Whatsapp instantly)
+* "NA" : "No Alerts"
 
 #### Add ISIN to Watchlist Example
 ```bash

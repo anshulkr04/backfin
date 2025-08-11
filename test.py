@@ -14,8 +14,8 @@ from datetime import datetime
 import traceback
 
 # Configuration
-BASE_URL = "https://fin.anshulkr.com/api"  # Change this to match your server configuration
-# BASE_URL = "http://localhost:8000/api"  # Localhost for testing
+# BASE_URL = "https://fin.anshulkr.com/api"  # Change this to match your server configuration
+BASE_URL = "http://localhost:8000/api"  # Localhost for testing
 TEST_EMAIL_PREFIX = f"test_announcement_{int(time.time())}"
 TEST_PASSWORD = "Test@123"
 
@@ -123,7 +123,7 @@ class AnnouncementTester:
             print(f"❌ User {user_number} creation failed")
             return None
 
-    def create_watchlist_for_user(self, user_info, watchlist_name, isins, category=None):
+    def create_watchlist_for_user(self, user_info, watchlist_name,watchlist_type, isins, category=None):
         """Create a watchlist for a user and add ISINs"""
         print(f"\n[TEST] Creating watchlist '{watchlist_name}' for user {user_info['user_number']}")
         
@@ -135,7 +135,8 @@ class AnnouncementTester:
             headers=headers,
             json={
                 "operation": "create",
-                "watchlistName": watchlist_name
+                "watchlistName": watchlist_name,
+                "watchlistType": watchlist_type
             }
         )
         
@@ -580,7 +581,8 @@ class AnnouncementTester:
                 user1_isins = MOCK_ISINS[:3]  # First 3 ISINs
                 self.create_watchlist_for_user(
                     test_users[0], 
-                    "Tech Portfolio", 
+                    "Tech Portfolio",
+                    "DS", 
                     user1_isins
                 )
             
@@ -590,6 +592,7 @@ class AnnouncementTester:
                 self.create_watchlist_for_user(
                     test_users[1], 
                     "Financial Alerts", 
+                    "NA",
                     user2_isins, 
                     category=MOCK_CATEGORIES[0]
                 )
@@ -600,6 +603,7 @@ class AnnouncementTester:
                 self.create_watchlist_for_user(
                     test_users[2], 
                     "Mixed Portfolio", 
+                    "SA",
                     user3_isins, 
                     category=MOCK_CATEGORIES[1]
                 )

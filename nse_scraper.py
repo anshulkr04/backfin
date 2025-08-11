@@ -54,6 +54,7 @@ except ImportError:
     PDF_SUPPORT = False
 from pydantic import BaseModel, Field
 from prompt import *
+from invanl import uploadInvestor
 
 
 # Configure logging
@@ -829,8 +830,15 @@ class NseScraper:
                 "companyname": company_name,
                 "symbol": symbol,
                 "headline": headline,
-                "sentiment": sentiment  # FIXED: Now guaranteed to be initialized
+                "sentiment": sentiment,
+                "investor_list": individual_investor_list,
             }
+            #Upload Investor Data
+            if (individual_investor_list or company_investor_list) and supabase:
+                try:
+                    uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
+                except Exception as e:
+                    logger.error(f"Error uploading investor data: {e}")
 
             # FIXED: Safe JSON parsing for financial data
             try:

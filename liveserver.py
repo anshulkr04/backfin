@@ -669,12 +669,13 @@ def create_watchlist(current_user):
             # Create a new watchlist
             watchlist_id = str(uuid.uuid4())
             watchlist_name = data.get('watchlistName', 'My Watchlist')
-
+            watchlist_type = data.get('watchlistType', 'DS')
             # Insert into watchlistnamedata
             insert_response = supabase.table('watchlistnamedata').insert({
                 'watchlistid': watchlist_id,
                 'watchlistname': watchlist_name,
-                'userid': user_id
+                'userid': user_id,
+                'type': watchlist_type
             }).execute()
 
             # Check for error instead of status_code
@@ -1178,6 +1179,7 @@ def bulk_add_isins(current_user):
         return jsonify({'message': f'Failed to add ISINs: {str(e)}'}), 500
     
 @app.route('/api/corporate_filings', methods=['GET', 'OPTIONS'])
+# @auth_required
 def get_corporate_filings():
     """Endpoint to get corporate filings with improved date handling"""
     if request.method == 'OPTIONS':
@@ -1199,7 +1201,32 @@ def get_corporate_filings():
             return jsonify({'message': 'Database service unavailable. Please try again later.', 'status': 'error'}), 503
         
         # Build main query
-        query = supabase.table('corporatefilings').select('*')
+        query = supabase.table("corporatefilings").select(
+            """
+            corp_id,
+            securityid,
+            summary,
+            fileurl,
+            date,
+            ai_summary,
+            category,
+            isin,
+            companyname,
+            symbol,
+            headline,
+            sentiment,
+            investorCorp!left(
+                id,
+                investor_id,
+                investor_name,
+                aliasBool,
+                aliasName,
+                verified,
+                type,
+                alias_id
+            )
+            """
+        )
         
         # Order by date descending - most recent first
         query = query.order('date', desc=True)
@@ -1946,69 +1973,6 @@ class AnnouncementCache:
 # Initialize the cache
 announcement_cache = AnnouncementCache(max_size=5000)
 
-# Then replace your insert_new_announcement function with this improved version:
-
-# @app.route('/api/save_announcement', methods=['POST', 'OPTIONS'])
-# def save_announcement():
-#     """Endpoint to save announcements to the database without WebSocket broadcast"""
-#     if request.method == 'OPTIONS':
-#         return _handle_options()
-        
-#     try:
-#         data = request.get_json()
-        
-#         if not data:
-#             logger.warning("Received empty announcement data")
-#             return jsonify({'message': 'Missing data!', 'status': 'error'}), 400
-        
-#         # Add timestamp if not present
-#         if 'timestamp' not in data:
-#             data['timestamp'] = datetime.datetime.now().isoformat()
-        
-#         # Add a unique ID if not present
-#         if 'id' not in data and 'corp_id' not in data:
-#             data['id'] = f"announcement-{datetime.datetime.now().timestamp()}"
-            
-#         # Log the save operation
-#         logger.info(f"Saving announcement to database (no broadcast): {data.get('companyname', 'Unknown')}: {data.get('summary', '')[:100]}...")
-        
-#         # Save to database if we have Supabase connection
-#         if supabase_connected:
-#             try:
-#                 # Check if the announcement already exists
-#                 search_id =data.get('corp_id')
-#                 exists = False
-                
-#                 if search_id:
-#                     response = supabase.table('corporatefilings').select('corp_id').eq('corp_id', search_id).execute()
-#                     exists = response.data and len(response.data) > 0
-                
-#                 if not exists:
-#                     # Insert into database
-#                     supabase.table('corporatefilings').insert(data).execute()
-#                     logger.debug(f"Announcement saved to database with ID: {search_id}")
-#                 else:
-#                     logger.debug(f"Announcement already exists in database, skipping insert: {search_id}")
-                    
-#                 return jsonify({
-#                     'message': 'Announcement saved to database successfully',
-#                     'status': 'success',
-#                     'is_new': False,
-#                     'exists': exists
-#                 }), 200
-                
-#             except Exception as e:
-#                 logger.error(f"Database error saving announcement: {str(e)}")
-#                 return jsonify({'message': f'Database error: {str(e)}', 'status': 'error'}), 500
-#         else:
-#             logger.warning("Supabase not connected, announcement not saved to database")
-#             return jsonify({'message': 'Database not connected', 'status': 'error'}), 503
-            
-#     except Exception as e:
-#         # Log the full error trace for debugging
-#         logger.error(f"Error saving announcement: {str(e)}")
-#         logger.error(traceback.format_exc())
-#         return jsonify({'message': f'Error saving announcement: {str(e)}', 'status': 'error'}), 500
 
 @app.route('/api/insert_new_announcement', methods=['POST', 'OPTIONS'])
 def insert_new_announcement():
@@ -2454,7 +2418,12 @@ if __name__ == '__main__':
     logger.info(f"Supabase Connection: {'Successful' if supabase_connected else 'FAILED'}")
     
     # Start scrapers
-    start_scrapers_safely()
+    prod = os.getenv('PROD')
+    if prod == 'TRUE':
+        logger.info("Production environment detected, starting scrapers...")
+        start_scrapers_safely()
+    else:
+        logger.info("Development environment detected, scrapers will not start automatically")
     
     # Small delay to let threads initialize
     time.sleep(2)
@@ -2466,4 +2435,7 @@ if __name__ == '__main__':
 else:
     # This runs when imported by Gunicorn
     logger.info("Module imported by WSGI server, initializing scrapers...")
-    start_scrapers_safely()
+    prod = os.getenv('PROD')
+    if prod == 'TRUE':
+        logger.info("Production environment detected, starting scrapers...")
+        start_scrapers_safely()

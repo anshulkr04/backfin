@@ -22,6 +22,7 @@ except ImportError:
     PDF_SUPPORT = False
 from pydantic import BaseModel, Field
 from prompt import *
+from invanl import uploadInvestor
 
 # Configure logging
 logging.basicConfig(
@@ -675,9 +676,12 @@ class BseScraper:
                 "companyname": company_name,
                 "symbol": symbol,
                 "sentiment": sentiment,
-                "headline": headline
+                "headline": headline,
+                "investor_list": individual_investor_list + company_investor_list,
             }
-
+            
+            uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
+               
             # FIXED: Safe JSON parsing for financial data
             try:
                 findata_parsed = json.loads(findata)
