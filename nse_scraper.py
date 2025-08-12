@@ -831,7 +831,6 @@ class NseScraper:
                 "symbol": symbol,
                 "headline": headline,
                 "sentiment": sentiment,
-                "investor_list": individual_investor_list,
             }
             #Upload Investor Data
             if (individual_investor_list or company_investor_list) and supabase:
