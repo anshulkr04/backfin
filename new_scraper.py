@@ -677,7 +677,6 @@ class BseScraper:
                 "symbol": symbol,
                 "sentiment": sentiment,
                 "headline": headline,
-                "investor_list": individual_investor_list + company_investor_list,
             }
             
             uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
