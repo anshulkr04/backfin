@@ -781,10 +781,12 @@ class NseScraper:
                                 company_id = result.data[0].get("company_id", "")
                                 # FIXED: Check if newbsecode exists and set flag correctly
                                 if newbsecode:  # Check if newbsecode exists and is not null/empty
-                                    newnsecode_exists = True  # FIXED: Set to True when found
+                                    newnsecode_exists = False  # FIXED: Set to True when found
                                     logger.info(f"Found newbsecode for ISIN {isin}: {newbsecode}")
+                                    return
                                 else:
                                     logger.info(f"No newbsecode found for ISIN {isin}")
+                                    newnsecode_exists = True
                             else:
                                 logger.warning(f"No data found for ISIN: {isin}")
                         except Exception as e:
@@ -816,6 +818,18 @@ class NseScraper:
                     # Still prepare data but without AI processing - sentiment remains "Neutral"
             
             corp_id = str(uuid.uuid4())  # Generate a unique ID for the announcement
+
+            # Get company_id from Supabase - FIXED: properly extract the result
+            company_id = None
+            if supabase:
+                try:
+                    company_result = supabase.table("stocklistdata").select("company_id").eq("isin", isin).execute()
+                    if company_result.data and len(company_result.data) > 0:
+                        company_id = company_result.data[0].get("company_id")
+                    else:
+                        logger.warning(f"No company found for ISIN: {isin}")
+                except Exception as e:
+                    logger.error(f"Error fetching company_id: {e}")
             
             # Prepare data for upload - sentiment is guaranteed to be initialized here
             data = {
@@ -831,6 +845,7 @@ class NseScraper:
                 "symbol": symbol,
                 "headline": headline,
                 "sentiment": sentiment,
+                "company_id": company_id
             }
             #Upload Investor Data
             if (individual_investor_list or company_investor_list) and supabase:

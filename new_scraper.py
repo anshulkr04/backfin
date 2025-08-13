@@ -650,9 +650,9 @@ class BseScraper:
             company_id = None
             if supabase:
                 try:
-                    company_result = supabase.table("stocklistdata").select("companyid").eq("isin", isin).execute()
+                    company_result = supabase.table("stocklistdata").select("company_id").eq("isin", isin).execute()
                     if company_result.data and len(company_result.data) > 0:
-                        company_id = company_result.data[0].get("companyid")
+                        company_id = company_result.data[0].get("company_id")
                     else:
                         logger.warning(f"No company found for ISIN: {isin}")
                 except Exception as e:
@@ -677,6 +677,7 @@ class BseScraper:
                 "symbol": symbol,
                 "sentiment": sentiment,
                 "headline": headline,
+                "company_id": company_id
             }
             
             uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
