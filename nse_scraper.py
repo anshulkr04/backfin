@@ -604,16 +604,16 @@ class NseScraper:
         """Process PDF with AI, with proper error handling"""
         if not filename:
             logger.error("No valid filename provided for AI processing")
-            return "Error", "No valid filename provided", "", "", [], []
+            return "Error", "No valid filename provided", "", "", [], [], "Neutral"
             
         if not os.path.exists(filename):
             logger.error(f"File not found: {filename}")
-            return "Error", "File not found", "", "", [], []
+            return "Error", "File not found", "", "", [], [], "Neutral"
             
         # Handle case where Gemini client failed to initialize
         if not genai_client or not genai_client.client:
             logger.error("Cannot process file: Gemini client not initialized")
-            return "Procedural/Administrative", "AI processing unavailable", "", "", [], []
+            return "Procedural/Administrative", "AI processing unavailable", "", "", [], [], "Neutral"
 
         uploaded_file = None
         
@@ -632,7 +632,7 @@ class NseScraper:
             
             if not hasattr(response, 'text'):
                 logger.error("AI response missing text attribute")
-                return "Error", "AI processing failed: invalid response format", "", "", [], []
+                return "Error", "AI processing failed: invalid response format", "", "", [], [], "Neutral"
                 
             # Parse JSON response
             summary = json.loads(response.text.strip())
@@ -652,20 +652,20 @@ class NseScraper:
                 return category_text, summary_text, headline, findata, individual_investor_list, company_investor_list, sentiment
             except (IndexError, KeyError) as e:
                 logger.error(f"Failed to extract fields from AI response: {e}")
-                return "Error", "Failed to extract fields from AI response", "", "", [], []
+                return "Error", "Failed to extract fields from AI response", "", "", [], [], "Neutral"
                 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from AI response: {e}")
-            return "Error", "Failed to parse AI response", "", "", [], []
+            return "Error", "Failed to parse AI response", "", "", [], [], "Neutral"
         except Exception as e:
             logger.error(f"Error in AI processing: {e}")
-            return "Error", f"Error processing file: {str(e)}", "", "", [], []
+            return "Error", f"Error processing file: {str(e)}", "", "", [], [], "Neutral"
 
     def process_pdf(self, url, max_pages=200):
         """Download and process PDF with error handling"""
         if not url:
             logger.error("No PDF file specified")
-            return "Error", "No PDF file specified", "", "", [], []
+            return "Error", "No PDF file specified", "", "", [], [], "Neutral"
             
         # Use the temp directory for downloads
         filepath = os.path.join(self.temp_dir, url.split("/")[-1])
@@ -685,7 +685,7 @@ class NseScraper:
                     logger.warning(f"PDF download timed out (attempt {attempt}/{self.max_retries})")
                 except requests.exceptions.HTTPError as e:
                     logger.error(f"HTTP error downloading PDF: {e}")
-                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], []
+                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], [], "Neutral"
                 except requests.exceptions.RequestException as e:
                     logger.error(f"Error downloading PDF (attempt {attempt}/{self.max_retries}): {e}")
                 
@@ -695,7 +695,7 @@ class NseScraper:
                     time.sleep(wait_time)
                 else:
                     logger.error("Failed to download PDF after all retries")
-                    return "Error", "Failed to download PDF after multiple attempts", "", "", [], []
+                    return "Error", "Failed to download PDF after multiple attempts", "", "", [], [], "Neutral"
                     
             # Process the PDF if download was successful
             if os.path.exists(filepath):
@@ -703,25 +703,25 @@ class NseScraper:
                 page_count = get_pdf_page_count(filepath)
                 if page_count is not None and page_count > max_pages:
                     logger.warning(f"PDF has {page_count} pages, exceeding {max_pages} page limit. Skipping AI processing.")
-                    return "Procedural/Administrative", f"PDF too large ({page_count} pages)", "", "", [], []
+                    return "Procedural/Administrative", f"PDF too large ({page_count} pages)", "", "", [], [], "Neutral"
                 elif page_count is None and PDF_SUPPORT:
                     logger.warning("Could not determine PDF page count, proceeding with AI processing")
 
                 category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment = self.ai_process(filepath)
                 if category == "Error":
                     logger.error(f"AI processing error: {ai_summary}")
-                    return "Error", ai_summary, "", "", [], []
+                    return "Error", ai_summary, "", "", [], [], "Neutral"
                 
                 if ai_summary:
                     ai_summary = remove_markdown_tags(ai_summary)
-                return category, ai_summary, headline, findata, individual_investor_list, company_investor_list,sentiment
+                return category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment
             else:
                 logger.error("PDF file not found after download attempt")
-                return "Error", "PDF file not found after download attempt", "", "", [], []
+                return "Error", "PDF file not found after download attempt", "", "", [], [], "Neutral"
                 
         except Exception as e:
             logger.error(f"Unexpected error processing PDF: {e}")
-            return "Error", f"Unexpected error: {str(e)}", "", "", [], []
+            return "Error", f"Unexpected error: {str(e)}", "", "", [], [], "Neutral"
         finally:
             # Clean up even if an error occurred
             if os.path.exists(filepath):

@@ -407,73 +407,11 @@ class BseScraper:
                 logger.error(f"Failed to fetch data after {self.max_retries} attempts")
                 return []  # Return empty list after all retries fail
 
-    def ai_process(self, filename):
-        """Process PDF with AI, with proper error handling"""
-        if not filename:
-            logger.error("No valid filename provided for AI processing")
-            return "Error", "No valid filename provided", "", "", [], []
-            
-        if not os.path.exists(filename):
-            logger.error(f"File not found: {filename}")
-            return "Error", "File not found", "", "", [], []
-            
-        # Handle case where Gemini client failed to initialize
-        if not genai_client:
-            logger.error("Cannot process file: Gemini client not initialized")
-            return "Procedural/Administrative", "AI processing unavailable", "", "", [], []
-
-        uploaded_file = None
-        
-        try:
-            logger.info(f"Uploading file: {filename}")
-            # Upload the PDF file
-            uploaded_file = genai_client.files.upload(file=filename)
-            
-            # Generate content with structured output
-            response = genai_client.generate_content(
-                contents=[all_prompt, uploaded_file],
-                config = {
-                    "response_mime_type": "application/json",
-                    "response_schema": list[StrucOutput]
-                },
-            )
-            
-            if not hasattr(response, 'text'):
-                logger.error("AI response missing text attribute")
-                return "Error", "AI processing failed: invalid response format", "", "", [], []
-                
-            # Parse JSON response
-            summary = json.loads(response.text.strip())
-            
-            # Extract all fields from the summary
-            try:
-                category_text = summary[0]["category"]
-                headline = summary[0]["headline"]
-                summary_text = summary[0]["summary"]
-                financial_data = summary[0]["findata"]
-                individual_investor_list = summary[0]["individual_investor_list"]
-                company_investor_list = summary[0]["company_investor_list"]
-                sentiment = summary[0]["sentiment"]
-                
-                logger.info(f"AI processing completed successfully for {filename}")
-                logger.info(f"Category: {category_text}")
-                return category_text, summary_text, headline, financial_data, individual_investor_list, company_investor_list,sentiment
-            except (IndexError, KeyError) as e:
-                logger.error(f"Failed to extract fields from AI response: {e}")
-                return "Error", "Failed to extract fields from AI response", "", "", [], []
-                
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON from AI response: {e}")
-            return "Error", "Failed to parse AI response", "", "", [], []
-        except Exception as e:
-            logger.error(f"Error in AI processing: {e}")
-            return "Error", f"Error processing file: {str(e)}", "", "", [], []
-
     def process_pdf(self, pdf_file, max_pages=200):
         """Download and process PDF with error handling"""
         if not pdf_file:
             logger.error("No PDF file specified")
-            return "Error", "No PDF file specified", "", "", [], [], None
+            return "Error", "No PDF file specified", "", "", [], [], None, "Neutral"
             
         # Use the temp directory for downloads
         filepath = os.path.join(self.temp_dir, pdf_file.split("/")[-1])
@@ -496,7 +434,7 @@ class BseScraper:
                     logger.warning(f"PDF download timed out (attempt {attempt}/{self.max_retries})")
                 except requests.exceptions.HTTPError as e:
                     logger.error(f"HTTP error downloading PDF: {e}")
-                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], [], None
+                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], [], None, "Neutral"
                 except requests.exceptions.RequestException as e:
                     logger.error(f"Error downloading PDF (attempt {attempt}/{self.max_retries}): {e}")
                 
@@ -506,7 +444,7 @@ class BseScraper:
                     time.sleep(wait_time)
                 else:
                     logger.error("Failed to download PDF after all retries")
-                    return "Error", "Failed to download PDF after multiple attempts", "", "", [], [], None
+                    return "Error", "Failed to download PDF after multiple attempts", "", "", [], [], None, "Neutral"
                     
             # Process the PDF if download was successful
             if os.path.exists(filepath):
@@ -516,23 +454,23 @@ class BseScraper:
                 # Check page limit before AI processing
                 if num_pages and num_pages > max_pages:
                     logger.warning(f"PDF has too many pages ({num_pages}), skipping AI processing")
-                    return "Procedural/Administrative", f"PDF too large ({num_pages} pages)", "", "", [], [], num_pages
+                    return "Procedural/Administrative", f"PDF too large ({num_pages} pages)", "", "", [], [], num_pages, "Neutral"
                 
-                category, ai_summary, headline, financial_data, individual_investor_list, company_investor_list,sentiment = self.ai_process(filepath)
+                category, ai_summary, headline, financial_data, individual_investor_list, company_investor_list, sentiment = self.ai_process(filepath)
                 
                 if category == "Error":
                     logger.error(f"AI processing error: {ai_summary}")
-                    return "Error", ai_summary, "", "", [], [], num_pages
+                    return "Error", ai_summary, "", "", [], [], num_pages, "Neutral"
                 
                 ai_summary = remove_markdown_tags(ai_summary)
-                return category, ai_summary, headline, financial_data, individual_investor_list, company_investor_list, num_pages,sentiment
+                return category, ai_summary, headline, financial_data, individual_investor_list, company_investor_list, num_pages, sentiment
             else:
                 logger.error("PDF file not found after download attempt")
-                return "Error", "PDF file not found after download attempt", "", "", [], [], None
+                return "Error", "PDF file not found after download attempt", "", "", [], [], None, "Neutral"
                 
         except Exception as e:
             logger.error(f"Unexpected error processing PDF: {e}")
-            return "Error", f"Unexpected error: {str(e)}", "", "", [], [], None
+            return "Error", f"Unexpected error: {str(e)}", "", "", [], [], None, "Neutral"
         finally:
             # Clean up even if an error occurred
             if os.path.exists(filepath):
@@ -541,6 +479,68 @@ class BseScraper:
                     logger.info(f"Deleted temporary file: {filepath}")
                 except Exception as e:
                     logger.warning(f"Failed to delete temporary file {filepath}: {e}")
+
+    def ai_process(self, filename):
+        """Process PDF with AI, with proper error handling"""
+        if not filename:
+            logger.error("No valid filename provided for AI processing")
+            return "Error", "No valid filename provided", "", "", [], [], "Neutral"
+            
+        if not os.path.exists(filename):
+            logger.error(f"File not found: {filename}")
+            return "Error", "File not found", "", "", [], [], "Neutral"
+            
+        # Handle case where Gemini client failed to initialize
+        if not genai_client:
+            logger.error("Cannot process file: Gemini client not initialized")
+            return "Procedural/Administrative", "AI processing unavailable", "", "", [], [], "Neutral"
+
+        uploaded_file = None
+        
+        try:
+            logger.info(f"Uploading file: {filename}")
+            # Upload the PDF file
+            uploaded_file = genai_client.files.upload(file=filename)
+            
+            # Generate content with structured output
+            response = genai_client.generate_content(
+                contents=[all_prompt, uploaded_file],
+                config = {
+                    "response_mime_type": "application/json",
+                    "response_schema": list[StrucOutput]
+                },
+            )
+            
+            if not hasattr(response, 'text'):
+                logger.error("AI response missing text attribute")
+                return "Error", "AI processing failed: invalid response format", "", "", [], [], "Neutral"
+                
+            # Parse JSON response
+            summary = json.loads(response.text.strip())
+            
+            # Extract all fields from the summary
+            try:
+                category_text = summary[0]["category"]
+                headline = summary[0]["headline"]
+                summary_text = summary[0]["summary"]
+                financial_data = summary[0]["findata"]
+                individual_investor_list = summary[0]["individual_investor_list"]
+                company_investor_list = summary[0]["company_investor_list"]
+                sentiment = summary[0]["sentiment"]
+                
+                logger.info(f"AI processing completed successfully for {filename}")
+                logger.info(f"Category: {category_text}")
+                return category_text, summary_text, headline, financial_data, individual_investor_list, company_investor_list, sentiment
+            except (IndexError, KeyError) as e:
+                logger.error(f"Failed to extract fields from AI response: {e}")
+                return "Error", "Failed to extract fields from AI response", "", "", [], [], "Neutral"
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON from AI response: {e}")
+            return "Error", "Failed to parse AI response", "", "", [], [], "Neutral"
+        except Exception as e:
+            logger.error(f"Error in AI processing: {e}")
+            return "Error", f"Error processing file: {str(e)}", "", "", [], [], "Neutral"
 
     def get_isin(self, scrip_id):
         """Get ISIN with error handling and retries"""
@@ -641,7 +641,7 @@ class BseScraper:
             # Get ISIN
             isin = self.get_isin(scrip_id)
 
-            # Validate ISIN format
+            # Validate ISIN format 
             if not isin or isin == "N/A" or (len(isin) > 3 and isin[2] != "E"):
                 logger.warning(f"Invalid ISIN: {isin} for scrip_id {scrip_id}")
                 return False
