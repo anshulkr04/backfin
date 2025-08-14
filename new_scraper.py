@@ -703,6 +703,8 @@ class BseScraper:
                 "pat_current": pat_current,
                 "pat_previous": pat_previous_year,
                 "fileurl": file_url,
+                "isin": isin,
+                "verified": "false"
             }
             
             # Only upload to Supabase if we have a connection
@@ -730,20 +732,26 @@ class BseScraper:
                 
                 # Upload financial data only if we have meaningful data
                 if any([period, sales_current, sales_previous_year, pat_current, pat_previous_year]):
-                    for attempt in range(1, self.max_retries + 1):
-                        try:
-                            response = supabase.table("financial_results").insert(financial_data).execute()
-                            logger.info(f"Financial data uploaded to Supabase for {scrip_id}")
-                            break
-                        except Exception as e:
-                            logger.error(f"Error uploading financial data to Supabase (attempt {attempt}/{self.max_retries}): {e}")
-                            
-                            if attempt < self.max_retries:
-                                wait_time = 5  # Fixed 5-second wait for consistency
-                                logger.info(f"Retrying financial data upload in {wait_time} seconds...")
-                                time.sleep(wait_time)
-                            else:
-                                logger.error(f"Failed to upload financial data after {self.max_retries} attempts")
+                    resData = supabase.table("financial_results").select("isin" , isin).execute()
+                    if len(resData.data) > 0:
+                        period = resData[0].get("period" , "")
+                        period = period[-2:]
+                        if((financial_data.get("period")[-2:] == period) and not any(not value for value in financial_data.values())):
+                            if any(not value for value in resData.data.values()):
+                                for attempt in range(1, self.max_retries + 1):
+                                    try:
+                                        response = supabase.table("financial_results").insert(financial_data).execute()
+                                        logger.info(f"Financial data uploaded to Supabase for {symbol} (ISIN: {isin})")
+                                        break
+                                    except Exception as e:
+                                        logger.error(f"Error uploading financial data to Supabase (attempt {attempt}/{self.max_retries}): {e}")
+                                        
+                                        if attempt < self.max_retries:
+                                            wait_time = 5  # Fixed 5-second wait for consistency
+                                            logger.info(f"Retrying financial data upload in {wait_time} seconds...")
+                                            time.sleep(wait_time)
+                                        else:
+                                            logger.error(f"Failed to upload financial data after {self.max_retries} attempts")
             else:
                 logger.warning("Supabase not connected, skipping database upload")
 
