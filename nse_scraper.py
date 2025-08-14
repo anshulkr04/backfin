@@ -848,11 +848,7 @@ class NseScraper:
                 "company_id": company_id
             }
             #Upload Investor Data
-            if (individual_investor_list or company_investor_list) and supabase:
-                try:
-                    uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
-                except Exception as e:
-                    logger.error(f"Error uploading investor data: {e}")
+            
 
             # FIXED: Safe JSON parsing for financial data
             try:
@@ -885,6 +881,11 @@ class NseScraper:
                     try:
                         response = supabase.table("corporatefilings").insert(data).execute()
                         logger.info(f"Data uploaded to Supabase for {symbol} (ISIN: {isin})")
+                        if (individual_investor_list or company_investor_list) and supabase:
+                            try:
+                                uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
+                            except Exception as e:
+                                logger.error(f"Error uploading investor data: {e}")
                         break
                     except Exception as e:
                         logger.error(f"Error uploading to Supabase (attempt {attempt}/{self.max_retries}): {e}")

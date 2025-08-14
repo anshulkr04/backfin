@@ -680,8 +680,8 @@ class BseScraper:
                 "company_id": company_id
             }
             
-            uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
-               
+            
+
             # FIXED: Safe JSON parsing for financial data
             try:
                 findata_parsed = json.loads(findata)
@@ -712,6 +712,11 @@ class BseScraper:
                     try:
                         response = supabase.table("corporatefilings").insert(data).execute()
                         logger.info(f"Data uploaded to Supabase for {scrip_id}")
+                        if(individual_investor_list or company_investor_list):
+                            uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
+                            logger.info(f"Uploading investor data for corp_id: {corp_id}")
+                            
+                        logger.info(f"Investor data uploaded for corp_id: {corp_id}")
                         break
                     except Exception as e:
                         logger.error(f"Error uploading to Supabase (attempt {attempt}/{self.max_retries}): {e}")
