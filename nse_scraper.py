@@ -55,6 +55,8 @@ except ImportError:
 from pydantic import BaseModel, Field
 from prompt import *
 from invanl import uploadInvestor
+import fcntl  
+import contextlib
 
 
 # Configure logging
@@ -112,6 +114,70 @@ else:
     logger.warning("Supabase credentials not provided. Database operations will be skipped.")
     logger.warning("Set SUPABASE_URL2 and SUPABASE_KEY2 environment variables to enable database storage.")
 
+def safely_upload_financial_data(supabase, financial_data, symbol, isin, max_retries=3):
+    """Safely upload financial data with proper duplicate checking and updating"""
+    try:
+        # Check if record exists for this ISIN and period
+        existing_query = supabase.table("financial_results").select("*").eq("isin", isin)
+        
+        # Only filter by period if it's not empty
+        if financial_data.get("period"):
+            existing_query = existing_query.eq("period", financial_data.get("period"))
+            
+        existing_result = existing_query.execute()
+        
+        if existing_result.data and len(existing_result.data) > 0:
+            existing_record = existing_result.data[0]
+            logger.info(f"Found existing financial record for ISIN {isin}, period: {financial_data.get('period')}")
+            
+            # Check if existing record has missing data that we can fill
+            update_needed = False
+            update_data = {}
+            
+            for field in ["sales_current", "sales_previous_year", "pat_current", "pat_previous_year"]:
+                existing_value = existing_record.get(field)
+                new_value = financial_data.get(field)
+                
+                # Update if existing field is empty/null and new value is not empty
+                if (not existing_value or existing_value.strip() == "") and new_value and new_value.strip():
+                    update_data[field] = new_value
+                    update_needed = True
+            
+            if update_needed:
+                # Update the existing record
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        update_result = supabase.table("financial_results").update(update_data).eq("isin", isin).eq("period", financial_data.get("period", "")).execute()
+                        logger.info(f"Updated financial data for {symbol} (ISIN: {isin}) with missing fields")
+                        return True
+                    except Exception as e:
+                        logger.error(f"Error updating financial data (attempt {attempt}/{max_retries}): {e}")
+                        if attempt < max_retries:
+                            time.sleep(5)
+                        else:
+                            logger.error(f"Failed to update financial data after {max_retries} attempts")
+                            return False
+            else:
+                logger.info(f"Financial data for {symbol} (ISIN: {isin}) already complete, skipping")
+                return True
+        else:
+            # No existing record, insert new one
+            for attempt in range(1, max_retries + 1):
+                try:
+                    insert_result = supabase.table("financial_results").insert(financial_data).execute()
+                    logger.info(f"Inserted new financial data for {symbol} (ISIN: {isin})")
+                    return True
+                except Exception as e:
+                    logger.error(f"Error inserting financial data (attempt {attempt}/{max_retries}): {e}")
+                    if attempt < max_retries:
+                        time.sleep(5)
+                    else:
+                        logger.error(f"Failed to insert financial data after {max_retries} attempts")
+                        return False
+    except Exception as e:
+        logger.error(f"Error in safely_upload_financial_data: {e}")
+        return False
+
 # Add functions to handle announcement tracking in JSON file
 def get_data_dir():
     """Get or create the data directory"""
@@ -121,23 +187,35 @@ def get_data_dir():
     return data_dir
 
 def save_latest_announcement(announcement, filename=None):
-    """Save the latest announcement details to a JSON file"""
+    """Save the latest announcement details to a JSON file with file locking"""
     if filename is None:
-        filename = get_data_dir() / "latest_announcement_nse.json"
+        # Use different filenames for BSE and NSE
+        script_name = Path(__file__).stem  # Gets 'bse_scraper' or 'nse_scraper'
+        filename = get_data_dir() / f"latest_announcement_{script_name}.json"
+    
     try:
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        
+        # Use file locking to prevent concurrent access
         with open(filename, 'w') as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Exclusive lock
             json.dump(announcement, f, indent=4)
         logger.info(f"Saved latest announcement to {filename}")
     except Exception as e:
         logger.error(f"Error saving latest announcement to file: {e}")
 
 def load_latest_announcement(filename=None):
-    """Load the latest processed announcement from JSON file"""
+    """Load the latest processed announcement from JSON file with file locking"""
     if filename is None:
-        filename = get_data_dir() / "latest_announcement_nse.json"
+        # Use different filenames for BSE and NSE
+        script_name = Path(__file__).stem  # Gets 'bse_scraper' or 'nse_scraper'
+        filename = get_data_dir() / f"latest_announcement_{script_name}.json"
+    
     try:
         if os.path.exists(filename):
             with open(filename, 'r') as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_SH)  # Shared lock for reading
                 return json.load(f)
         return None
     except Exception as e:
@@ -730,6 +808,36 @@ class NseScraper:
                     logger.info(f"Deleted temporary file: {filepath}")
                 except Exception as e:
                     logger.warning(f"Failed to delete temporary file {filepath}: {e}")
+    def _get_lock_file_path(self):
+        """Get the path for the lock file specific to this scraper type"""
+        script_name = Path(__file__).stem  # Gets 'bse_scraper' or 'nse_scraper'
+        return get_data_dir() / f"{script_name}_processing.lock"
+    
+    @contextlib.contextmanager
+    def _processing_lock(self):
+        """Context manager for processing lock to prevent concurrent execution"""
+        lock_file = self._get_lock_file_path()
+        try:
+            # Create lock file
+            with open(lock_file, 'w') as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # Non-blocking exclusive lock
+                f.write(f"Locked by PID {os.getpid()} at {datetime.now().isoformat()}")
+                logger.info(f"Acquired processing lock: {lock_file}")
+                yield
+        except BlockingIOError:
+            logger.warning("Another instance is already processing announcements, skipping this run")
+            raise
+        except Exception as e:
+            logger.error(f"Error with processing lock: {e}")
+            raise
+        finally:
+            # Remove lock file
+            try:
+                if os.path.exists(lock_file):
+                    os.remove(lock_file)
+                    logger.info(f"Released processing lock: {lock_file}")
+            except Exception as e:
+                logger.error(f"Error removing lock file: {e}")
 
     def process_data(self, announcement):
         """Process a single announcement with comprehensive error handling"""
@@ -901,26 +1009,8 @@ class NseScraper:
                 
                 # Upload financial data only if we have meaningful data
                 if any([period, sales_current, sales_previous_year, pat_current, pat_previous_year]):
-                    resData = supabase.table("financial_results").select("isin" , isin).execute()
-                    if len(resData.data) > 0:
-                        period = resData[0].get("period" , "")
-                        period = period[-2:]
-                        if((financial_data.get("period")[-2:] == period) and not any(not value for value in financial_data.values())):
-                            if any(not value for value in resData.data.values()):
-                                for attempt in range(1, self.max_retries + 1):
-                                    try:
-                                        response = supabase.table("financial_results").insert(financial_data).execute()
-                                        logger.info(f"Financial data uploaded to Supabase for {symbol} (ISIN: {isin})")
-                                        break
-                                    except Exception as e:
-                                        logger.error(f"Error uploading financial data to Supabase (attempt {attempt}/{self.max_retries}): {e}")
-                                        
-                                        if attempt < self.max_retries:
-                                            wait_time = 5  # Fixed 5-second wait for consistency
-                                            logger.info(f"Retrying financial data upload in {wait_time} seconds...")
-                                            time.sleep(wait_time)
-                                        else:
-                                            logger.error(f"Failed to upload financial data after {self.max_retries} attempts")
+                    safely_upload_financial_data(supabase, financial_data, symbol, isin, self.max_retries)
+
             else:
                 logger.warning("Supabase not connected, skipping database upload")
 
@@ -933,57 +1023,50 @@ class NseScraper:
     def processLatestAnnouncement(self):
         """Process the latest announcement and send to database and websocket"""
         try:
-            announcements = self.fetch_data()
-            if not announcements:
-                logger.warning("No announcements found")
-                return False
-            
-            if not isinstance(announcements, list) or len(announcements) == 0:
-                logger.warning("Invalid announcements data structure")
-                return False
-                
-            latest_announcement = announcements[0]
-            last_latest_announcement = load_latest_announcement()
-
-            if announcements_are_equal(latest_announcement, last_latest_announcement):
-                logger.info("No new announcements to process")
-                return False
-            else:
-                logger.info("New announcement found, processing...")
-                data = self.process_data(latest_announcement)
-                
-                if data:  # Check if process_data returned valid data
-                    save_latest_announcement(latest_announcement)
-
-                    # FIXED: Correct typo in category name
-                    if data.get("category") == "Procedural/Administrative":
-                        logger.info("Announcement is Procedural/Administrative, skipping further processing")
-                        return True  # FIXED: Return True to indicate successful processing
+            # Use processing lock to prevent concurrent execution
+            with self._processing_lock():
+                announcements = self.fetch_data()
+                if not announcements:
+                    logger.warning("No announcements found")
+                    return False
                     
-                    # Send to API endpoint (which will handle websocket communication)
-                    if ENABLE_WEBSOCKET_API:
+                latest_announcement = announcements[0]
+                last_latest_announcement = load_latest_announcement()
+
+                if announcements_are_equal(latest_announcement, last_latest_announcement):
+                    logger.info("No new announcements to process")
+                    return False
+                else:
+                    logger.info("New announcement found, processing...")
+                    data = self.process_data(latest_announcement)
+                    
+                    if data:  # Check if process_data returned valid data
+                        save_latest_announcement(latest_announcement)
+
+                        if data.get("category") == "Procedural/Administrative":
+                            logger.info("Announcement is Procedural/Administrative, skipping API call")
+                            return True
+                        
+                        # Send to API endpoint (which will handle websocket communication)
                         try:
+                            post_url = "http://localhost:8000/api/insert_new_announcement"  # BSE
+                            # For NSE, use: API_ENDPOINT if ENABLE_WEBSOCKET_API else None
                             data["is_fresh"] = True  # Mark as fresh for broadcasting
-                            res = requests.post(url=API_ENDPOINT, json=data, timeout=10)
+                            res = requests.post(url=post_url, json=data)
                             if res.status_code >= 200 and res.status_code < 300:
                                 logger.info(f"Sent to API for websocket: Status code {res.status_code}")
                             else:
                                 logger.error(f"API returned error: {res.status_code}, {res.text}")
-                        except requests.exceptions.ConnectionError as e:
-                            logger.warning(f"Could not connect to WebSocket API at {API_ENDPOINT}")
-                            logger.warning("This is normal if the API server is not running")
-                            logger.info("To disable these warnings, set ENABLE_WEBSOCKET_API=false in your .env file")
-                        except requests.exceptions.Timeout:
-                            logger.warning(f"WebSocket API request timed out after 10 seconds")
                         except Exception as e:
-                            logger.error(f"Unexpected error sending to API: {e}")
+                            logger.error(f"Error sending to API: {e}")
+                            
+                        return True
                     else:
-                        logger.info("WebSocket API disabled, skipping notification")
-                        
-                    return True
-                else:
-                    logger.warning("Failed to process latest announcement")
-                    return False
+                        logger.warning("Failed to process latest announcement")
+                        return False
+        except BlockingIOError:
+            logger.info("Skipping this run - another instance is already processing")
+            return False
         except Exception as e:
             logger.error(f"Error in processLatestAnnouncement: {e}")
             return False
