@@ -1196,7 +1196,7 @@ def bulk_add_isins(current_user):
         return jsonify({'message': f'Failed to add ISINs: {str(e)}'}), 500
     
 @app.route('/api/corporate_filings', methods=['GET', 'OPTIONS'])
-# @auth_required
+@auth_required
 def get_corporate_filings():
     """Endpoint to get corporate filings with improved date handling"""
     if request.method == 'OPTIONS':
@@ -1285,6 +1285,7 @@ def get_corporate_filings():
         if category != 'Procedural/Administrative':  
             query = query.neq('category', 'Procedural/Administrative')
 
+        query = query.neq('category' , 'Error')
 
         
         # Execute query with error handling

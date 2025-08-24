@@ -68,7 +68,7 @@ except Exception as e:
     logger.error(f"Failed to initialize Supabase client: {e}")
     raise
 
-def uploadInvestor(list_of_investors, list_of_institutions, corp_id):
+def uploadInvestor(list_of_investors, list_of_institutions, corp_id,saved_price):
     """
     Upload investors and institutions to the database with proper validation and logging
     
@@ -119,7 +119,8 @@ def uploadInvestor(list_of_investors, list_of_institutions, corp_id):
                         "aliasName": "",
                         "alias_id": alias_id,
                         "verified": True,
-                        "type": "individual"
+                        "type": "individual",
+                        "saved_price": saved_price
                     })
                 else:
                     # Check if it's an alias
@@ -141,7 +142,8 @@ def uploadInvestor(list_of_investors, list_of_institutions, corp_id):
                             "aliasName": investor,
                             "alias_id": alias_id,
                             "verified": True,
-                            "type": "individual"
+                            "type": "individual",
+                            "saved_price":saved_price
                         })
                     else:
                         # Create new unverified investor
@@ -152,6 +154,7 @@ def uploadInvestor(list_of_investors, list_of_institutions, corp_id):
                             "investor_id": new_investor_id,
                             "investor_name": investor,
                             "corp_id": corp_id,
+                            "saved_price": saved_price
                         }
                     
                         unverifiedInvestor = supabase.table("unverified_investors").insert(supData).execute()
@@ -170,7 +173,8 @@ def uploadInvestor(list_of_investors, list_of_institutions, corp_id):
                             "aliasName": "",
                             "alias_id": None,
                             "verified": False,
-                            "type": "individual"
+                            "type": "individual",
+                            "saved_price": saved_price
                         })
                         
             except Exception as e:
@@ -206,7 +210,8 @@ def uploadInvestor(list_of_investors, list_of_institutions, corp_id):
                         "aliasName": "",
                         "alias_id": alias_id,
                         "verified": True,
-                        "type": "institution"
+                        "type": "institution",
+                        "saved_price": saved_price
                     })
                 else:
                     # Check if it's an alias
@@ -228,7 +233,8 @@ def uploadInvestor(list_of_investors, list_of_institutions, corp_id):
                             "aliasName": institution,
                             "alias_id": alias_id,
                             "verified": True,
-                            "type": "institution"
+                            "type": "institution",
+                            "saved_price": saved_price
                         })
                     else:
                         # Create new unverified institution
@@ -238,7 +244,8 @@ def uploadInvestor(list_of_investors, list_of_institutions, corp_id):
                         data = {
                             "investor_id": new_investor_id,
                             "investor_name": institution,
-                            "corp_id": corp_id
+                            "corp_id": corp_id,
+                            "saved_price": saved_price
                         }
                         
                         unverifiedInvestor = supabase.table("unverified_investors").insert(data).execute()
@@ -257,7 +264,8 @@ def uploadInvestor(list_of_investors, list_of_institutions, corp_id):
                             "aliasName": "",
                             "alias_id": None,
                             "verified": False,
-                            "type": "institution"
+                            "type": "institution",
+                            "saved_price": saved_price
                         })
                         
             except Exception as e:
