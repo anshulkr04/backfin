@@ -1244,7 +1244,10 @@ def get_corporate_filings():
             )
             """
         )
-        
+        category_list = [c.strip() for c in category.split(',') if c.strip()]
+        symbol_list = [s.strip() for s in symbol.split(',') if s.strip()]
+        isin_list = [i.strip() for i in isin.split(',') if i.strip()]
+
         # Order by date descending - most recent first
         query = query.order('date', desc=True)
         
@@ -1276,13 +1279,13 @@ def get_corporate_filings():
                 return jsonify({'message': 'Invalid end_date format. Use YYYY-MM-DD', 'status': 'error'}), 400
         
         # Apply additional filters if provided
-        if category:
-            query = query.eq('category', category)
-        if symbol:
-            query = query.eq('symbol', symbol)
-        if isin:
-            query = query.eq('isin', isin)
-        if category != 'Procedural/Administrative':  
+        if category_list:
+            query = query.in_('category', category_list)
+        if symbol_list:
+            query = query.in_('symbol', symbol_list)
+        if isin_list:
+            query = query.in_('isin', isin_list)
+        if not category_list or "Procedural/Administrative" not in category_list:
             query = query.neq('category', 'Procedural/Administrative')
 
         query = query.neq('category' , 'Error')
