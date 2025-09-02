@@ -521,6 +521,16 @@ def logout(current_user):
         logger.error(f"Logout error: {str(e)}")
         return jsonify({'message': f'Logout failed: {str(e)}'}), 500
 
+@app.route('/api/check_valid_token', methods=['POST', 'OPTIONS'])
+@auth_required
+def check_valid_token(current_user):
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    
+    return jsonify({'message': 'Token is valid!'}), 200
+
+
+
 @app.route('/api/user', methods=['GET', 'OPTIONS'])
 @auth_required
 def get_user(current_user):
