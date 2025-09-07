@@ -869,7 +869,7 @@ class NseScraper:
             company_investor_list = []
             securityid = ""
             newnsecode_exists = False
-            company_id = ""
+            company_id = None
             sentiment = "Neutral"  # FIXED: Initialize sentiment at the beginning
             
             # Validate ISIN format and check for newnsecode
@@ -900,6 +900,8 @@ class NseScraper:
             
             if check_for_negative_keywords(summary):
                 logger.info(f"Negative keyword found in announcement - skipping processing")
+                ai_summary = "Please refer to the original document provided."  
+
             # Process PDF only if it exists and newnsecode exists
             elif check_for_pdf(url):
                 if newnsecode_exists:  # FIXED: Now this will work correctly
