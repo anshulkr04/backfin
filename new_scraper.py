@@ -939,28 +939,25 @@ class BseScraper:
         # FIXED: Check if this is the first run by looking for the flag file (should NOT exist)
         is_first_run = not os.path.exists(self.first_run_flag_path)
         
-        if is_first_run:
-            logger.info("First run detected - processing all announcements")
-            # Create the flag file to mark that first run is complete
-            try:
-                os.makedirs(os.path.dirname(self.first_run_flag_path), exist_ok=True)
-                with open(self.first_run_flag_path, 'w') as f:
-                    f.write(str(datetime.now()))
-                logger.info("Created first run flag file")
-            except Exception as e:
-                logger.error(f"Failed to create first run flag file: {e}")
+        # if is_first_run:
+        #     logger.info("First run detected - processing all announcements")
+        #     # Create the flag file to mark that first run is complete
+        #     try:
+        #         os.makedirs(os.path.dirname(self.first_run_flag_path), exist_ok=True)
+        #         with open(self.first_run_flag_path, 'w') as f:
+        #             f.write(str(datetime.now()))
+        #         logger.info("Created first run flag file")
+        #     except Exception as e:
+        #         logger.error(f"Failed to create first run flag file: {e}")
             
-            # Process all announcements on first run
-            success = self.process_all_announcements()
+        #     # Process all announcements on first run
+        #     success = self.process_all_announcements()
             
             # Also process the latest announcement to send a WebSocket message
-            latest_success = self.processLatestAnnouncement()
-            
-            return success or latest_success
-        else:
-            logger.info("Incremental run - processing only the latest announcement")
-            # Process only the latest announcement on subsequent runs
-            return self.processLatestAnnouncement()
+        latest_success = self.processLatestAnnouncement()
+
+        return latest_success
+
 
 
 if __name__ == "__main__":

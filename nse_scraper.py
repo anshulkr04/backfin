@@ -1162,21 +1162,21 @@ class NseScraper:
             if is_first_run:
                 logger.info("First run detected - processing all announcements")
                 # Process all announcements on first run
-                success = self.process_all_announcements()
+                # success = self.process_all_announcements()
                 
-                if success:
-                    # Create the flag file to mark first run as complete
-                    try:
-                        with open(self.first_run_flag_path, 'w') as f:
-                            f.write(f"First run completed at {datetime.now().isoformat()}")
-                        logger.info("First run flag created")
-                    except Exception as e:
-                        logger.error(f"Error creating first run flag: {e}")
+                # if success:
+                #     # Create the flag file to mark first run as complete
+                #     try:
+                #         with open(self.first_run_flag_path, 'w') as f:
+                #             f.write(f"First run completed at {datetime.now().isoformat()}")
+                #         logger.info("First run flag created")
+                #     except Exception as e:
+                #         logger.error(f"Error creating first run flag: {e}")
                 
                 # Also process the latest announcement to send a WebSocket message
                 latest_success = self.processLatestAnnouncement()
-                
-                return success or latest_success
+
+                return latest_success
             else:
                 logger.info("Incremental run - processing only the latest announcement")
                 # Process only the latest announcement on subsequent runs
