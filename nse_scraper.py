@@ -855,10 +855,6 @@ class NseScraper:
             # Log the announcement being processed
             logger.info(f"Processing announcement: {summary[:100]}...")
             
-            # Check for negative keywords first
-            if check_for_negative_keywords(summary):
-                logger.info(f"Negative keyword found in announcement - skipping processing")
-                return None  # Skip this announcement entirely
             
             # Format company name if needed
             if isinstance(company_name, str) and company_name.endswith(" LTD"):
@@ -902,8 +898,10 @@ class NseScraper:
                 else:
                     logger.warning(f"Invalid ISIN format: {isin}")
             
+            if check_for_negative_keywords(summary):
+                logger.info(f"Negative keyword found in announcement - skipping processing")
             # Process PDF only if it exists and newnsecode exists
-            if check_for_pdf(url):
+            elif check_for_pdf(url):
                 if newnsecode_exists:  # FIXED: Now this will work correctly
                     logger.info(f"Processing PDF: {url}")
                     try:
@@ -927,17 +925,6 @@ class NseScraper:
             
             corp_id = str(uuid.uuid4())  # Generate a unique ID for the announcement
 
-            # Get company_id from Supabase - FIXED: properly extract the result
-            company_id = None
-            if supabase:
-                try:
-                    company_result = supabase.table("stocklistdata").select("company_id").eq("isin", isin).execute()
-                    if company_result.data and len(company_result.data) > 0:
-                        company_id = company_result.data[0].get("company_id")
-                    else:
-                        logger.warning(f"No company found for ISIN: {isin}")
-                except Exception as e:
-                    logger.error(f"Error fetching company_id: {e}")
             
             # Prepare data for upload - sentiment is guaranteed to be initialized here
             data = {
@@ -955,7 +942,7 @@ class NseScraper:
                 "sentiment": sentiment,
                 "company_id": company_id
             }
-            #Upload Investor Data
+            
             
 
             # FIXED: Safe JSON parsing for financial data

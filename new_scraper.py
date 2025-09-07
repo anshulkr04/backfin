@@ -729,11 +729,12 @@ class BseScraper:
             individual_investor_list = []
             company_investor_list = []
             num_pages = None
-            
+            sentiment = "Neutral"
+
             # Check for negative keywords
             if check_for_negative_keywords(bse_summary):
                 logger.info(f"Negative keyword found in announcement: {bse_summary}")
-                return False
+                
             elif check_for_pdf(pdf_file):
                 logger.info(f"Processing PDF: {pdf_file}")
                 category, ai_summary, headline, findata, individual_investor_list, company_investor_list, num_pages, sentiment = self.process_pdf(pdf_file)
