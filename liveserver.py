@@ -640,7 +640,7 @@ def get_watchlist(current_user):
 
         watchlist_meta = response.data
 
-        # Step 2: For each watchlist, get ISINs and category separately
+        # Step 2: For each watchlist, get ISINs and categories separately
         watchlists = []
         for entry in watchlist_meta:
             watchlist_id = entry['watchlistid']
@@ -654,7 +654,7 @@ def get_watchlist(current_user):
                 .is_('category', 'null') \
                 .execute()
 
-            # Get category (where isin is NULL)
+            # Get ALL categories (where isin is NULL) - not just the first one
             cat_response = supabase.table('watchlistdata') \
                 .select('category') \
                 .eq('watchlistid', watchlist_id) \
@@ -663,12 +663,14 @@ def get_watchlist(current_user):
                 .execute()
 
             isins = [row['isin'] for row in isin_response.data] if isin_response.data else []
-            category = cat_response.data[0]['category'] if cat_response.data else None
+            
+            # Extract all categories and filter out None values
+            categories = [row['category'] for row in cat_response.data if row['category'] is not None] if cat_response.data else []
 
             watchlists.append({
                 '_id': watchlist_id,
                 'watchlistName': watchlist_name,
-                'category': category,
+                'categories': categories,  # Return as array
                 'isin': isins
             })
 
@@ -677,7 +679,6 @@ def get_watchlist(current_user):
     except Exception as e:
         logger.error(f"Get watchlist error: {str(e)}")
         return jsonify({'message': f'Failed to retrieve watchlist: {str(e)}'}), 500
-
 
 @app.route('/api/watchlist', methods=['POST', 'OPTIONS'])
 @auth_required
@@ -725,7 +726,7 @@ def create_watchlist(current_user):
             # Add ISIN to watchlistdata
             watchlist_id = data.get('watchlist_id')
             isin = data.get('isin')
-            category = data.get('category')
+            categories = data.get('categories') or data.get('category')  # Support both 'categories' and 'category'
 
             if not watchlist_id:
                 return jsonify({'message': 'watchlist_id is required.'}), 400
@@ -744,52 +745,78 @@ def create_watchlist(current_user):
             if check.data:
                 return jsonify({'message': 'ISIN already exists in this watchlist!'}), 409
 
-            # First, if category is provided, update or insert the category row
-            if category:
-                # Check if category row exists
-                cat_check = supabase.table('watchlistdata').select('category') \
+            # Prepare rows to insert
+            rows_to_insert = []
+
+            # Handle categories (single or multiple)
+            if categories:
+                # Normalize categories to always be a list
+                if isinstance(categories, str):
+                    categories = [categories]
+                elif not isinstance(categories, list):
+                    return jsonify({'message': 'Categories must be a string or array of strings.'}), 400
+
+                # Remove duplicates while preserving order
+                unique_categories = []
+                for cat in categories:
+                    if cat not in unique_categories:
+                        unique_categories.append(cat)
+
+                # Get existing categories for this watchlist to avoid duplicates
+                existing_categories = supabase.table('watchlistdata').select('category') \
                     .eq('watchlistid', watchlist_id) \
                     .eq('userid', user_id) \
                     .is_('isin', 'null') \
                     .execute()
-                    
-                if cat_check.data:
-                    # Update existing category
-                    supabase.table('watchlistdata') \
-                        .update({'category': category}) \
-                        .eq('watchlistid', watchlist_id) \
-                        .eq('userid', user_id) \
-                        .is_('isin', 'null') \
-                        .execute()
+                
+                existing_cat_set = {row['category'] for row in existing_categories.data if row['category']}
+
+                # Add category rows (only new ones)
+                for category in unique_categories:
+                    if category and category not in existing_cat_set:
+                        rows_to_insert.append({
+                            'watchlistid': watchlist_id,
+                            'userid': user_id,
+                            'category': category,
+                            'isin': None
+                        })
+
+            # Add ISIN row (with null category) if ISIN is provided
+            if isin:
+                rows_to_insert.append({
+                    'watchlistid': watchlist_id,
+                    'userid': user_id,
+                    'isin': isin,
+                    'category': None
+                })
+
+            # Batch insert all rows in a single request
+            if rows_to_insert:
+                insert = supabase.table('watchlistdata').insert(rows_to_insert).execute()
+
+                # Check for error instead of status_code
+                if hasattr(insert, 'error') and insert.error:
+                    logger.error(f"Failed to add items to watchlist: {insert.error}")
+                    return jsonify({'message': 'Failed to add items to watchlist.'}), 500
+
+            # Prepare response
+            response_data = {
+                'message': 'Items added to watchlist successfully!',
+                'watchlist_id': watchlist_id
+            }
+
+            if isin:
+                response_data['isin'] = isin
+            
+            if categories:
+                # Return the categories that were actually processed
+                if isinstance(categories, list):
+                    response_data['categories'] = unique_categories
                 else:
-                    # Insert new category row
-                    supabase.table('watchlistdata').insert({
-                        'watchlistid': watchlist_id,
-                        'userid': user_id,
-                        'category': category,
-                        'isin': None
-                    }).execute()
+                    response_data['category'] = categories
 
-            # Then insert ISIN row (with null category)
-            insert = supabase.table('watchlistdata').insert({
-                'watchlistid': watchlist_id,
-                'userid': user_id,
-                'isin': isin,
-                'category': None
-            }).execute()
-
-            # Check for error instead of status_code
-            if hasattr(insert, 'error') and insert.error:
-                logger.error(f"Failed to add ISIN: {insert.error}")
-                return jsonify({'message': 'Failed to add ISIN to watchlist.'}), 500
-
-            logger.debug(f"ISIN {isin} added to watchlist {watchlist_id} for user {user_id}")
-            return jsonify({
-                'message': 'ISIN added to watchlist!',
-                'watchlist_id': watchlist_id,
-                'isin': isin,
-                'category': category
-            }), 201
+            logger.debug(f"Items added to watchlist {watchlist_id} for user {user_id}: ISIN={isin}, Categories={categories}")
+            return jsonify(response_data), 201
 
         else:
             return jsonify({'message': 'Invalid operation! Use "create" or "add_isin".'}), 400
@@ -797,7 +824,6 @@ def create_watchlist(current_user):
     except Exception as e:
         logger.error(f"Watchlist operation error: {str(e)}")
         return jsonify({'message': f'Failed to perform watchlist operation: {str(e)}'}), 500
-
 
 @app.route('/api/watchlist/<watchlist_id>/isin/<isin>', methods=['DELETE', 'OPTIONS'])
 @auth_required
@@ -1051,7 +1077,7 @@ def bulk_add_isins(current_user):
         # Required parameters
         watchlist_id = data.get('watchlist_id')
         isins = data.get('isins', [])
-        category = data.get('category')  # Optional
+        categories = data.get('categories') or data.get('category')  # Support both 'categories' and 'category'
 
         # Validate parameters
         if not watchlist_id:
@@ -1070,38 +1096,48 @@ def bulk_add_isins(current_user):
         if not wl_check.data:
             return jsonify({'message': 'Watchlist not found or unauthorized'}), 404
 
-        # Set category if provided
-        if category:
-            # Check if category row exists
-            cat_check = supabase.table('watchlistdata').select('category') \
+        # Prepare rows to insert (categories first, then ISINs)
+        rows_to_insert = []
+
+        # Handle categories (single or multiple)
+        if categories:
+            # Normalize categories to always be a list
+            if isinstance(categories, str):
+                categories = [categories]
+            elif not isinstance(categories, list):
+                return jsonify({'message': 'Categories must be a string or array of strings.'}), 400
+
+            # Remove duplicates while preserving order
+            unique_categories = []
+            for cat in categories:
+                if cat not in unique_categories:
+                    unique_categories.append(cat)
+
+            # Get existing categories for this watchlist to avoid duplicates
+            existing_categories = supabase.table('watchlistdata').select('category') \
                 .eq('watchlistid', watchlist_id) \
                 .eq('userid', user_id) \
                 .is_('isin', 'null') \
                 .execute()
-                
-            if cat_check.data:
-                # Update existing category
-                supabase.table('watchlistdata') \
-                    .update({'category': category}) \
-                    .eq('watchlistid', watchlist_id) \
-                    .eq('userid', user_id) \
-                    .is_('isin', 'null') \
-                    .execute()
-            else:
-                # Insert new category row
-                supabase.table('watchlistdata').insert({
-                    'watchlistid': watchlist_id,
-                    'userid': user_id,
-                    'category': category,
-                    'isin': None
-                }).execute()
+            
+            existing_cat_set = {row['category'] for row in existing_categories.data if row['category']}
+
+            # Add category rows (only new ones)
+            for category in unique_categories:
+                if category and category not in existing_cat_set:
+                    rows_to_insert.append({
+                        'watchlistid': watchlist_id,
+                        'userid': user_id,
+                        'category': category,
+                        'isin': None
+                    })
 
         # Track results
         successful_isins = []
         failed_isins = []
         duplicate_isins = []
         
-        # Process each ISIN individually
+        # Process each ISIN and prepare for batch insert
         for isin in isins:
             # Skip None or empty values
             if not isin:
@@ -1126,29 +1162,28 @@ def bulk_add_isins(current_user):
                 duplicate_isins.append(isin)
                 continue
             
-            # Insert ISIN row (with null category)
+            # Add ISIN to batch insert (will be inserted later)
+            rows_to_insert.append({
+                'watchlistid': watchlist_id,
+                'userid': user_id,
+                'isin': isin,
+                'category': None
+            })
+            successful_isins.append(isin)
+
+        # Batch insert all rows (categories and ISINs) in a single request
+        if rows_to_insert:
             try:
-                insert = supabase.table('watchlistdata').insert({
-                    'watchlistid': watchlist_id,
-                    'userid': user_id,
-                    'isin': isin,
-                    'category': None
-                }).execute()
+                insert = supabase.table('watchlistdata').insert(rows_to_insert).execute()
                 
                 # Check for errors
                 if hasattr(insert, 'error') and insert.error:
-                    failed_isins.append({
-                        'isin': isin, 
-                        'reason': f"Database error: {insert.error}"
-                    })
-                else:
-                    successful_isins.append(isin)
+                    logger.error(f"Failed to bulk insert items: {insert.error}")
+                    return jsonify({'message': 'Failed to add items to watchlist.'}), 500
                     
             except Exception as e:
-                failed_isins.append({
-                    'isin': isin, 
-                    'reason': str(e)
-                })
+                logger.error(f"Bulk insert error: {str(e)}")
+                return jsonify({'message': f'Failed to add items to watchlist: {str(e)}'}), 500
         
         # Get updated watchlist data
         # Get ISINs (where category is NULL)
@@ -1159,7 +1194,7 @@ def bulk_add_isins(current_user):
             .is_('category', 'null') \
             .execute()
 
-        # Get category (where isin is NULL)
+        # Get ALL categories (where isin is NULL)
         cat_response = supabase.table('watchlistdata') \
             .select('category') \
             .eq('watchlistid', watchlist_id) \
@@ -1174,15 +1209,17 @@ def bulk_add_isins(current_user):
             .execute()
             
         watchlist_name = name_response.data[0]['watchlistname'] if name_response.data else "Unknown"
-        isins = [row['isin'] for row in isin_response.data] if isin_response.data else []
-        category_value = cat_response.data[0]['category'] if cat_response.data else None
+        updated_isins = [row['isin'] for row in isin_response.data] if isin_response.data else []
+        
+        # Extract all categories and filter out None values
+        updated_categories = [row['category'] for row in cat_response.data if row['category'] is not None] if cat_response.data else []
         
         # Prepare watchlist object for response
         updated_watchlist = {
             '_id': watchlist_id,
             'watchlistName': watchlist_name,
-            'category': category_value,
-            'isin': isins
+            'categories': updated_categories,  # Return as array
+            'isin': updated_isins
         }
 
         # Construct result message
@@ -1192,14 +1229,24 @@ def bulk_add_isins(current_user):
         if failed_isins:
             result_message += f", {len(failed_isins)} failed"
 
-        logger.debug(f"Bulk add complete: {result_message}")
-        return jsonify({
+        # Prepare response
+        response_data = {
             'message': result_message,
             'successful': successful_isins,
             'duplicates': duplicate_isins,
             'failed': failed_isins,
             'watchlist': updated_watchlist
-        }), 200
+        }
+
+        if categories:
+            # Return the categories that were actually processed
+            if isinstance(categories, list):
+                response_data['categories'] = unique_categories if 'unique_categories' in locals() else categories
+            else:
+                response_data['category'] = categories
+
+        logger.debug(f"Bulk add complete: {result_message}")
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Bulk add ISINs error: {str(e)}")
