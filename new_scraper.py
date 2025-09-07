@@ -734,6 +734,8 @@ class BseScraper:
             # Check for negative keywords
             if check_for_negative_keywords(bse_summary):
                 logger.info(f"Negative keyword found in announcement: {bse_summary}")
+                num_pages = 0
+                ai_summary = "Please refer to the original document provided."  # No PDF processing
                 
             elif check_for_pdf(pdf_file):
                 logger.info(f"Processing PDF: {pdf_file}")
