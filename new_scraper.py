@@ -187,7 +187,7 @@ def announcements_are_equal(a1, a2):
         return False
         
     # Compare key fields that would indicate it's the same announcement
-    fields_to_compare = ['ATTACHMENTNAME' , 'NEWSID']
+    fields_to_compare = ['NEWSID']
     
     return all(a1.get(field) == a2.get(field) for field in fields_to_compare)
 
@@ -854,8 +854,8 @@ class BseScraper:
             logger.error(f"Unexpected error processing announcement: {e}")
             return False
 
-    def processLatestAnnouncement(self):
-        """Process the latest announcement and send to database and websocket"""
+    def processNewAnnouncements(self):
+        """Process ALL new announcements, not just the latest one"""
         try:
             # Use processing lock to prevent concurrent execution
             with self._processing_lock():
@@ -864,66 +864,93 @@ class BseScraper:
                     logger.warning("No announcements found")
                     return False
                     
-                latest_announcement = announcements[0]
+                # Load the last processed announcement
                 last_latest_announcement = load_latest_announcement()
-
-                if announcements_are_equal(latest_announcement, last_latest_announcement):
+                
+                # If no previous announcement saved, process only the latest one (first run)
+                if not last_latest_announcement:
+                    logger.info("No previous announcement found, processing latest announcement only")
+                    data = self.process_data(announcements[0])
+                    if data:
+                        save_latest_announcement(announcements[0])
+                        self._send_to_api_if_needed(data)
+                    return True
+                
+                # Find all new announcements
+                new_announcements = []
+                last_newsid = last_latest_announcement.get('NEWSID')
+                
+                for announcement in announcements:
+                    current_newsid = announcement.get('NEWSID')
+                    
+                    # Stop when we reach the last processed announcement
+                    if current_newsid == last_newsid:
+                        break
+                        
+                    new_announcements.append(announcement)
+                
+                if not new_announcements:
                     logger.info("No new announcements to process")
                     return False
-                else:
-                    logger.info("New announcement found, processing...")
-                    data = self.process_data(latest_announcement)
+                
+                logger.info(f"Found {len(new_announcements)} new announcements to process")
+                
+                # Process new announcements in reverse order (oldest first)
+                # This ensures proper chronological processing
+                new_announcements.reverse()
+                
+                processed_count = 0
+                for i, announcement in enumerate(new_announcements):
+                    logger.info(f"Processing new announcement {i+1}/{len(new_announcements)}")
                     
-                    if data:  # Check if process_data returned valid data
-                        save_latest_announcement(latest_announcement)
-
-                        if data.get("category") == "Procedural/Administrative":
-                            logger.info("Announcement is Procedural/Administrative, skipping API call")
-                            return True
+                    data = self.process_data(announcement)
+                    if data:
+                        processed_count += 1
+                        self._send_to_api_if_needed(data)
                         
-                        # Send to API endpoint (which will handle websocket communication)
-                        try:
-                            post_url = "http://localhost:8000/api/insert_new_announcement"  # BSE
-                            # For NSE, use: API_ENDPOINT if ENABLE_WEBSOCKET_API else None
-                            data["is_fresh"] = True  # Mark as fresh for broadcasting
-                            res = requests.post(url=post_url, json=data)
-                            if res.status_code >= 200 and res.status_code < 300:
-                                logger.info(f"Sent to API for websocket: Status code {res.status_code}")
-                            else:
-                                logger.error(f"API returned error: {res.status_code}, {res.text}")
-                        except Exception as e:
-                            logger.error(f"Error sending to API: {e}")
+                    # Small delay between processing announcements
+                    time.sleep(0.5)
+                
+                # Save the newest announcement as the latest processed
+                if new_announcements:
+                    # Save the newest one (last in reversed list)
+                    newest_announcement = new_announcements[-1]
+                    save_latest_announcement(newest_announcement)
+                    logger.info(f"Processed {processed_count} new announcements")
+                    
+                return processed_count > 0
                             
-                        return True
-                    else:
-                        logger.warning("Failed to process latest announcement")
-                        return False
         except BlockingIOError:
             logger.info("Skipping this run - another instance is already processing")
             return False
         except Exception as e:
-            logger.error(f"Error in processLatestAnnouncement: {e}")
+            logger.error(f"Error in processNewAnnouncements: {e}")
             return False
-    
-    def process_all_announcements(self):
-        """Process all announcements"""
-        announcements = self.fetch_data()
-        if not announcements:
-            logger.warning("No announcements found")
-            return False
-            
-        # Process all announcements except the latest one (which will be handled by processLatestAnnouncement)
-        for announcement in announcements[1:]:
-            self.process_data(announcement)
-            time.sleep(1)  # Small delay to avoid overwhelming the API
-        return True
-    
+
+    def _send_to_api_if_needed(self, data):
+        """Helper method to send data to API if needed"""
+        if data.get("category") == "Procedural/Administrative":
+            logger.info("Announcement is Procedural/Administrative, skipping API call")
+            return
+        
+        # Send to API endpoint (which will handle websocket communication)
+        try:
+            post_url = "http://localhost:8000/api/insert_new_announcement"  # BSE
+            data["is_fresh"] = True  # Mark as fresh for broadcasting
+            res = requests.post(url=post_url, json=data)
+            if res.status_code >= 200 and res.status_code < 300:
+                logger.info(f"Sent to API for websocket: Status code {res.status_code}")
+            else:
+                logger.error(f"API returned error: {res.status_code}, {res.text}")
+        except Exception as e:
+            logger.error(f"Error sending to API: {e}")
+
     def run_continuous(self, check_interval=10):
-        """Run the scraper in continuous mode, checking for new announcements at regular intervals"""
+        """Updated continuous mode to use the new logic"""
         while True:
             try:
-                if self.processLatestAnnouncement():
-                    logger.info("New announcement processed successfully")
+                if self.processNewAnnouncements():  # Changed from processLatestAnnouncement
+                    logger.info("New announcements processed successfully")
                 else:
                     logger.info("No new announcements to process")
                     
@@ -931,32 +958,15 @@ class BseScraper:
             except Exception as e:
                 logger.error(f"Error in continuous mode: {e}")
                 time.sleep(check_interval)
-    
+
     def run(self):
-        """Main method to run the scraper - compatible with liveserver.py"""
+        """Updated main method to use the new logic"""
         logger.info("Starting BSE scraper run")
         
-        # FIXED: Check if this is the first run by looking for the flag file (should NOT exist)
-        is_first_run = not os.path.exists(self.first_run_flag_path)
+        # Process new announcements (this will handle both first run and subsequent runs)
+        success = self.processNewAnnouncements()  # Changed from processLatestAnnouncement
         
-        # if is_first_run:
-        #     logger.info("First run detected - processing all announcements")
-        #     # Create the flag file to mark that first run is complete
-        #     try:
-        #         os.makedirs(os.path.dirname(self.first_run_flag_path), exist_ok=True)
-        #         with open(self.first_run_flag_path, 'w') as f:
-        #             f.write(str(datetime.now()))
-        #         logger.info("Created first run flag file")
-        #     except Exception as e:
-        #         logger.error(f"Failed to create first run flag file: {e}")
-            
-        #     # Process all announcements on first run
-        #     success = self.process_all_announcements()
-            
-            # Also process the latest announcement to send a WebSocket message
-        latest_success = self.processLatestAnnouncement()
-
-        return latest_success
+        return success
 
 
 
