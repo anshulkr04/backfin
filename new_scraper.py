@@ -25,6 +25,7 @@ from prompt import *
 from invanl import uploadInvestor
 import fcntl  
 import contextlib
+import queue
 
 # Configure logging
 logging.basicConfig(
@@ -199,7 +200,15 @@ class RateLimitedGeminiClient:
             self.rpm_limit = rpm_limit
             self.request_timestamps = deque()
             self.max_retries = max_retries
-            logger.info("Gemini client initialized successfully")
+            
+            # Add queue system for rate limiting
+            self.request_queue = queue.Queue()
+            self.processing_queue = False
+            self.queue_processor_thread = None
+            self.processed_requests = {}  # Store completed requests by ID
+            self.failed_requests = {}     # Store failed requests by ID
+            
+            logger.info("Gemini client initialized successfully with queue system")
         except Exception as e:
             logger.error(f"Failed to initialize Gemini client: {e}")
             self.client = None
@@ -220,35 +229,160 @@ class RateLimitedGeminiClient:
 
         self.request_timestamps.append(time.time())
 
-    def generate_content(self, contents , config):
-        """Rate-limited wrapper for generate_content with retries"""
+    def _process_request_queue(self):
+        """Background thread to process queued requests"""
+        while self.processing_queue:
+            try:
+                # Get request from queue with timeout
+                request_item = self.request_queue.get(timeout=5)
+                if request_item is None:  # Shutdown signal
+                    break
+                
+                request_id, contents, config, timestamp = request_item
+                
+                # Check if request is too old (older than 30 minutes)
+                if time.time() - timestamp > 1800:  # 30 minutes
+                    logger.warning(f"Dropping old request {request_id}")
+                    self.failed_requests[request_id] = Exception("Request timeout - too old")
+                    self.request_queue.task_done()
+                    continue
+                
+                try:
+                    # Process the request
+                    logger.info(f"Processing queued request {request_id}")
+                    self._enforce_rate_limit()
+                    
+                    model = "gemini-2.5-flash-lite-preview-06-17"
+                    result = self.client.models.generate_content(
+                        model=model, 
+                        contents=contents, 
+                        config=config
+                    )
+                    
+                    # Store successful result
+                    self.processed_requests[request_id] = result
+                    logger.info(f"Successfully processed queued request {request_id}")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing queued request {request_id}: {e}")
+                    self.failed_requests[request_id] = e
+                
+                self.request_queue.task_done()
+                
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.error(f"Error in queue processor: {e}")
+                time.sleep(1)
+
+    def _start_queue_processor(self):
+        """Start the background queue processor if not already running"""
+        if not self.processing_queue:
+            self.processing_queue = True
+            self.queue_processor_thread = threading.Thread(
+                target=self._process_request_queue, 
+                daemon=True
+            )
+            self.queue_processor_thread.start()
+            logger.info("Started background queue processor")
+
+    def _stop_queue_processor(self):
+        """Stop the background queue processor"""
+        if self.processing_queue:
+            self.processing_queue = False
+            self.request_queue.put(None)  # Signal to stop
+            if self.queue_processor_thread:
+                self.queue_processor_thread.join(timeout=10)
+            logger.info("Stopped background queue processor")
+
+    def generate_content(self, contents, config, use_queue=True, timeout=300):
+        """Rate-limited wrapper for generate_content with queue support"""
         if not self.client:
             raise Exception("Gemini client not initialized")
-        model = "gemini-2.5-flash-lite-preview-06-17"
-            
-        for attempt in range(1, self.max_retries + 1):
+        
+        # Try immediate processing first
+        if len(self.request_timestamps) < self.rpm_limit:
             try:
                 self._enforce_rate_limit()
-                return self.client.models.generate_content(model=model, contents=contents, config = config)
+                model = "gemini-2.5-flash-lite-preview-06-17"
+                return self.client.models.generate_content(model=model, contents=contents, config=config)
             except Exception as e:
-                if attempt == self.max_retries:
-                    logger.error(f"Failed to generate content after {self.max_retries} attempts: {e}")
+                logger.warning(f"Immediate processing failed: {e}")
+                if not use_queue:
                     raise
-                logger.warning(f"Attempt {attempt} failed: {e}. Retrying...")
-                time.sleep(2 * attempt)  # Exponential backoff
+        
+        # If immediate processing not possible or failed, use queue
+        if use_queue:
+            return self._queue_and_wait_for_result(contents, config, timeout)
+        else:
+            # Fall back to original retry logic
+            for attempt in range(1, self.max_retries + 1):
+                try:
+                    self._enforce_rate_limit()
+                    model = "gemini-2.5-flash-lite-preview-06-17"
+                    return self.client.models.generate_content(model=model, contents=contents, config=config)
+                except Exception as e:
+                    if attempt == self.max_retries:
+                        logger.error(f"Failed to generate content after {self.max_retries} attempts: {e}")
+                        raise
+                    logger.warning(f"Attempt {attempt} failed: {e}. Retrying...")
+                    time.sleep(2 * attempt)
 
-    def chats(self):
-        """Rate-limited access to the chats API"""
-        if not self.client:
-            raise Exception("Gemini client not initialized")
-        return RateLimitedChatWrapper(self)
+    def _queue_and_wait_for_result(self, contents, config, timeout=300):
+        """Queue request and wait for result"""
+        # Start queue processor if not running
+        self._start_queue_processor()
+        
+        # Generate unique request ID
+        request_id = f"req_{int(time.time())}_{hash(str(contents))}"
+        
+        # Add to queue
+        queue_item = (request_id, contents, config, time.time())
+        self.request_queue.put(queue_item)
+        
+        queue_size = self.request_queue.qsize()
+        estimated_wait = (queue_size * 60) / self.rpm_limit  # Rough estimate
+        
+        logger.info(f"Added request {request_id} to queue. Queue size: {queue_size}, Estimated wait: {estimated_wait:.1f} minutes")
+        
+        # Wait for result with timeout
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            # Check if request completed successfully
+            if request_id in self.processed_requests:
+                result = self.processed_requests.pop(request_id)
+                logger.info(f"Retrieved result for request {request_id}")
+                return result
+            
+            # Check if request failed
+            if request_id in self.failed_requests:
+                error = self.failed_requests.pop(request_id)
+                logger.error(f"Request {request_id} failed: {error}")
+                raise error
+            
+            # Wait a bit before checking again
+            time.sleep(5)
+        
+        # Timeout reached
+        logger.error(f"Timeout waiting for request {request_id}")
+        raise Exception(f"Timeout waiting for queued request {request_id}")
 
-    @property
-    def files(self):
-        """Expose the original client's .files attribute"""
-        if not self.client:
-            raise Exception("Gemini client not initialized")
-        return self.client.files
+    def get_queue_status(self):
+        """Get current queue status"""
+        queue_size = self.request_queue.qsize() if hasattr(self, 'request_queue') else 0
+        estimated_wait = (queue_size * 60) / self.rpm_limit if queue_size > 0 else 0
+        
+        return {
+            "queue_size": queue_size,
+            "estimated_wait_minutes": estimated_wait,
+            "processing": self.processing_queue,
+            "recent_requests": len(self.request_timestamps)
+        }
+
+    def __del__(self):
+        """Cleanup on destruction"""
+        if hasattr(self, 'processing_queue'):
+            self._stop_queue_processor()
 
 
 class RateLimitedChatWrapper:
@@ -558,8 +692,69 @@ class BseScraper:
                 except Exception as e:
                     logger.warning(f"Failed to delete temporary file {filepath}: {e}")
 
+    # def ai_process(self, filename):
+    #     """Process PDF with AI, with proper error handling"""
+    #     if not filename:
+    #         logger.error("No valid filename provided for AI processing")
+    #         return "Error", "No valid filename provided", "", "", [], [], "Neutral"
+            
+    #     if not os.path.exists(filename):
+    #         logger.error(f"File not found: {filename}")
+    #         return "Error", "File not found", "", "", [], [], "Neutral"
+            
+    #     # Handle case where Gemini client failed to initialize
+    #     if not genai_client:
+    #         logger.error("Cannot process file: Gemini client not initialized")
+    #         return "Procedural/Administrative", "AI processing unavailable", "", "", [], [], "Neutral"
+
+    #     uploaded_file = None
+        
+    #     try:
+    #         logger.info(f"Uploading file: {filename}")
+    #         # Upload the PDF file
+    #         uploaded_file = genai_client.files.upload(file=filename)
+            
+    #         # Generate content with structured output
+    #         response = genai_client.generate_content(
+    #             contents=[all_prompt, uploaded_file],
+    #             config = {
+    #                 "response_mime_type": "application/json",
+    #                 "response_schema": list[StrucOutput]
+    #             },
+    #         )
+            
+    #         if not hasattr(response, 'text'):
+    #             logger.error("AI response missing text attribute")
+    #             return "Error", "AI processing failed: invalid response format", "", "", [], [], "Neutral"
+                
+    #         # Parse JSON response
+    #         summary = json.loads(response.text.strip())
+            
+    #         # Extract all fields from the summary
+    #         try:
+    #             category_text = summary[0]["category"]
+    #             headline = summary[0]["headline"]
+    #             summary_text = summary[0]["summary"]
+    #             financial_data = summary[0]["findata"]
+    #             individual_investor_list = summary[0]["individual_investor_list"]
+    #             company_investor_list = summary[0]["company_investor_list"]
+    #             sentiment = summary[0]["sentiment"]
+                
+    #             logger.info(f"AI processing completed successfully for {filename}")
+    #             logger.info(f"Category: {category_text}")
+    #             return category_text, summary_text, headline, financial_data, individual_investor_list, company_investor_list, sentiment
+    #         except (IndexError, KeyError) as e:
+    #             logger.error(f"Failed to extract fields from AI response: {e}")
+    #             return "Error", "Failed to extract fields from AI response", "", "", [], [], "Neutral"
+                
+    #     except json.JSONDecodeError as e:
+    #         logger.error(f"Failed to parse JSON from AI response: {e}")
+    #         return "Error", "Failed to parse AI response", "", "", [], [], "Neutral"
+    #     except Exception as e:
+    #         logger.error(f"Error in AI processing: {e}")
+    #         return "Error", f"Error processing file: {str(e)}", "", "", [], [], "Neutral"
     def ai_process(self, filename):
-        """Process PDF with AI, with proper error handling"""
+        """Process PDF with AI using queue system for rate limiting"""
         if not filename:
             logger.error("No valid filename provided for AI processing")
             return "Error", "No valid filename provided", "", "", [], [], "Neutral"
@@ -568,7 +763,6 @@ class BseScraper:
             logger.error(f"File not found: {filename}")
             return "Error", "File not found", "", "", [], [], "Neutral"
             
-        # Handle case where Gemini client failed to initialize
         if not genai_client:
             logger.error("Cannot process file: Gemini client not initialized")
             return "Procedural/Administrative", "AI processing unavailable", "", "", [], [], "Neutral"
@@ -577,16 +771,22 @@ class BseScraper:
         
         try:
             logger.info(f"Uploading file: {filename}")
-            # Upload the PDF file
             uploaded_file = genai_client.files.upload(file=filename)
             
-            # Generate content with structured output
+            # Check queue status before processing
+            queue_status = genai_client.get_queue_status()
+            if queue_status["queue_size"] > 0:
+                logger.info(f"Queue status: {queue_status['queue_size']} items, ~{queue_status['estimated_wait_minutes']:.1f} min wait")
+            
+            # Generate content with queue support (timeout of 10 minutes)
             response = genai_client.generate_content(
                 contents=[all_prompt, uploaded_file],
-                config = {
+                config={
                     "response_mime_type": "application/json",
                     "response_schema": list[StrucOutput]
                 },
+                use_queue=True,
+                timeout=600  # 10 minutes timeout
             )
             
             if not hasattr(response, 'text'):
