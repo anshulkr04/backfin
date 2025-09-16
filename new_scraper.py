@@ -379,6 +379,19 @@ class RateLimitedGeminiClient:
             "recent_requests": len(self.request_timestamps)
         }
 
+    @property
+    def files(self):
+        """Expose the original client's .files attribute"""
+        if not self.client:
+            raise Exception("Gemini client not initialized")
+        return self.client.files
+
+    def chats(self):
+        """Rate-limited access to the chats API"""
+        if not self.client:
+            raise Exception("Gemini client not initialized")
+        return RateLimitedChatWrapper(self)
+
     def __del__(self):
         """Cleanup on destruction"""
         if hasattr(self, 'processing_queue'):
