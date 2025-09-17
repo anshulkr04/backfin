@@ -887,7 +887,6 @@ class NseScraper:
                                 if newbsecode:  # Check if newbsecode exists and is not null/empty
                                     newnsecode_exists = False  # FIXED: Set to True when found
                                     logger.info(f"Found newbsecode for ISIN {isin}: {newbsecode}")
-                                    save_latest_announcement(announcement)   
                                     return
                                 else:
                                     logger.info(f"No newbsecode found for ISIN {isin}")
