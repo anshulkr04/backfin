@@ -193,7 +193,7 @@ def announcements_are_equal(a1, a2):
 
 
 class RateLimitedGeminiClient:
-    def __init__(self, api_key, rpm_limit=15, max_retries=3):
+    def __init__(self, api_key, rpm_limit=4000, max_retries=3):
         try:
             self.client = genai.Client(api_key=api_key)
             self.rpm_limit = rpm_limit
@@ -755,7 +755,7 @@ class BseScraper:
             # Validate ISIN format 
             if not isin or isin == "N/A" or (len(isin) > 3 and isin[2] != "E"):
                 logger.warning(f"Invalid ISIN: {isin} for scrip_id {scrip_id}")
-                return False
+                # return False
 
             # Get company_id from Supabase - FIXED: properly extract the result
             company_id = None
