@@ -379,8 +379,8 @@ def extract_symbol(url):
     
     return None
 
-def get_pdf_page_count(filepath):
-    """Get the number of pages in a PDF file"""
+def get_pdf_page_count(filepath, trim_if_large=False, max_pages=200, keep_pages=150):
+    """Get the number of pages in a PDF file and optionally trim if too large"""
     if not PDF_SUPPORT:
         logger.warning("PyPDF2 not installed, cannot count PDF pages")
         return None
@@ -390,9 +390,28 @@ def get_pdf_page_count(filepath):
             pdf_reader = PyPDF2.PdfReader(file)
             page_count = len(pdf_reader.pages)
             logger.info(f"PDF has {page_count} pages")
-            return page_count
+
+        # If trimming is requested and page count exceeds threshold
+        if trim_if_large and page_count > max_pages:
+            logger.info(f"Trimming {filepath}: keeping only first {keep_pages} pages")
+            temp_file = filepath + ".tmp"
+            writer = PyPDF2.PdfWriter()
+
+            for i in range(min(keep_pages, page_count)):
+                writer.add_page(pdf_reader.pages[i])
+
+            with open(temp_file, "wb") as f:
+                writer.write(f)
+
+            os.replace(temp_file, filepath)  # overwrite safely
+            logger.info(f"Trimmed {filepath} successfully")
+
+            return keep_pages  # new page count
+
+        return page_count
+
     except Exception as e:
-        logger.error(f"Error counting PDF pages: {e}")
+        logger.error(f"Error counting/trimming PDF pages: {e}")
         return None
     
 
@@ -529,10 +548,10 @@ class BseScraper:
                 # Get page count first
                 num_pages = get_pdf_page_count(filepath)
                 
-                # Check page limit before AI processing
-                if num_pages and num_pages > max_pages:
-                    logger.warning(f"PDF has too many pages ({num_pages}), skipping AI processing")
-                    return "Procedural/Administrative", f"PDF too large ({num_pages} pages)", "", "", [], [], num_pages, "Neutral"
+                # # Check page limit before AI processing
+                # if num_pages and num_pages > max_pages:
+                #     logger.warning(f"PDF has too many pages ({num_pages}), skipping AI processing")
+                #     return "Procedural/Administrative", f"PDF too large ({num_pages} pages)", "", "", [], [], num_pages, "Neutral"
                 
                 category, ai_summary, headline, financial_data, individual_investor_list, company_investor_list, sentiment = self.ai_process(filepath)
                 
