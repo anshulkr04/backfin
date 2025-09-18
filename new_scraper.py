@@ -756,7 +756,8 @@ class BseScraper:
                 num_pages = 0
                 ai_summary = "Please refer to the original document provided."  # No PDF processing
                 
-            elif check_for_pdf(pdf_file):
+            # elif check_for_pdf(pdf_file):
+            else :
                 logger.info(f"Processing PDF: {pdf_file}")
                 category, ai_summary, headline, findata, individual_investor_list, company_investor_list, num_pages, sentiment = self.process_pdf(pdf_file)
                 if ai_summary:
