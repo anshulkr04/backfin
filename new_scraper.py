@@ -841,27 +841,53 @@ class BseScraper:
             
             # Only upload to Supabase if we have a connection
             if supabase:
-                # Upload to Supabase with retries
+                inserted = False
+                # Retry only the insert operation
                 for attempt in range(1, self.max_retries + 1):
                     try:
                         response = supabase.table("corporatefilings").insert(data).execute()
-                        logger.info(f"Data uploaded to Supabase for {scrip_id}")
-                        if(individual_investor_list or company_investor_list):
-                            uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
-                            logger.info(f"Uploading investor data for corp_id: {corp_id}")
-                            
-                        logger.info(f"Investor data uploaded for corp_id: {corp_id}")
+                        logger.info(f"Inserted data to Supabase for {scrip_id} (attempt {attempt})")
+                        inserted = True
                         break
                     except Exception as e:
-                        logger.error(f"Error uploading to Supabase (attempt {attempt}/{self.max_retries}): {e}")
-                        
+                        err_text = str(e)
+                        logger.error(f"Error inserting to Supabase (attempt {attempt}/{self.max_retries}): {err_text}")
+
+                        # If duplicate primary-key, stop retrying — row already exists
+                        if "duplicate key" in err_text or "23505" in err_text:
+                            logger.warning(f"Duplicate key for corp_id {corp_id} — assuming row already exists, stopping insert retries.")
+                            inserted = True  # mark as present so investor upload will run (or you can choose not to)
+                            break
+
+                        # Otherwise treat as transient and retry
                         if attempt < self.max_retries:
-                            wait_time = 5  # Fixed 5-second wait for consistency
-                            logger.info(f"Retrying upload in {wait_time} seconds...")
+                            wait_time = 5
+                            logger.info(f"Retrying insert in {wait_time} seconds...")
                             time.sleep(wait_time)
                         else:
-                            logger.error(f"Failed to upload after {self.max_retries} attempts")
-                
+                            logger.error(f"Failed to insert after {self.max_retries} attempts")
+
+                # Only attempt investor upload if the row exists or was inserted just now
+                if inserted and (individual_investor_list or company_investor_list):
+                    # Isolate investor uploads so errors here don't trigger insert retries
+                    inv_attempts = 3
+                    for inv_try in range(1, inv_attempts + 1):
+                        try:
+                            uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
+                            logger.info(f"Uploaded investor data for corp_id: {corp_id}")
+                            break
+                        except Exception as ie:
+                            logger.error(f"Error uploading investor data (attempt {inv_try}/{inv_attempts}): {ie}")
+                            if inv_try < inv_attempts:
+                                time.sleep(2)
+                            else:
+                                logger.error(f"Failed to upload investor data after {inv_attempts} attempts for corp_id {corp_id}")
+                else:
+                    if not inserted:
+                        logger.warning("Skipping investor upload because insert failed and row is not present.")
+                    else:
+                        logger.info("No investor data to upload.")
+
                 # Upload financial data only if we have meaningful data
                 if any([period, sales_current, sales_previous_year, pat_current, pat_previous_year]):
                     safely_upload_financial_data(supabase, financial_data, symbol, isin, self.max_retries)
@@ -869,7 +895,6 @@ class BseScraper:
             else:
                 logger.warning("Supabase not connected, skipping database upload")
 
-            return data 
                         
         except Exception as e:
             logger.error(f"Unexpected error processing announcement: {e}")
