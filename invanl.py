@@ -81,6 +81,9 @@ def uploadInvestor(list_of_investors, list_of_institutions, corp_id,saved_price)
         bool: True if successful, False otherwise
     """
     try:
+        if(saved_price is None):
+            saved_price = 0
+        
         logger.info(f"Starting uploadInvestor with {len(list_of_investors)} investors and {len(list_of_institutions)} institutions")
         logger.info(f"Corporation ID: {corp_id}")
 
