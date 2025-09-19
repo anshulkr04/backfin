@@ -709,10 +709,6 @@ class BseScraper:
     def process_data(self, announcement):
         """Process a single announcement with comprehensive error handling"""
         try:
-             # Defensive validation: ensure announcement is a dict
-            if announcement is None or not isinstance(announcement, dict):
-                logger.error("Invalid announcement passed to process_data: %r", announcement)
-                return False
             # Extract and validate announcement data
             scrip_id = announcement.get("SCRIP_CD")
             bse_summary = announcement.get("HEADLINE", "")
