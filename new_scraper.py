@@ -426,7 +426,7 @@ except Exception as e:
 
 
 class BseScraper:
-    def __init__(self, prev_date, to_date, max_retries=10, request_timeout=30):
+    def __init__(self, prev_date, to_date, max_retries=50, request_timeout=30):
         self.url = "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w"
         self.params = {
             "pageno": 1,
@@ -534,7 +534,8 @@ class BseScraper:
                     return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], [], None, "Neutral"
                 except requests.exceptions.RequestException as e:
                     logger.error(f"Error downloading PDF (attempt {attempt}/{self.max_retries}): {e}")
-                
+                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], [], None, "Neutral"
+
                 if attempt < self.max_retries:
                     wait_time = 5  # Fixed 5-second wait as requested
                     logger.info(f"Retrying download in {wait_time} seconds...")
