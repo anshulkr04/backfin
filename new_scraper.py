@@ -895,6 +895,8 @@ class BseScraper:
 
             else:
                 logger.warning("Supabase not connected, skipping database upload")
+            
+            return True
 
                         
         except Exception as e:
