@@ -873,7 +873,7 @@ class BseScraper:
                     inv_attempts = 3
                     for inv_try in range(1, inv_attempts + 1):
                         try:
-                            uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
+                            uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id, saved_price=None)
                             logger.info(f"Uploaded investor data for corp_id: {corp_id}")
                             break
                         except Exception as ie:
