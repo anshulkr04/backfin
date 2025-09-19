@@ -426,7 +426,7 @@ except Exception as e:
 
 
 class BseScraper:
-    def __init__(self, prev_date, to_date, max_retries=3, request_timeout=30):
+    def __init__(self, prev_date, to_date, max_retries=10, request_timeout=30):
         self.url = "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w"
         self.params = {
             "pageno": 1,
@@ -756,18 +756,18 @@ class BseScraper:
                 num_pages = 0
                 ai_summary = "Please refer to the original document provided."  # No PDF processing
                 
-            # elif check_for_pdf(pdf_file):
-            else :
+            elif check_for_pdf(pdf_file):
+            # else :
                 logger.info(f"Processing PDF: {pdf_file}")
                 category, ai_summary, headline, findata, individual_investor_list, company_investor_list, num_pages, sentiment = self.process_pdf(pdf_file)
                 if ai_summary:
                     ai_summary = remove_markdown_tags(ai_summary)
                     ai_summary = clean_summary(ai_summary)
             
-            # Skip if PDF has too many pages (already handled in process_pdf, but double-check)
-            if num_pages and num_pages > 200:
-                logger.warning(f"PDF has too many pages ({num_pages}), skipping")
-                return False
+            # # Skip if PDF has too many pages (already handled in process_pdf, but double-check)
+            # if num_pages and num_pages > 200:
+            #     logger.warning(f"PDF has too many pages ({num_pages}), skipping")
+            #     return False
             
             # Get ISIN
             isin = self.get_isin(scrip_id)
