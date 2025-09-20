@@ -26,7 +26,6 @@ from invanl import uploadInvestor
 import fcntl  
 import contextlib
 import sqlite3
-from zoneinfo import ZoneInfo
 
 # Configure logging
 logging.basicConfig(
@@ -1121,7 +1120,7 @@ class BseScraper:
 
 
 if __name__ == "__main__":
-    today = datetime.now(ZoneInfo("Asia/Kolkata")).strftime('%Y%m%d')
+    today = datetime.today().strftime('%Y%m%d')
     scraper = BseScraper(today, today)
     
     try:
