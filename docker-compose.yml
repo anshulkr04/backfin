@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  backfin:
+    image: backfin
+    container_name: backfin
+    environment:
+      - TZ=Asia/Kolkata
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    ports:
+      - "8000:8000"
+    command: >
+      gunicorn --worker-class=eventlet --workers=1 --bind=0.0.0.0:8000 --timeout=120 liveserver:app
