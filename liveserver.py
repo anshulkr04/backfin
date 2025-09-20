@@ -101,29 +101,30 @@ def handle_error(error):
 
 @socketio.on('join')
 def handle_join(data):
-    """Handle client joining a specific room with improved validation"""
+    """Only allow joining the global 'all' room."""
     client_id = request.sid
-    
-    # Validate room parameter
+
     if not isinstance(data, dict) or 'room' not in data:
         logger.warning(f"Invalid join request from {client_id}: missing 'room' parameter")
         emit('status', {'message': 'Invalid request: missing room parameter', 'error': True}, room=client_id)
         return
-        
+
     room = data['room']
-    
-    # Validate room name
-    if not room or not isinstance(room, str):
-        logger.warning(f"Invalid join request from {client_id}: invalid room name")
+    if not isinstance(room, str):
         emit('status', {'message': 'Invalid request: invalid room name', 'error': True}, room=client_id)
         return
-        
-    # Sanitize room name (prevent injection)
-    room = room.strip()[:50]  # Limit length and strip whitespace
-    
-    logger.info(f"Client {client_id} joined room: {room}")
-    socketio.server.enter_room(client_id, room)
-    emit('status', {'message': f'Joined room: {room}'}, room=client_id)
+
+    room = room.strip()[:50]
+
+    # Only allow the global 'all' room
+    if room != 'all':
+        logger.warning(f"Client {client_id} attempted to join forbidden room: {room}")
+        emit('status', {'message': 'Only joining global room allowed', 'error': True}, room=client_id)
+        return
+
+    socketio.server.enter_room(client_id, 'all')
+    logger.info(f"Client {client_id} joined room: all")
+    emit('status', {'message': 'Joined room: all'}, room=client_id)
 
 @socketio.on('leave')
 def handle_leave(data):
@@ -2079,7 +2080,7 @@ def insert_new_announcement():
         }
 
         logger.info(f"Broadcasting: {new_announcement}")
-        socketio.emit('new_announcement', new_announcement)
+        socketio.emit('new_announcement', new_announcement, room='all')
         isin = data.get('isin')
         category = data.get('category')
         corp_id = data.get('corp_id')
