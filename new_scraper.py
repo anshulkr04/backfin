@@ -1,7 +1,7 @@
 import requests
 import os
 import logging
-import time
+import time 
 import json
 from google import genai
 from dotenv import load_dotenv
@@ -11,7 +11,7 @@ from supabase import create_client, Client
 from urllib.parse import urlparse
 import tempfile
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import threading
 from pathlib import Path
@@ -25,6 +25,7 @@ from prompt import *
 from invanl import uploadInvestor
 import fcntl  
 import contextlib
+import sqlite3
 
 # Configure logging
 logging.basicConfig(
@@ -49,6 +50,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY2")
 if not (SUPABASE_URL and SUPABASE_KEY):
     logger.error("Missing Supabase credentials")
     logger.warning("Will operate in limited mode without Supabase credentials")
+
+
 
 
 # Initialize Supabase client
@@ -145,6 +148,96 @@ def get_data_dir():
     data_dir = Path(__file__).parent / "data"
     os.makedirs(data_dir, exist_ok=True)
     return data_dir
+
+
+LOCAL_DB_PATH = get_data_dir() / "bse_raw.db"
+
+def init_local_db(db_path=LOCAL_DB_PATH):
+    db_path = str(db_path)
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)  # autocommit off; we'll use explicit transactions
+    try:
+        # Use WAL for safer concurrency
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS raw_responses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fetched_at TEXT NOT NULL,
+                url TEXT,
+                params TEXT,
+                raw_json TEXT NOT NULL
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS announcements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                newsid TEXT,
+                scrip_cd INTEGER,
+                headline TEXT,
+                fetched_at TEXT NOT NULL,
+                raw_json TEXT NOT NULL,
+                UNIQUE(newsid)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_announcements_newsid ON announcements(newsid);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_announcements_scrip ON announcements(scrip_cd);")
+        conn.commit()
+    finally:
+        conn.close()
+
+# small helper to acquire a file lock for DB writes (prevents two processes racing)
+def _with_file_lock(path):
+    lockfile = str(Path(path).with_suffix(".lock"))
+    f = open(lockfile, "w")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        f.close()
+
+def save_raw_fetch(announcements, url=None, params=None, db_path=LOCAL_DB_PATH):
+    """Save raw API response and each announcement into DB."""
+    db_path = str(db_path)
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    raw_json_text = json.dumps(announcements, ensure_ascii=False)
+
+    # Ensure DB exists
+    init_local_db(db_path)
+
+    # Use a file lock to be extra safe across processes
+    lockfile = str(Path(db_path).with_suffix(".lock"))
+    with open(lockfile, "w") as lf:
+        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+        conn = sqlite3.connect(db_path, timeout=30)
+        try:
+            cur = conn.cursor()
+            # Insert raw response
+            cur.execute(
+                "INSERT INTO raw_responses(fetched_at, url, params, raw_json) VALUES (?, ?, ?, ?)",
+                (fetched_at, url or "", json.dumps(params or {}), raw_json_text)
+            )
+            # Insert individual announcements (use parameterized queries)
+            for ann in announcements:
+                newsid = ann.get("NEWSID")
+                scrip = ann.get("SCRIP_CD")
+                headline = ann.get("HEADLINE") or ""
+                ann_json = json.dumps(ann, ensure_ascii=False)
+                try:
+                    cur.execute(
+                        "INSERT INTO announcements(newsid, scrip_cd, headline, fetched_at, raw_json) VALUES (?, ?, ?, ?, ?)",
+                        (str(newsid) if newsid is not None else None, scrip, headline, fetched_at, ann_json)
+                    )
+                except sqlite3.IntegrityError:
+                    # unique constraint: duplicate NEWSID — skip or update if you prefer
+                    logger.debug(f"Skipped duplicate announcement with NEWSID={newsid}")
+            conn.commit()
+        finally:
+            conn.close()
+            fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+
 
 
 def save_latest_announcement(announcement, filename=None):
@@ -911,6 +1004,11 @@ class BseScraper:
             # Use processing lock to prevent concurrent execution
             with self._processing_lock():
                 announcements = self.fetch_data()
+                if announcements:
+                    try:
+                        save_raw_fetch(announcements, url=self.url, params=self.params)
+                    except Exception as e:
+                        logger.error(f"Failed to save raw fetch to local DB: {e}")
                 if not announcements:
                     logger.warning("No announcements found")
                     return False

@@ -2417,18 +2417,20 @@ def start_scrapers_safely():
             daemon=False  # Important: not daemon
         )
         
-        nse_thread = threading.Thread(
-            target=start_scraper_nse, 
-            name="NSE-Scraper", 
-            daemon=False  # Important: not daemon
-        )
+        # nse_thread = threading.Thread(
+        #     target=start_scraper_nse, 
+        #     name="NSE-Scraper", 
+        #     daemon=False  # Important: not daemon
+        # )
         
         # Start threads
         bse_thread.start()
-        nse_thread.start()
+        # nse_thread.start()
         
         # Store references
-        scraper_threads.extend([bse_thread, nse_thread])
+        # scraper_threads.extend([bse_thread, nse_thread])
+        scraper_threads.extend([bse_thread])
+
         threads_started = True
         
         logger.info(f"Started {len(scraper_threads)} scraper threads successfully")
