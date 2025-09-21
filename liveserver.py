@@ -1267,7 +1267,6 @@ def get_corporate_filings():
         category = request.args.get('category', '')
         symbol = request.args.get('symbol', '')
         isin = request.args.get('isin', '')
-        proc = request.args.get('proc', 'false').lower() == 'true'
         
         logger.info(f"Corporate filings request: start_date={start_date}, end_date={end_date}, category={category}, symbol={symbol}, isin={isin}")
         
@@ -1343,9 +1342,8 @@ def get_corporate_filings():
             query = query.in_('symbol', symbol_list)
         if isin_list:
             query = query.in_('isin', isin_list)
-        if category_list != ["all"]:
-            if not category_list or "Procedural/Administrative" not in category_list:
-                query = query.neq('category', 'Procedural/Administrative')
+        if not category_list or "Procedural/Administrative" not in category_list:
+            query = query.neq('category', 'Procedural/Administrative')
 
 
         query = query.neq('category' , 'Error')
