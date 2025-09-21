@@ -1343,8 +1343,10 @@ def get_corporate_filings():
             query = query.in_('symbol', symbol_list)
         if isin_list:
             query = query.in_('isin', isin_list)
-        if not category_list or "Procedural/Administrative" not in category_list:
-            query = query.neq('category', 'Procedural/Administrative')
+        if category_list != ["all"]:
+            if not category_list or "Procedural/Administrative" not in category_list:
+                query = query.neq('category', 'Procedural/Administrative')
+
 
         query = query.neq('category' , 'Error')
 
