@@ -2,6 +2,7 @@ version: "3.8"
 
 services:
   backfin:
+    build: .
     image: backfin
     container_name: backfin
     environment:
@@ -9,6 +10,8 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
+      # Mount your repo's data directory into container so DB is accessible
+      - ./data:/app/data
     ports:
       - "8000:8000"
     command: >

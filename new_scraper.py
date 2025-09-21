@@ -155,7 +155,7 @@ LOCAL_DB_PATH = get_data_dir() / "bse_raw.db"
 def init_local_db(db_path=LOCAL_DB_PATH):
     db_path = str(db_path)
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)  # autocommit off; we'll use explicit transactions
+    conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)
     try:
         # Use WAL for safer concurrency
         conn.execute("PRAGMA journal_mode=WAL;")
@@ -170,6 +170,7 @@ def init_local_db(db_path=LOCAL_DB_PATH):
                 raw_json TEXT NOT NULL
             )
         """)
+        # Full announcements table with checkpoint columns
         cur.execute("""
             CREATE TABLE IF NOT EXISTS announcements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -178,14 +179,81 @@ def init_local_db(db_path=LOCAL_DB_PATH):
                 headline TEXT,
                 fetched_at TEXT NOT NULL,
                 raw_json TEXT NOT NULL,
+                downloaded_pdf_file TEXT,
+                pdf_pages INTEGER,
+                pdf_downloaded_at TEXT,
+                ai_processed INTEGER DEFAULT 0,
+                ai_summary TEXT,
+                ai_error TEXT,
+                ai_processed_at TEXT,
+                sent_to_supabase INTEGER DEFAULT 0,
+                sent_to_supabase_at TEXT,
                 UNIQUE(newsid)
             )
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_announcements_newsid ON announcements(newsid);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_announcements_scrip ON announcements(scrip_cd);")
         conn.commit()
+
+        # In case this is an older DB without the new columns, try adding them (safe-guard with try/except)
+        extra_cols = {
+            "downloaded_pdf_file": "TEXT",
+            "pdf_pages": "INTEGER",
+            "pdf_downloaded_at": "TEXT",
+            "ai_processed": "INTEGER DEFAULT 0",
+            "ai_summary": "TEXT",
+            "ai_error": "TEXT",
+            "ai_processed_at": "TEXT",
+            "sent_to_supabase": "INTEGER DEFAULT 0",
+            "sent_to_supabase_at": "TEXT"
+        }
+        for col, coltype in extra_cols.items():
+            try:
+                cur.execute(f"ALTER TABLE announcements ADD COLUMN {col} {coltype};")
+            except sqlite3.OperationalError:
+                # Column already exists — that's fine
+                pass
+        conn.commit()
     finally:
         conn.close()
+
+
+def update_announcement_checkpoint(newsid=None, ann_id=None, db_path=LOCAL_DB_PATH, **fields):
+    """
+    Update announcements row identified by newsid or id with provided fields.
+    Example fields: downloaded_pdf_file='x.pdf', pdf_pages=12, ai_processed=1, ai_summary='...', sent_to_supabase=1
+    """
+    if not newsid and not ann_id:
+        logger.warning("update_announcement_checkpoint called without newsid or ann_id")
+        return False
+
+    db_path = str(db_path)
+    init_local_db(db_path)
+    conn = sqlite3.connect(db_path, timeout=30)
+    try:
+        cur = conn.cursor()
+        # Build SET clause
+        set_parts = []
+        params = []
+        for k, v in fields.items():
+            set_parts.append(f"{k} = ?")
+            params.append(v)
+        if not set_parts:
+            return False
+        params.append(newsid if newsid is not None else ann_id)
+        if newsid is not None:
+            sql = f"UPDATE announcements SET {', '.join(set_parts)} WHERE newsid = ?"
+        else:
+            sql = f"UPDATE announcements SET {', '.join(set_parts)} WHERE id = ?"
+        cur.execute(sql, params)
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to update announcement checkpoint: {e}")
+        return False
+    finally:
+        conn.close()
+
 
 # small helper to acquire a file lock for DB writes (prevents two processes racing)
 def _with_file_lock(path):
@@ -199,44 +267,95 @@ def _with_file_lock(path):
         f.close()
 
 def save_raw_fetch(announcements, url=None, params=None, db_path=LOCAL_DB_PATH):
-    """Save raw API response and each announcement into DB."""
+    """Save raw API response and each announcement into DB.
+
+    Returns True on success, False on failure.
+    """
     db_path = str(db_path)
     fetched_at = datetime.now(timezone.utc).isoformat()
     raw_json_text = json.dumps(announcements, ensure_ascii=False)
 
-    # Ensure DB exists
+    # Ensure DB exists / schema present
     init_local_db(db_path)
 
     # Use a file lock to be extra safe across processes
     lockfile = str(Path(db_path).with_suffix(".lock"))
-    with open(lockfile, "w") as lf:
-        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
-        conn = sqlite3.connect(db_path, timeout=30)
+    # open lockfile in append mode so it exists and we don't overwrite
+    with open(lockfile, "a+") as lf:
         try:
-            cur = conn.cursor()
-            # Insert raw response
-            cur.execute(
-                "INSERT INTO raw_responses(fetched_at, url, params, raw_json) VALUES (?, ?, ?, ?)",
-                (fetched_at, url or "", json.dumps(params or {}), raw_json_text)
-            )
-            # Insert individual announcements (use parameterized queries)
-            for ann in announcements:
-                newsid = ann.get("NEWSID")
-                scrip = ann.get("SCRIP_CD")
-                headline = ann.get("HEADLINE") or ""
-                ann_json = json.dumps(ann, ensure_ascii=False)
+            fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+            conn = sqlite3.connect(db_path, timeout=30)
+            try:
+                cur = conn.cursor()
+                # Insert raw response
                 try:
                     cur.execute(
-                        "INSERT INTO announcements(newsid, scrip_cd, headline, fetched_at, raw_json) VALUES (?, ?, ?, ?, ?)",
-                        (str(newsid) if newsid is not None else None, scrip, headline, fetched_at, ann_json)
+                        "INSERT INTO raw_responses(fetched_at, url, params, raw_json) VALUES (?, ?, ?, ?)",
+                        (fetched_at, url or "", json.dumps(params or {}), raw_json_text)
                     )
-                except sqlite3.IntegrityError:
-                    # unique constraint: duplicate NEWSID — skip or update if you prefer
-                    logger.debug(f"Skipped duplicate announcement with NEWSID={newsid}")
-            conn.commit()
+                except Exception as e:
+                    logger.error(f"Failed to insert raw_responses row: {e}")
+                    # Continue; we still want to try to insert announcements
+
+                # Insert individual announcements (use parameterized queries)
+                if isinstance(announcements, list):
+                    for ann in announcements:
+                        try:
+                            newsid = ann.get("NEWSID")
+                            scrip = ann.get("SCRIP_CD")
+                            headline = ann.get("HEADLINE") or ""
+                            ann_json = json.dumps(ann, ensure_ascii=False)
+
+                            cur.execute(
+                                """INSERT INTO announcements(
+                                    newsid, scrip_cd, headline, fetched_at, raw_json,
+                                    downloaded_pdf_file, pdf_pages, pdf_downloaded_at,
+                                    ai_processed, ai_summary, ai_error, ai_processed_at,
+                                    sent_to_supabase, sent_to_supabase_at
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                (
+                                    str(newsid) if newsid is not None else None,
+                                    scrip,
+                                    headline,
+                                    fetched_at,
+                                    ann_json,
+                                    None,  # downloaded_pdf_file
+                                    None,  # pdf_pages
+                                    None,  # pdf_downloaded_at
+                                    0,     # ai_processed
+                                    None,  # ai_summary
+                                    None,  # ai_error
+                                    None,  # ai_processed_at
+                                    0,     # sent_to_supabase
+                                    None   # sent_to_supabase_at
+                                )
+                            )
+                        except sqlite3.IntegrityError:
+                            # unique constraint: duplicate NEWSID — skip or optionally update
+                            logger.debug(f"Skipped duplicate announcement with NEWSID={ann.get('NEWSID')}")
+                        except Exception as e:
+                            logger.error(f"Failed to insert announcement NEWSID={ann.get('NEWSID')}: {e}")
+                else:
+                    # If announcements is not a list, still store the raw response and warn
+                    logger.warning("save_raw_fetch expected announcements as list, got: %s", type(announcements))
+
+                conn.commit()
+                return True
+            except Exception as e:
+                logger.error(f"Database error in save_raw_fetch: {e}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                return False
+            finally:
+                conn.close()
         finally:
-            conn.close()
-            fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+            try:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+
 
 
 
@@ -621,6 +740,7 @@ class BseScraper:
                     with open(filepath, "wb") as file:
                         file.write(response.content)
                     logger.info(f"Downloaded: {filepath}")
+                    pdf_filename = os.path.basename(filepath)
                     break
                 except requests.exceptions.Timeout:
                     logger.warning(f"PDF download timed out (attempt {attempt}/{self.max_retries})")
@@ -860,7 +980,41 @@ class BseScraper:
                 if ai_summary:
                     ai_summary = remove_markdown_tags(ai_summary)
                     ai_summary = clean_summary(ai_summary)
-            
+                    # Mark PDF downloaded info into local DB (use newsid if present)
+                    newsid = announcement.get("NEWSID")
+                    if pdf_file and newsid:
+                        # set downloaded_pdf_file, pdf_pages and timestamp
+                        now_ts = datetime.now(timezone.utc).isoformat()
+                        # num_pages might be None if not available; that's fine
+                        update_announcement_checkpoint(
+                            newsid=newsid,
+                            db_path=LOCAL_DB_PATH,
+                            downloaded_pdf_file=pdf_file,
+                            pdf_pages=num_pages,
+                            pdf_downloaded_at=now_ts
+                        )
+            # After AI processed (if ai_summary available and not error)
+            if ai_summary and newsid:
+                now_ts = datetime.now(timezone.utc).isoformat()
+                update_announcement_checkpoint(
+                    newsid=newsid,
+                    db_path=LOCAL_DB_PATH,
+                    ai_processed=1,
+                    ai_summary=ai_summary,
+                    ai_error=None,
+                    ai_processed_at=now_ts
+                )
+            elif (category == "Error" or isinstance(ai_summary, str) and ai_summary.startswith("Error")) and newsid:
+                # If AI returned error, still mark and store message
+                now_ts = datetime.now(timezone.utc).isoformat()
+                update_announcement_checkpoint(
+                    newsid=newsid,
+                    db_path=LOCAL_DB_PATH,
+                    ai_processed=0,
+                    ai_summary=None,
+                    ai_error=str(ai_summary) if ai_summary else "AI processing error",
+                    ai_processed_at=now_ts
+                )
             # # Skip if PDF has too many pages (already handled in process_pdf, but double-check)
             # if num_pages and num_pages > 200:
             #     logger.warning(f"PDF has too many pages ({num_pages}), skipping")
@@ -943,6 +1097,13 @@ class BseScraper:
                     try:
                         response = supabase.table("corporatefilings").insert(data).execute()
                         logger.info(f"Inserted data to Supabase for {scrip_id} (attempt {attempt})")
+                        if newsid:
+                            update_announcement_checkpoint(
+                                newsid=newsid,
+                                db_path=LOCAL_DB_PATH,
+                                sent_to_supabase=1,
+                                sent_to_supabase_at=datetime.now(timezone.utc).isoformat()
+                            )
                         inserted = True
                         break
                     except Exception as e:
@@ -952,6 +1113,13 @@ class BseScraper:
                         # If duplicate primary-key, stop retrying — row already exists
                         if "duplicate key" in err_text or "23505" in err_text:
                             logger.warning(f"Duplicate key for corp_id {corp_id} — assuming row already exists, stopping insert retries.")
+                            if newsid:
+                                update_announcement_checkpoint(
+                                    newsid=newsid,
+                                    db_path=LOCAL_DB_PATH,
+                                    sent_to_supabase=1,
+                                    sent_to_supabase_at=datetime.now(timezone.utc).isoformat()
+                                )
                             inserted = True  # mark as present so investor upload will run (or you can choose not to)
                             break
 
