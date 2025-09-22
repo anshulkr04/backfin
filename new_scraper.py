@@ -1063,6 +1063,7 @@ class BseScraper:
                 "headline": headline,
                 "company_id": company_id
             }
+            logger.info(f"Prepared data for corp_id {corp_id}: {data}")
             
             
 
@@ -1090,6 +1091,7 @@ class BseScraper:
                 "isin": isin,
                 "verified": "false"
             }
+            logger.info(f"Prepared financial data for corp_id {corp_id}: {financial_data}")
             
             # Only upload to Supabase if we have a connection
             if supabase:
