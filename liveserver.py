@@ -172,12 +172,13 @@ try:
     # Initialize Supabase client
     supabase_url = os.getenv('SUPABASE_URL2')
     supabase_key = os.getenv('SUPABASE_KEY2')
-    
+    supabase_service_role_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+
     if not supabase_url or not supabase_key:
         logger.error("Supabase credentials are missing! All data operations will fail.")
     else:
         logger.info(f"Initializing Supabase client with URL: {supabase_url[:20]}...")
-        supabase = create_client(supabase_url, supabase_key)
+        supabase = create_client(supabase_url, supabase_service_role_key if supabase_service_role_key else supabase_key)
         supabase_connected = True
         logger.info("Supabase client initialized successfully")
 except Exception as e:

@@ -88,6 +88,7 @@ if not API_KEY:
 
 SUPABASE_URL = os.getenv("SUPABASE_URL2")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY2")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 if not (SUPABASE_URL and SUPABASE_KEY):
     logger.error("Missing Supabase credentials")
     logger.warning("Will operate in limited mode without Supabase credentials")
@@ -105,7 +106,7 @@ else:
 supabase = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY if SUPABASE_SERVICE_ROLE_KEY else SUPABASE_KEY)
         logger.info("Supabase client initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize Supabase client: {e}")
@@ -394,7 +395,7 @@ def check_for_negative_keywords(summary):
         "Record Date","Code of Conduct","Cessation","Deviation","Declared Interim Dividend","IEPF","Investor Education","Registrar & Share Transfer Agent",
         "Registrar and Share Transfer Agent","Scrutinizers report","Utilisation of Funds","Postal Ballot","Defaults on Payment of Interest",
         "Newspaper Publication","Sustainability Report","Sustainability Reporting","Trading Plan","Letter of Confirmation","Forfeiture/Cancellation","Price movement",
-        "Spurt","Grievance Redressal","Monitoring Agency","Regulation",
+        "Spurt","Grievance Redressal","Monitoring Agency","Regulation 57",
     ]
 
     special_keywords = [
