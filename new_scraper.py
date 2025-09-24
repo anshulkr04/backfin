@@ -934,6 +934,8 @@ class BseScraper:
             date = date_raw.split('.')[0] if isinstance(date_raw, str) and date_raw and '.' in date_raw else date_raw
             company_name = announcement.get("SLONGNAME", "")
             company_url = announcement.get("NSURL", "")
+            newsid = announcement.get("NEWSID")
+
             
             # Log the announcement being processed
             logger.info(f"Processing announcement: {bse_summary}")
