@@ -163,38 +163,36 @@ def init_local_db(db_path=LOCAL_DB_PATH):
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
         cur = conn.cursor()
+        # Local mirror of corporatefilings (with processing/checkpoint flags)
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS raw_responses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                fetched_at TEXT NOT NULL,
-                url TEXT,
-                params TEXT,
-                raw_json TEXT NOT NULL
-            )
-        """)
-        # Full announcements table with checkpoint columns
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS announcements (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                newsid TEXT,
-                scrip_cd INTEGER,
+            CREATE TABLE IF NOT EXISTS corporatefilings (
+                corp_id TEXT PRIMARY KEY,
+                securityid TEXT,
+                summary TEXT,
+                fileurl TEXT,
+                date TEXT,
+                ai_summary TEXT,
+                category TEXT,
+                isin TEXT,
+                companyname TEXT,
+                symbol TEXT,
                 headline TEXT,
-                fetched_at TEXT NOT NULL,
-                raw_json TEXT NOT NULL,
+                sentiment TEXT,
+                company_id TEXT,
+                -- Local checkpoint fields for analysis
                 downloaded_pdf_file TEXT,
                 pdf_pages INTEGER,
                 pdf_downloaded_at TEXT,
                 ai_processed INTEGER DEFAULT 0,
-                ai_summary TEXT,
-                ai_error TEXT,
                 ai_processed_at TEXT,
+                ai_error TEXT,
                 sent_to_supabase INTEGER DEFAULT 0,
-                sent_to_supabase_at TEXT,
-                UNIQUE(newsid)
+                sent_to_supabase_at TEXT
             )
         """)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_announcements_newsid ON announcements(newsid);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_announcements_scrip ON announcements(scrip_cd);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_local_corporatefilings_date ON corporatefilings(date);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_local_corporatefilings_category ON corporatefilings(category);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_local_corporatefilings_isin ON corporatefilings(isin);")
         conn.commit()
 
         # In case this is an older DB without the new columns, try adding them (safe-guard with try/except)
@@ -267,6 +265,108 @@ def _with_file_lock(path):
     finally:
         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         f.close()
+
+def save_local_corporatefiling(data: dict, db_path=LOCAL_DB_PATH):
+    """
+    Insert or update local corporatefilings row.
+    If row exists, merge: provided keys overwrite existing; missing keys keep previous values.
+    Returns True on success, False on failure.
+    """
+    if not data or "corp_id" not in data:
+        logger.warning("save_local_corporatefiling called without corp_id")
+        return False
+
+    db_path = str(db_path)
+    init_local_db(db_path)
+
+    try:
+        conn = sqlite3.connect(db_path, timeout=30)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        corp_id = str(data.get("corp_id"))
+
+        # Fetch existing row if any
+        cur.execute("SELECT * FROM corporatefilings WHERE corp_id = ?", (corp_id,))
+        existing = cur.fetchone()
+
+        # Build merged row: if key present in data, use it; else fallback to existing row or None
+        columns = [
+            "securityid", "summary", "fileurl", "date", "ai_summary", "category",
+            "isin", "companyname", "symbol", "headline", "sentiment", "company_id",
+            "downloaded_pdf_file", "pdf_pages", "pdf_downloaded_at",
+            "ai_processed", "ai_processed_at", "ai_error",
+            "sent_to_supabase", "sent_to_supabase_at"
+        ]
+
+        merged = {}
+        for col in columns:
+            if col in data and data.get(col) is not None:
+                merged[col] = data.get(col)
+            elif existing is not None and col in existing.keys():
+                merged[col] = existing[col]
+            else:
+                merged[col] = None
+
+        # Use INSERT OR REPLACE (simple UPSERT). This will replace row with merged values.
+        cur.execute("""
+            INSERT OR REPLACE INTO corporatefilings (
+                corp_id, securityid, summary, fileurl, date, ai_summary, category,
+                isin, companyname, symbol, headline, sentiment, company_id,
+                downloaded_pdf_file, pdf_pages, pdf_downloaded_at,
+                ai_processed, ai_processed_at, ai_error,
+                sent_to_supabase, sent_to_supabase_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            corp_id,
+            merged["securityid"],
+            merged["summary"],
+            merged["fileurl"],
+            merged["date"],
+            merged["ai_summary"],
+            merged["category"],
+            merged["isin"],
+            merged["companyname"],
+            merged["symbol"],
+            merged["headline"],
+            merged["sentiment"],
+            merged["company_id"],
+            merged["downloaded_pdf_file"],
+            merged["pdf_pages"],
+            merged["pdf_downloaded_at"],
+            merged["ai_processed"],
+            merged["ai_processed_at"],
+            merged["ai_error"],
+            merged["sent_to_supabase"],
+            merged["sent_to_supabase_at"]
+        ))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save local corporatefiling {data.get('corp_id')}: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+def mark_local_sent_to_supabase(corp_id, sent_at=None, db_path=LOCAL_DB_PATH):
+    data = {"corp_id": corp_id, "sent_to_supabase": 1, "sent_to_supabase_at": sent_at or datetime.now(timezone.utc).isoformat()}
+    return save_local_corporatefiling(data, db_path=db_path)
+
+def mark_local_ai_processed(corp_id, ai_summary=None, ai_error=None, processed_at=None, db_path=LOCAL_DB_PATH):
+    data = {"corp_id": corp_id, "ai_processed": 1 if ai_error is None else 0, "ai_processed_at": processed_at or datetime.now(timezone.utc).isoformat(), "ai_summary": ai_summary, "ai_error": ai_error}
+    return save_local_corporatefiling(data, db_path=db_path)
+
+def mark_local_pdf_downloaded(corp_id, downloaded_pdf_file=None, pdf_pages=None, downloaded_at=None, db_path=LOCAL_DB_PATH):
+    data = {"corp_id": corp_id, "downloaded_pdf_file": downloaded_pdf_file, "pdf_pages": pdf_pages, "pdf_downloaded_at": downloaded_at or datetime.now(timezone.utc).isoformat()}
+    return save_local_corporatefiling(data, db_path=db_path)
+
 
 def save_raw_fetch(announcements, url=None, params=None, db_path=LOCAL_DB_PATH):
     """Save raw API response and each announcement into DB.
@@ -997,6 +1097,11 @@ class BseScraper:
                             pdf_pages=num_pages,
                             pdf_downloaded_at=now_ts
                         )
+                        try:
+                            mark_local_pdf_downloaded(corp_id=corp_id, downloaded_pdf_file=pdf_file, pdf_pages=num_pages, downloaded_at=now_ts)
+                            logger.info(f"Marked local corporatefiling {corp_id} as PDF downloaded")
+                        except Exception as e:
+                            logger.error(f"Failed to mark local PDF downloaded for corp_id {corp_id}: {e}")
             # After AI processed (if ai_summary available and not error)
             if ai_summary and newsid:
                 now_ts = datetime.now(timezone.utc).isoformat()
@@ -1008,6 +1113,11 @@ class BseScraper:
                     ai_error=None,
                     ai_processed_at=now_ts
                 )
+                try:
+                    mark_local_ai_processed(corp_id=corp_id, ai_summary=ai_summary, processed_at=now_ts, ai_error=None)
+                    logger.info(f"Marked local corporatefiling {corp_id} as AI processed")
+                except Exception as e:
+                    logger.error(f"Failed to mark local ai_processed for corp_id {corp_id}: {e}")
             elif (category == "Error" or isinstance(ai_summary, str) and ai_summary.startswith("Error")) and newsid:
                 # If AI returned error, still mark and store message
                 now_ts = datetime.now(timezone.utc).isoformat()
@@ -1019,6 +1129,12 @@ class BseScraper:
                     ai_error=str(ai_summary) if ai_summary else "AI processing error",
                     ai_processed_at=now_ts
                 )
+                try:
+                    mark_local_ai_processed(corp_id=corp_id, ai_summary=None, processed_at=now_ts, ai_error=str(ai_summary) if ai_summary else "AI processing error")
+                    logger.info(f"Marked local corporatefiling {corp_id} as AI error")
+                except Exception as e:
+                    logger.error(f"Failed to mark local ai_error for corp_id {corp_id}: {e}")
+
             # # Skip if PDF has too many pages (already handled in process_pdf, but double-check)
             # if num_pages and num_pages > 200:
             #     logger.warning(f"PDF has too many pages ({num_pages}), skipping")
@@ -1066,6 +1182,16 @@ class BseScraper:
                 "company_id": company_id
             }
             logger.info(f"Prepared data for corp_id {corp_id}: {data}")
+
+            # Save a local copy immediately (so we have local backup even if Supabase fails)
+            try:
+                saved_local = save_local_corporatefiling(data)
+                if saved_local:
+                    logger.info(f"Saved local copy for corp_id {corp_id}")
+                else:
+                    logger.warning(f"Failed to save local copy for corp_id {corp_id}")
+            except Exception as e:
+                logger.error(f"Exception when saving local corporatefiling: {e}")
             
             
 
@@ -1111,6 +1237,12 @@ class BseScraper:
                                 sent_to_supabase_at=datetime.now(timezone.utc).isoformat()
                             )
                         inserted = True
+                        try:
+                            mark_local_sent_to_supabase(corp_id)
+                            logger.info(f"Marked local corporatefiling {corp_id} as sent_to_supabase")
+                        except Exception as e:
+                            logger.error(f"Failed to mark local sent_to_supabase for corp_id {corp_id}: {e}")
+                        break
                         break
                     except Exception as e:
                         err_text = str(e)
