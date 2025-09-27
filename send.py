@@ -2,19 +2,19 @@
 """
 send.py
 
-Export announcements table and send CSV via Resend (drop-in replacement for send_csv_resend.py).
+Export announcements table and send CSV via Resend (fixed version).
 
 Usage:
   python send.py --to recipient@example.com
-  python send.py --to recipient@example.com --db ./data/bse_raw.db --date 2025-09-21
+  python send.py --to recipient@example.com --db ./data/bse_raw.db --date 2025-09-21 --table corporatefilings
 
 Environment variables expected:
   RESEND_API_KEY    (your Resend API key)
   SENDER_EMAIL      (email to send from, e.g. "noreply@anshulkr.com")
   SENDER_NAME       (optional display name, e.g. "BSE Reports")
 
-This script will read the local SQLite DB (default ./data/bse_raw.db), create a CSV of announcements (optionally filtered by date
-and/or processing flags), and send it as an attachment via the Resend API.
+This script will read the local SQLite DB (default ./data/bse_raw.db), create a CSV of announcements
+or corporatefilings (optionally filtered by date and/or processing flags), and send it as an attachment via the Resend API.
 """
 
 import os
@@ -162,9 +162,10 @@ def build_html_from_metrics(metrics):
 # ---- Resend sending function ----
 
 def send_csv_via_resend(to_email: str, csv_bytes: bytes, csv_filename: str, html_body: str, subject: str,
-                        api_key: str, sender_email: str, sender_name: str = None):
+                        api_key: str, sender_email: str, sender_name: str = None, attachments: list | None = None):
     """
-    Send email via resend Python client with CSV attachment (base64).
+    Send email via resend Python client with CSV attachment(s).
+    If `attachments` is provided it should be a list of dicts with keys filename and content (bytes).
     Returns resend API response object/dict.
     """
     if not api_key:
@@ -177,26 +178,28 @@ def send_csv_via_resend(to_email: str, csv_bytes: bytes, csv_filename: str, html
 
     from_header = f"{sender_name} <{sender_email}>" if sender_name else sender_email
 
-    # attachments: base64 string
-    b64 = base64.b64encode(csv_bytes).decode("ascii")
+    # attachments: base64 string(s)
+    attach_list = []
+    if attachments:
+        for a in attachments:
+            fname = a.get("filename")
+            content = a.get("content")
+            if isinstance(content, str):
+                b = content.encode("utf-8")
+            else:
+                b = content
+            b64 = base64.b64encode(b).decode("ascii")
+            attach_list.append({"filename": fname, "content": b64, "type": "text/csv", "disposition": "attachment"})
+    else:
+        # single attachment fallback must be provided via csv_bytes/csv_filename
+        raise ValueError("Use attachments parameter with a list of attachments")
 
-    # Build params for resend. The exact accepted keys for attachments may vary depending
-    # on the resend library version. This is one common pattern: using 'attachments' with
-    # 'filename' and 'content' (base64). If your resend SDK expects a different key,
-    # change accordingly (e.g., 'data' or 'content' -> 'content').
     params = {
         "from": from_header,
         "to": [to_email],
         "subject": subject,
         "html": html_body,
-        "attachments": [
-            {
-                "filename": csv_filename,
-                "content": b64,
-                "type": "text/csv",
-                "disposition": "attachment"
-            }
-        ]
+        "attachments": attach_list
     }
 
     # send
@@ -206,8 +209,8 @@ def send_csv_via_resend(to_email: str, csv_bytes: bytes, csv_filename: str, html
     except Exception as e:
         # rethrow or return structured error
         raise RuntimeError(f"Failed to send email via Resend: {e}")
-    
-# ---------- add near your other DB helper functions ----------
+
+# ---------- corporatefilings helpers ----------
 
 def corporatefilings_counts_and_rows(db_path, date_filter=None, where_extra=None):
     """
@@ -219,13 +222,17 @@ def corporatefilings_counts_and_rows(db_path, date_filter=None, where_extra=None
     cur = conn.cursor()
 
     if date_filter:
-        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE date(date) = ?", (date_filter,))
+        # permissive date matching: accept 'YYYY-MM-DD' or compact 'YYYYMMDD' or prefixes
+        compact = date_filter.replace('-', '')
+        like_iso = f"{date_filter}%"
+        like_compact = f"{compact}%"
+        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE date = ? OR date LIKE ? OR date LIKE ?", (date_filter, like_iso, like_compact))
         total = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE date(date) = ? AND (sent_to_supabase = 1)", (date_filter,))
+        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE (date = ? OR date LIKE ? OR date LIKE ?) AND (sent_to_supabase = 1)", (date_filter, like_iso, like_compact))
         sent = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE date(date) = ? AND (ai_processed = 1)", (date_filter,))
+        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE (date = ? OR date LIKE ? OR date LIKE ?) AND (ai_processed = 1)", (date_filter, like_iso, like_compact))
         ai_processed = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE date(date) = ? AND (downloaded_pdf_file IS NOT NULL AND TRIM(downloaded_pdf_file) != '')", (date_filter,))
+        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE (date = ? OR date LIKE ? OR date LIKE ?) AND (downloaded_pdf_file IS NOT NULL AND TRIM(downloaded_pdf_file) != '')", (date_filter, like_iso, like_compact))
         downloaded = cur.fetchone()[0]
     else:
         cur.execute("SELECT COUNT(*) FROM corporatefilings")
@@ -253,80 +260,52 @@ def corporatefilings_counts_and_rows(db_path, date_filter=None, where_extra=None
         "ai_processed","ai_processed_at","ai_error",
         "sent_to_supabase","sent_to_supabase_at"
     ]
+
     base_sql = "SELECT " + ", ".join(cols) + " FROM corporatefilings"
     clauses = []
     params = []
     if date_filter:
-        clauses.append("date(date) = ?")
-        params.append(date_filter)
+        clauses.append("(date = ? OR date LIKE ? OR date LIKE ?)")
+        params.extend([date_filter, like_iso, like_compact])
     if where_extra:
         clauses.append(where_extra)
 
     if clauses:
-        sql = base_sql + " WHERE " + " AND ".join(clauses) + " ORDER BY date DESC NULLS LAST"
+        sql = base_sql + " WHERE " + " AND ".join(clauses) + " ORDER BY date DESC"
     else:
-        sql = base_sql + " ORDER BY date DESC NULLS LAST"
+        sql = base_sql + " ORDER BY date DESC"
 
     cur.execute(sql, tuple(params))
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return metrics, rows
 
-# Helper to convert rows to a CSV with proper header for corporatefilings
+
 def corporate_rows_to_csv_bytes(rows):
     """
     Convert corporatefilings rows list to CSV bytes and return (csv_bytes, header_fields)
     """
     output = io.StringIO()
-    if not rows:
-        header = [
-            "corp_id","securityid","summary","fileurl","date","ai_summary","category","isin",
-            "companyname","symbol","headline","sentiment","company_id",
-            "downloaded_pdf_file","pdf_pages","pdf_downloaded_at",
-            "ai_processed","ai_processed_at","ai_error",
-            "sent_to_supabase","sent_to_supabase_at"
-        ]
-    else:
-        header = [
-            "corp_id","securityid","summary","fileurl","date","ai_summary","category","isin",
-            "companyname","symbol","headline","sentiment","company_id",
-            "downloaded_pdf_file","pdf_pages","pdf_downloaded_at",
-            "ai_processed","ai_processed_at","ai_error",
-            "sent_to_supabase","sent_to_supabase_at"
-        ]
+    header = [
+        "corp_id","securityid","summary","fileurl","date","ai_summary","category","isin",
+        "companyname","symbol","headline","sentiment","company_id",
+        "downloaded_pdf_file","pdf_pages","pdf_downloaded_at",
+        "ai_processed","ai_processed_at","ai_error",
+        "sent_to_supabase","sent_to_supabase_at"
+    ]
     writer = csv.DictWriter(output, fieldnames=header)
     writer.writeheader()
     for r in rows:
-        # ensure only fields present in header are written
         row_short = {k: r.get(k, "") for k in header}
         writer.writerow(row_short)
     csv_text = output.getvalue()
     return csv_text.encode("utf-8"), header
 
-# ---------- update CLI parsing in main() ----------
-
-# add new arg to parser:
-# parser.add_argument("--table", choices=["announcements","corporatefilings","both"], default="announcements", help="Which table to export")
-
-
-
-# Sending logic:
-# if args.table == "announcements": send csv_bytes_a as before
-# if args.table == "corporatefilings": send csv_bytes_c
-# if args.table == "both": send two separate emails or send one email with two attachments:
-# e.g. attachments = [
-#   {"filename": "announcements.csv", "content": base64_a, ...},
-#   {"filename": "corporatefilings.csv", "content": base64_c, ...}
-# ]
-# and pass that into send_csv_via_resend (you may need to update send_csv_via_resend to accept multiple attachments)
-
-
-
 
 # ---- CLI entrypoint ----
 
 def main():
-    parser = argparse.ArgumentParser(description="Export announcements table and send CSV via Resend")
+    parser = argparse.ArgumentParser(description="Export announcements/corporatefilings table and send CSV via Resend")
     parser.add_argument("--to", "-m", required=True, help="Recipient email address")
     parser.add_argument("--db", default="./data/bse_raw.db", help="Path to bse_raw.db")
     parser.add_argument("--date", help="Optional date filter (YYYY-MM-DD) to restrict rows and metrics")
@@ -336,19 +315,10 @@ def main():
     parser.add_argument("--subject", help="Email subject", default=None)
     parser.add_argument("--envfile", help="Optional .env file to load before running", default=".env")
     parser.add_argument("--table", choices=["announcements","corporatefilings","both"], default="announcements", help="Which table to export")
-    # After loading env & validating, branch on args.table:
-    if args.table in ("announcements", "both"):
-        metrics_a, rows_a = db_counts_and_rows(args.db, date_filter=args.date, where_extra=where_extra)
-        csv_bytes_a, fields_a = rows_to_csv_bytes(rows_a)
-        html_body_a = build_html_from_metrics(metrics_a)
-    if args.table in ("corporatefilings", "both"):
-        metrics_c, rows_c = corporatefilings_counts_and_rows(args.db, date_filter=args.date, where_extra=None)
-        csv_bytes_c, fields_c = corporate_rows_to_csv_bytes(rows_c)
-        # Make a slightly different html for corporate filings
-        html_body_c = f"<h2>Corporate Filings Report</h2><p>Generated at: {metrics_c.get('generated_at')}</p><p>Total rows: {metrics_c.get('total_rows')}</p>"
-        args = parser.parse_args()
 
-    # load env if present
+    args = parser.parse_args()
+
+    # load env if present (this uses args.envfile)
     load_env_dotenv(args.envfile)
 
     RESEND_API_KEY = os.getenv("RESEND_API_KEY") or os.getenv("RESEND_API_KEY".upper())
@@ -364,7 +334,6 @@ def main():
 
     # Determine additional WHERE filter
     where_extra = None
-    # If multiple of only-not-* flags are set, combine them with AND
     extra_clauses = []
     if args.only_not_down:
         extra_clauses.append("(downloaded_pdf_file IS NULL OR TRIM(downloaded_pdf_file) = '')")
@@ -375,34 +344,46 @@ def main():
     if extra_clauses:
         where_extra = " AND ".join(extra_clauses)
 
-    # get metrics and rows
-    metrics, rows = db_counts_and_rows(args.db, date_filter=args.date, where_extra=where_extra)
+    attachments = []
+    # Build attachments based on requested table
+    if args.table in ("announcements", "both"):
+        metrics_a, rows_a = db_counts_and_rows(args.db, date_filter=args.date, where_extra=where_extra)
+        csv_bytes_a, fields_a = rows_to_csv_bytes(rows_a)
+        html_body_a = build_html_from_metrics(metrics_a)
+        attachments.append({"filename": f"announcements_{args.date or datetime.now().strftime('%Y%m%d')}.csv", "content": csv_bytes_a})
 
-    # build CSV
-    csv_bytes, fields = rows_to_csv_bytes(rows)
+    if args.table in ("corporatefilings", "both"):
+        metrics_c, rows_c = corporatefilings_counts_and_rows(args.db, date_filter=args.date, where_extra=None)
+        csv_bytes_c, fields_c = corporate_rows_to_csv_bytes(rows_c)
+        html_body_c = f"<h2>Corporate Filings Report</h2><p>Generated at: {metrics_c.get('generated_at')}</p><p>Total rows: {metrics_c.get('total_rows')}</p>"
+        attachments.append({"filename": f"corporatefilings_{args.date or datetime.now().strftime('%Y%m%d')}.csv", "content": csv_bytes_c})
 
-    # build HTML body
-    html_body = build_html_from_metrics(metrics)
+    # Compose a combined HTML body summarizing attachments
+    combined_html = "<html><body>"
+    if args.table in ("announcements", "both"):
+        combined_html += html_body_a
+    if args.table in ("corporatefilings", "both"):
+        combined_html += html_body_c
+    combined_html += "</body></html>"
 
     # subject
-    subj = args.subject or f"BSE Announcements CSV — {metrics.get('total_announcements')} announcements"
+    subj = args.subject or f"BSE Export — {args.table} — {args.date or datetime.now().strftime('%Y-%m-%d')}"
 
-    # send email
-    filename = f"announcements_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    # Send via Resend
     try:
         resp = send_csv_via_resend(
             to_email=args.to,
-            csv_bytes=csv_bytes,
-            csv_filename=filename,
-            html_body=html_body,
+            csv_bytes=None,
+            csv_filename=None,
+            html_body=combined_html,
             subject=subj,
             api_key=RESEND_API_KEY,
             sender_email=SENDER_EMAIL,
-            sender_name=SENDER_NAME
+            sender_name=SENDER_NAME,
+            attachments=attachments
         )
         print("Email send response:")
         try:
-            # try to pretty-print if it's JSON-like
             print(json.dumps(resp, indent=2, default=str))
         except Exception:
             print(resp)
