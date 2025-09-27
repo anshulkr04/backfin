@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """
-send_csv_resend.py
+send.py
+
+Export announcements table and send CSV via Resend (drop-in replacement for send_csv_resend.py).
 
 Usage:
-  python send_csv_resend.py --to recipient@example.com
-  python send_csv_resend.py --to recipient@example.com --db ./data/bse_raw.db --date 2025-09-21
+  python send.py --to recipient@example.com
+  python send.py --to recipient@example.com --db ./data/bse_raw.db --date 2025-09-21
 
 Environment variables expected:
   RESEND_API_KEY    (your Resend API key)
   SENDER_EMAIL      (email to send from, e.g. "noreply@anshulkr.com")
   SENDER_NAME       (optional display name, e.g. "BSE Reports")
+
+This script will read the local SQLite DB (default ./data/bse_raw.db), create a CSV of announcements (optionally filtered by date
+and/or processing flags), and send it as an attachment via the Resend API.
 """
 
 import os
@@ -27,6 +32,7 @@ try:
 except Exception as e:
     print("Error: resend library not installed. Install with `pip install resend`.", file=sys.stderr)
     raise
+
 
 # ---- Helpers ----
 
