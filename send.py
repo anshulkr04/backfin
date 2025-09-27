@@ -335,6 +335,7 @@ def main():
     parser.add_argument("--only-not-sent", action="store_true", help="Include only rows where sent_to_supabase is 0 or NULL")
     parser.add_argument("--subject", help="Email subject", default=None)
     parser.add_argument("--envfile", help="Optional .env file to load before running", default=".env")
+    parser.add_argument("--table", choices=["announcements","corporatefilings","both"], default="announcements", help="Which table to export")
     # After loading env & validating, branch on args.table:
     if args.table in ("announcements", "both"):
         metrics_a, rows_a = db_counts_and_rows(args.db, date_filter=args.date, where_extra=where_extra)
