@@ -1036,30 +1036,32 @@ class BseScraper:
             company_url = announcement.get("NSURL", "")
             newsid = announcement.get("NEWSID")
 
-            
             # Log the announcement being processed
             logger.info(f"Processing announcement: {bse_summary}")
-            
+
             # Basic validation
             if not scrip_id:
                 logger.warning("Skipping announcement without scrip ID")
                 return False
-                
+
             # Check if this is scrip_id 1 (special case to skip)
             if scrip_id == 1:
                 logger.info("Skipping announcement with scrip_id 1")
                 return False
-                
+
             # Format company name if needed
             if isinstance(company_name, str) and company_name.endswith(" LTD"):
                 company_name = company_name[:-4]
-            
+
             # Extract symbol from URL
             symbol = extract_symbol(company_url)
             if symbol:
                 symbol = symbol.upper()
             else:
                 symbol = ""
+
+            # --- Important: generate corp_id early so checkpoint helpers can use it ---
+            corp_id = str(uuid.uuid4())
 
             # Initialize default values
             ai_summary = None
@@ -1076,20 +1078,17 @@ class BseScraper:
                 logger.info(f"Negative keyword found in announcement: {bse_summary}")
                 num_pages = 0
                 ai_summary = "Please refer to the original document provided."  # No PDF processing
-                
+
             elif check_for_pdf(pdf_file):
-            # else :
                 logger.info(f"Processing PDF: {pdf_file}")
                 category, ai_summary, headline, findata, individual_investor_list, company_investor_list, num_pages, sentiment = self.process_pdf(pdf_file)
                 if ai_summary:
                     ai_summary = remove_markdown_tags(ai_summary)
                     ai_summary = clean_summary(ai_summary)
                     # Mark PDF downloaded info into local DB (use newsid if present)
-                    newsid = announcement.get("NEWSID")
                     if pdf_file and newsid:
-                        # set downloaded_pdf_file, pdf_pages and timestamp
                         now_ts = datetime.now(timezone.utc).isoformat()
-                        # num_pages might be None if not available; that's fine
+                        # Update announcements table (newsid)
                         update_announcement_checkpoint(
                             newsid=newsid,
                             db_path=LOCAL_DB_PATH,
@@ -1097,11 +1096,13 @@ class BseScraper:
                             pdf_pages=num_pages,
                             pdf_downloaded_at=now_ts
                         )
+                        # Mark local corporatefilings using corp_id (now defined earlier)
                         try:
                             mark_local_pdf_downloaded(corp_id=corp_id, downloaded_pdf_file=pdf_file, pdf_pages=num_pages, downloaded_at=now_ts)
                             logger.info(f"Marked local corporatefiling {corp_id} as PDF downloaded")
                         except Exception as e:
                             logger.error(f"Failed to mark local PDF downloaded for corp_id {corp_id}: {e}")
+
             # After AI processed (if ai_summary available and not error)
             if ai_summary and newsid:
                 now_ts = datetime.now(timezone.utc).isoformat()
@@ -1135,18 +1136,13 @@ class BseScraper:
                 except Exception as e:
                     logger.error(f"Failed to mark local ai_error for corp_id {corp_id}: {e}")
 
-            # # Skip if PDF has too many pages (already handled in process_pdf, but double-check)
-            # if num_pages and num_pages > 200:
-            #     logger.warning(f"PDF has too many pages ({num_pages}), skipping")
-            #     return False
-            
             # Get ISIN
             isin = self.get_isin(scrip_id)
 
-            # Validate ISIN format 
+            # Validate ISIN format
             if not isin or isin == "N/A" or (len(isin) > 3 and isin[2] != "E"):
                 logger.warning(f"Invalid ISIN: {isin} for scrip_id {scrip_id}")
-                # return False
+                # continue processing regardless for now
 
             # Get company_id from Supabase - FIXED: properly extract the result
             company_id = None
@@ -1159,12 +1155,10 @@ class BseScraper:
                         logger.warning(f"No company found for ISIN: {isin}")
                 except Exception as e:
                     logger.error(f"Error fetching company_id: {e}")
-                
+
             # Create file URL
             file_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{pdf_file}" if pdf_file else None
 
-            corp_id = str(uuid.uuid4())  # Generate a unique corp_id
-            
             # Prepare data for upload
             data = {
                 "corp_id": corp_id,
@@ -1192,8 +1186,6 @@ class BseScraper:
                     logger.warning(f"Failed to save local copy for corp_id {corp_id}")
             except Exception as e:
                 logger.error(f"Exception when saving local corporatefiling: {e}")
-            
-            
 
             # FIXED: Safe JSON parsing for financial data
             try:
@@ -1220,7 +1212,7 @@ class BseScraper:
                 "verified": "false"
             }
             logger.info(f"Prepared financial data for corp_id {corp_id}: {financial_data}")
-            
+
             # Only upload to Supabase if we have a connection
             if supabase:
                 inserted = False
@@ -1243,7 +1235,6 @@ class BseScraper:
                         except Exception as e:
                             logger.error(f"Failed to mark local sent_to_supabase for corp_id {corp_id}: {e}")
                         break
-                        break
                     except Exception as e:
                         err_text = str(e)
                         logger.error(f"Error inserting to Supabase (attempt {attempt}/{self.max_retries}): {err_text}")
@@ -1258,7 +1249,7 @@ class BseScraper:
                                     sent_to_supabase=1,
                                     sent_to_supabase_at=datetime.now(timezone.utc).isoformat()
                                 )
-                            inserted = True  # mark as present so investor upload will run (or you can choose not to)
+                            inserted = True
                             break
 
                         # Otherwise treat as transient and retry
@@ -1271,7 +1262,6 @@ class BseScraper:
 
                 # Only attempt investor upload if the row exists or was inserted just now
                 if inserted and (individual_investor_list or company_investor_list):
-                    # Isolate investor uploads so errors here don't trigger insert retries
                     inv_attempts = 3
                     for inv_try in range(1, inv_attempts + 1):
                         try:
@@ -1296,13 +1286,13 @@ class BseScraper:
 
             else:
                 logger.warning("Supabase not connected, skipping database upload")
-            
+
             return data
 
-                        
         except Exception as e:
             logger.error(f"Unexpected error processing announcement: {e}")
             return False
+
 
     def processNewAnnouncements(self):
         """Process ALL new announcements, not just the latest one"""
