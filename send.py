@@ -206,6 +206,121 @@ def send_csv_via_resend(to_email: str, csv_bytes: bytes, csv_filename: str, html
     except Exception as e:
         # rethrow or return structured error
         raise RuntimeError(f"Failed to send email via Resend: {e}")
+    
+# ---------- add near your other DB helper functions ----------
+
+def corporatefilings_counts_and_rows(db_path, date_filter=None, where_extra=None):
+    """
+    Return (metrics_dict, rows_list) for corporatefilings table.
+    rows_list is list of dicts with detailed corporate filing fields.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    if date_filter:
+        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE date(date) = ?", (date_filter,))
+        total = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE date(date) = ? AND (sent_to_supabase = 1)", (date_filter,))
+        sent = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE date(date) = ? AND (ai_processed = 1)", (date_filter,))
+        ai_processed = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE date(date) = ? AND (downloaded_pdf_file IS NOT NULL AND TRIM(downloaded_pdf_file) != '')", (date_filter,))
+        downloaded = cur.fetchone()[0]
+    else:
+        cur.execute("SELECT COUNT(*) FROM corporatefilings")
+        total = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE sent_to_supabase = 1")
+        sent = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE ai_processed = 1")
+        ai_processed = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM corporatefilings WHERE (downloaded_pdf_file IS NOT NULL AND TRIM(downloaded_pdf_file) != '')")
+        downloaded = cur.fetchone()[0]
+
+    metrics = {
+        "total_rows": total,
+        "pdfs_downloaded": downloaded,
+        "ai_processed": ai_processed,
+        "sent_to_supabase": sent,
+        "generated_at": datetime.now().isoformat()
+    }
+
+    # Fetch detailed rows
+    cols = [
+        "corp_id","securityid","summary","fileurl","date","ai_summary","category","isin",
+        "companyname","symbol","headline","sentiment","company_id",
+        "downloaded_pdf_file","pdf_pages","pdf_downloaded_at",
+        "ai_processed","ai_processed_at","ai_error",
+        "sent_to_supabase","sent_to_supabase_at"
+    ]
+    base_sql = "SELECT " + ", ".join(cols) + " FROM corporatefilings"
+    clauses = []
+    params = []
+    if date_filter:
+        clauses.append("date(date) = ?")
+        params.append(date_filter)
+    if where_extra:
+        clauses.append(where_extra)
+
+    if clauses:
+        sql = base_sql + " WHERE " + " AND ".join(clauses) + " ORDER BY date DESC NULLS LAST"
+    else:
+        sql = base_sql + " ORDER BY date DESC NULLS LAST"
+
+    cur.execute(sql, tuple(params))
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return metrics, rows
+
+# Helper to convert rows to a CSV with proper header for corporatefilings
+def corporate_rows_to_csv_bytes(rows):
+    """
+    Convert corporatefilings rows list to CSV bytes and return (csv_bytes, header_fields)
+    """
+    output = io.StringIO()
+    if not rows:
+        header = [
+            "corp_id","securityid","summary","fileurl","date","ai_summary","category","isin",
+            "companyname","symbol","headline","sentiment","company_id",
+            "downloaded_pdf_file","pdf_pages","pdf_downloaded_at",
+            "ai_processed","ai_processed_at","ai_error",
+            "sent_to_supabase","sent_to_supabase_at"
+        ]
+    else:
+        header = [
+            "corp_id","securityid","summary","fileurl","date","ai_summary","category","isin",
+            "companyname","symbol","headline","sentiment","company_id",
+            "downloaded_pdf_file","pdf_pages","pdf_downloaded_at",
+            "ai_processed","ai_processed_at","ai_error",
+            "sent_to_supabase","sent_to_supabase_at"
+        ]
+    writer = csv.DictWriter(output, fieldnames=header)
+    writer.writeheader()
+    for r in rows:
+        # ensure only fields present in header are written
+        row_short = {k: r.get(k, "") for k in header}
+        writer.writerow(row_short)
+    csv_text = output.getvalue()
+    return csv_text.encode("utf-8"), header
+
+# ---------- update CLI parsing in main() ----------
+
+# add new arg to parser:
+# parser.add_argument("--table", choices=["announcements","corporatefilings","both"], default="announcements", help="Which table to export")
+
+
+
+# Sending logic:
+# if args.table == "announcements": send csv_bytes_a as before
+# if args.table == "corporatefilings": send csv_bytes_c
+# if args.table == "both": send two separate emails or send one email with two attachments:
+# e.g. attachments = [
+#   {"filename": "announcements.csv", "content": base64_a, ...},
+#   {"filename": "corporatefilings.csv", "content": base64_c, ...}
+# ]
+# and pass that into send_csv_via_resend (you may need to update send_csv_via_resend to accept multiple attachments)
+
+
 
 
 # ---- CLI entrypoint ----
@@ -220,7 +335,17 @@ def main():
     parser.add_argument("--only-not-sent", action="store_true", help="Include only rows where sent_to_supabase is 0 or NULL")
     parser.add_argument("--subject", help="Email subject", default=None)
     parser.add_argument("--envfile", help="Optional .env file to load before running", default=".env")
-    args = parser.parse_args()
+    # After loading env & validating, branch on args.table:
+    if args.table in ("announcements", "both"):
+        metrics_a, rows_a = db_counts_and_rows(args.db, date_filter=args.date, where_extra=where_extra)
+        csv_bytes_a, fields_a = rows_to_csv_bytes(rows_a)
+        html_body_a = build_html_from_metrics(metrics_a)
+    if args.table in ("corporatefilings", "both"):
+        metrics_c, rows_c = corporatefilings_counts_and_rows(args.db, date_filter=args.date, where_extra=None)
+        csv_bytes_c, fields_c = corporate_rows_to_csv_bytes(rows_c)
+        # Make a slightly different html for corporate filings
+        html_body_c = f"<h2>Corporate Filings Report</h2><p>Generated at: {metrics_c.get('generated_at')}</p><p>Total rows: {metrics_c.get('total_rows')}</p>"
+        args = parser.parse_args()
 
     # load env if present
     load_env_dotenv(args.envfile)
