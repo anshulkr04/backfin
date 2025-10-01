@@ -18,6 +18,8 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 
 # Optional import - if you don't have supabase python client, the script will exit early.
 try:
