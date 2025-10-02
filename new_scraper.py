@@ -842,7 +842,6 @@ class BseScraper:
                     with open(filepath, "wb") as file:
                         file.write(response.content)
                     logger.info(f"Downloaded: {filepath}")
-                    pdf_filename = os.path.basename(filepath)
                     break
                 except requests.exceptions.Timeout:
                     logger.warning(f"PDF download timed out (attempt {attempt}/{self.max_retries})")
@@ -851,7 +850,7 @@ class BseScraper:
                     return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], [], None, "Neutral"
                 except requests.exceptions.RequestException as e:
                     logger.error(f"Error downloading PDF (attempt {attempt}/{self.max_retries}): {e}")
-                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], [], None, "Neutral"
+                    return "Error", f"Failed to download PDF: {str(e)}", "", "", [], [], None, "Neutral"
 
                 if attempt < self.max_retries:
                     wait_time = 5  # Fixed 5-second wait as requested
@@ -1186,40 +1185,17 @@ class BseScraper:
                     logger.warning(f"Failed to save local copy for corp_id {corp_id}")
             except Exception as e:
                 logger.error(f"Exception when saving local corporatefiling: {e}")
-
-            # FIXED: Safe JSON parsing for financial data
-            try:
-                findata_parsed = json.loads(findata)
-                period = findata_parsed.get("period", "")
-                sales_current = findata_parsed.get("sales_current", "")
-                sales_previous_year = findata_parsed.get("sales_previous_year", "")
-                pat_current = findata_parsed.get("pat_current", "")
-                pat_previous_year = findata_parsed.get("pat_previous_year", "")
-            except (json.JSONDecodeError, TypeError) as e:
-                logger.warning(f"Failed to parse financial data: {e}")
-                period = sales_current = sales_previous_year = pat_current = pat_previous_year = ""
-
-            financial_data = {
-                "corp_id": corp_id,
-                "company_id": company_id,
-                "period": period,
-                "sales_current": sales_current,
-                "sales_previous_year": sales_previous_year,
-                "pat_current": pat_current,
-                "pat_previous": pat_previous_year,
-                "fileurl": file_url,
-                "isin": isin,
-                "verified": "false"
-            }
-            logger.info(f"Prepared financial data for corp_id {corp_id}: {financial_data}")
+            
+            inserted = False
 
             # Only upload to Supabase if we have a connection
             if supabase:
-                inserted = False
+                
                 # Retry only the insert operation
                 for attempt in range(1, self.max_retries + 1):
                     try:
                         response = supabase.table("corporatefilings").insert(data).execute()
+                        logger.info(f"Supabase response: data={response.data}")
                         logger.info(f"Inserted data to Supabase for {scrip_id} (attempt {attempt})")
                         if newsid:
                             update_announcement_checkpoint(
@@ -1260,6 +1236,36 @@ class BseScraper:
                         else:
                             logger.error(f"Failed to insert after {self.max_retries} attempts")
 
+            # FIXED: Safe JSON parsing for financial data
+            try:
+                findata_parsed = json.loads(findata)
+                period = findata_parsed.get("period", "")
+                sales_current = findata_parsed.get("sales_current", "")
+                sales_previous_year = findata_parsed.get("sales_previous_year", "")
+                pat_current = findata_parsed.get("pat_current", "")
+                pat_previous_year = findata_parsed.get("pat_previous_year", "")
+            except Exception as e:
+                logger.warning(f"Failed to parse financial data: {e}")
+                logger.error(f"Financial data string: {findata}")
+                period = sales_current = sales_previous_year = pat_current = pat_previous_year = ""
+
+            financial_data = {
+                "corp_id": corp_id,
+                "company_id": company_id,
+                "period": period,
+                "sales_current": sales_current,
+                "sales_previous_year": sales_previous_year,
+                "pat_current": pat_current,
+                "pat_previous": pat_previous_year,
+                "fileurl": file_url,
+                "isin": isin,
+                "verified": "false"
+            }
+            logger.info(f"Prepared financial data for corp_id {corp_id}: {financial_data}")
+
+            # Only upload to Supabase if we have a connection
+            if supabase:
+                
                 # Only attempt investor upload if the row exists or was inserted just now
                 if inserted and (individual_investor_list or company_investor_list):
                     inv_attempts = 3
