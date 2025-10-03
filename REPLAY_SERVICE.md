@@ -22,6 +22,7 @@ The replay service continuously monitors for unprocessed announcements and unsen
 ```bash
 # Start both main app and replay service
 docker-compose up -d
+exit
 
 # View replay service logs
 docker-compose logs -f replay-service
