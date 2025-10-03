@@ -24,6 +24,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy app code
 COPY . .
 
+# Make scripts executable
+RUN chmod +x replay.py replay_service.py
+
 # Ensure the data directory exists and has permissive perms (container-side)
 RUN mkdir -p /app/data && chmod 755 /app/data
 

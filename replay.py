@@ -764,15 +764,71 @@ def upload_additional_data(row, supabase_client):
     except Exception as e:
         logger.error(f"Error uploading additional data for corp_id={corp_id}: {e}")
 
+def get_current_date():
+    """Get current date to check for unprocessed data"""
+    from datetime import datetime
+    return datetime.now().strftime('%Y-%m-%d')
+
+def run_continuous_replay(batch=200, retries=3, enable_ai=True, check_interval=60):
+    """Run replay continuously, checking for unprocessed data every check_interval seconds"""
+    logger.info("Starting continuous replay service...")
+    logger.info(f"Check interval: {check_interval} seconds")
+    logger.info("Checking current date for unprocessed data")
+    logger.info(f"AI processing: {'enabled' if enable_ai else 'disabled'}")
+    
+    if enable_ai and not genai_client:
+        logger.warning("AI processing unavailable (Gemini client not initialized)")
+        enable_ai = False
+    
+    consecutive_empty_runs = 0
+    max_empty_runs = 10  # After 10 consecutive empty runs, increase check interval
+    
+    while True:
+        try:
+            current_date = get_current_date()
+            logger.debug(f"Checking current date: {current_date}")
+            
+            attempted, succeeded, ai_processed = replay_unsent_to_supabase(
+                current_date, 
+                batch=batch, 
+                retry_per_row=retries, 
+                enable_ai_processing=enable_ai
+            )
+            
+            if attempted == 0:
+                consecutive_empty_runs += 1
+                logger.debug(f"No unprocessed data found for {current_date} (consecutive empty runs: {consecutive_empty_runs})")
+            else:
+                consecutive_empty_runs = 0
+                logger.info(f"Date {current_date}: Attempted: {attempted}, Succeeded: {succeeded}, AI Processed: {ai_processed}")
+            
+            # Adaptive sleep - increase interval if no work found for a while
+            current_interval = check_interval
+            if consecutive_empty_runs > max_empty_runs:
+                current_interval = min(check_interval * 2, 300)  # Max 5 minutes
+                logger.debug(f"No work found for {consecutive_empty_runs} cycles, using longer interval: {current_interval}s")
+            
+            logger.debug(f"Sleeping for {current_interval} seconds...")
+            time.sleep(current_interval)
+            
+        except KeyboardInterrupt:
+            logger.info("Continuous replay service stopped by user")
+            break
+        except Exception as e:
+            logger.error(f"Error in continuous replay: {e}")
+            logger.info(f"Continuing after error, sleeping for {check_interval} seconds...")
+            time.sleep(check_interval)
+
 def main():
-    parser = argparse.ArgumentParser(description="Replay unsent local corporatefilings rows to Supabase for a specific date")
-    parser.add_argument("--date", required=True, help="Date to replay for (example: 2025-09-26)")
+    parser = argparse.ArgumentParser(description="Replay unsent local corporatefilings rows to Supabase")
+    parser.add_argument("--date", help="Date to replay for (example: 2025-09-26). If not provided, runs in continuous mode")
     parser.add_argument("--batch", type=int, default=200, help="Number of rows to fetch in one run (default 200)")
     parser.add_argument("--retries", type=int, default=3, help="Number of retries per row when inserting to Supabase")
     parser.add_argument("--no-ai", action="store_true", help="Disable AI processing (only handle Supabase uploads)")
+    parser.add_argument("--continuous", action="store_true", help="Run in continuous mode (check every minute)")
+    parser.add_argument("--interval", type=int, default=60, help="Check interval in seconds for continuous mode (default 60)")
     args = parser.parse_args()
 
-    date_str = args.date.strip()
     enable_ai = not args.no_ai
     
     if not enable_ai:
@@ -781,14 +837,26 @@ def main():
         logger.warning("AI processing unavailable (Gemini client not initialized)")
         enable_ai = False
     
-    logger.info("Starting replay for date: %s (AI processing: %s)", date_str, "enabled" if enable_ai else "disabled")
-    attempted, succeeded, ai_processed = replay_unsent_to_supabase(
-        date_str, 
-        batch=args.batch, 
-        retry_per_row=args.retries, 
-        enable_ai_processing=enable_ai
-    )
-    logger.info("Replay complete. Attempted: %d, Succeeded: %d, AI Processed: %d", attempted, succeeded, ai_processed)
+    # If no date provided or continuous flag set, run in continuous mode
+    if not args.date or args.continuous:
+        logger.info("Running in continuous mode...")
+        run_continuous_replay(
+            batch=args.batch,
+            retries=args.retries,
+            enable_ai=enable_ai,
+            check_interval=args.interval
+        )
+    else:
+        # Single run mode
+        date_str = args.date.strip()
+        logger.info("Starting single replay for date: %s (AI processing: %s)", date_str, "enabled" if enable_ai else "disabled")
+        attempted, succeeded, ai_processed = replay_unsent_to_supabase(
+            date_str, 
+            batch=args.batch, 
+            retry_per_row=args.retries, 
+            enable_ai_processing=enable_ai
+        )
+        logger.info("Replay complete. Attempted: %d, Succeeded: %d, AI Processed: %d", attempted, succeeded, ai_processed)
 
 if __name__ == "__main__":
     main()
