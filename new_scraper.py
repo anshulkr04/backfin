@@ -1103,37 +1103,53 @@ class BseScraper:
                             logger.error(f"Failed to mark local PDF downloaded for corp_id {corp_id}: {e}")
 
             # After AI processed (if ai_summary available and not error)
-            if ai_summary and newsid:
+            if newsid:
                 now_ts = datetime.now(timezone.utc).isoformat()
-                update_announcement_checkpoint(
-                    newsid=newsid,
-                    db_path=LOCAL_DB_PATH,
-                    ai_processed=1,
-                    ai_summary=ai_summary,
-                    ai_error=None,
-                    ai_processed_at=now_ts
-                )
-                try:
-                    mark_local_ai_processed(corp_id=corp_id, ai_summary=ai_summary, processed_at=now_ts, ai_error=None)
-                    logger.info(f"Marked local corporatefiling {corp_id} as AI processed")
-                except Exception as e:
-                    logger.error(f"Failed to mark local ai_processed for corp_id {corp_id}: {e}")
-            elif (category == "Error" or isinstance(ai_summary, str) and ai_summary.startswith("Error")) and newsid:
-                # If AI returned error, still mark and store message
-                now_ts = datetime.now(timezone.utc).isoformat()
-                update_announcement_checkpoint(
-                    newsid=newsid,
-                    db_path=LOCAL_DB_PATH,
-                    ai_processed=0,
-                    ai_summary=None,
-                    ai_error=str(ai_summary) if ai_summary else "AI processing error",
-                    ai_processed_at=now_ts
-                )
-                try:
-                    mark_local_ai_processed(corp_id=corp_id, ai_summary=None, processed_at=now_ts, ai_error=str(ai_summary) if ai_summary else "AI processing error")
-                    logger.info(f"Marked local corporatefiling {corp_id} as AI error")
-                except Exception as e:
-                    logger.error(f"Failed to mark local ai_error for corp_id {corp_id}: {e}")
+
+                # If AI returned an error category (or category explicitly "Error"), mark as error
+                if category == "Error" or (isinstance(ai_summary, str) and ai_summary.startswith("Error")):
+                    update_announcement_checkpoint(
+                        newsid=newsid,
+                        db_path=LOCAL_DB_PATH,
+                        ai_processed=0,
+                        ai_summary=None,
+                        ai_error=str(ai_summary) if ai_summary else "AI processing error",
+                        ai_processed_at=now_ts
+                    )
+                    try:
+                        mark_local_ai_processed(
+                            corp_id=corp_id,
+                            ai_summary=None,
+                            processed_at=now_ts,
+                            ai_error=str(ai_summary) if ai_summary else "AI processing error"
+                        )
+                        logger.info(f"Marked local corporatefiling {corp_id} as AI error")
+                    except Exception as e:
+                        logger.error(f"Failed to mark local ai_error for corp_id {corp_id}: {e}")
+
+                # Otherwise, if we have a valid ai_summary and category is not Error, mark as processed
+                elif ai_summary:
+                    update_announcement_checkpoint(
+                        newsid=newsid,
+                        db_path=LOCAL_DB_PATH,
+                        ai_processed=1,
+                        ai_summary=ai_summary,
+                        ai_error=None,
+                        ai_processed_at=now_ts
+                    )
+                    try:
+                        mark_local_ai_processed(
+                            corp_id=corp_id,
+                            ai_summary=ai_summary,
+                            processed_at=now_ts,
+                            ai_error=None
+                        )
+                        logger.info(f"Marked local corporatefiling {corp_id} as AI processed")
+                    except Exception as e:
+                        logger.error(f"Failed to mark local ai_processed for corp_id {corp_id}: {e}")
+                else:
+                    # No ai_summary and not an explicit error — don't touch ai_processed flags
+                    logger.info("No AI summary produced and no explicit AI error; skipping ai_processed update")
 
             # Get ISIN
             isin = self.get_isin(scrip_id)
