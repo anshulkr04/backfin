@@ -524,6 +524,17 @@ def fetch_rows_needing_processing(conn, date_str, batch=500):
     """
     cur.execute(query, (date_str, like_iso, like_compact, batch))
     rows = cur.fetchall()
+    
+    # Debug logging
+    if rows:
+        logger.info(f"Found {len(rows)} rows needing processing:")
+        for row in rows[:5]:  # Log first 5 rows for debugging
+            corp_id = row["corp_id"]
+            ai_processed = row["ai_processed"] if row["ai_processed"] is not None else 0
+            sent_to_supabase = row["sent_to_supabase"] if row["sent_to_supabase"] is not None else 0
+            category = row["category"] if row["category"] is not None else ""
+            logger.info(f"  corp_id={corp_id}, ai_processed={ai_processed}, sent_to_supabase={sent_to_supabase}, category='{category}'")
+    
     return rows
 
 def row_to_payload(row):
@@ -575,38 +586,37 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
     logger.info(f"Created temporary directory: {temp_dir}")
 
     try:
+        # First pass: Handle AI processing
+        if enable_ai_processing:
+            rows = fetch_rows_needing_processing(conn, date_str, batch=batch)
+            ai_rows = [r for r in rows if not (r["ai_processed"] if r["ai_processed"] is not None else 0)]
+            
+            if ai_rows:
+                logger.info(f"Found {len(ai_rows)} rows needing AI processing")
+                for r in ai_rows:
+                    attempted += 1
+                    corp_id = r["corp_id"]
+                    logger.info(f"AI processing corp_id={corp_id}")
+                    
+                    if process_ai_for_row(r, conn, temp_dir, supabase_client):
+                        ai_processed += 1
+        
+        # Second pass: Handle Supabase uploads (including newly AI-processed rows)
         rows = fetch_rows_needing_processing(conn, date_str, batch=batch)
-        if not rows:
-            logger.info("No rows needing processing found for date %s", date_str)
-            return 0, 0, 0
-
-        logger.info("Found %d rows needing processing for date %s (batch=%d)", len(rows), date_str, batch)
-
-        for r in rows:
-            attempted += 1
-            corp_id = r["corp_id"]
-            # Handle both sqlite3.Row and dict objects
-            needs_ai_processing = not (r["ai_processed"] if r["ai_processed"] is not None else 0)
-            needs_supabase_upload = not (r["sent_to_supabase"] if r["sent_to_supabase"] is not None else 0)
-            
-            logger.info(f"Processing corp_id={corp_id}, needs_ai={needs_ai_processing}, needs_upload={needs_supabase_upload}")
-            
-            # Handle AI processing if needed
-            if needs_ai_processing and enable_ai_processing:
-                if process_ai_for_row(r, conn, temp_dir, supabase_client):
-                    ai_processed += 1
-                # Reload the row after AI processing
-                conn.row_factory = sqlite3.Row
-                cur = conn.cursor()
-                cur.execute("SELECT * FROM corporatefilings WHERE corp_id = ?", (corp_id,))
-                updated_row = cur.fetchone()
-                if updated_row:
-                    r = updated_row
-            
-            # Handle Supabase upload if needed
-            if needs_supabase_upload:
-                # Skip if category is Procedural/Administrative
+        upload_rows = [r for r in rows if not (r["sent_to_supabase"] if r["sent_to_supabase"] is not None else 0)]
+        
+        if upload_rows:
+            logger.info(f"Found {len(upload_rows)} rows needing Supabase upload")
+            for r in upload_rows:
+                if r["corp_id"] not in [row["corp_id"] for row in (ai_rows if enable_ai_processing and 'ai_rows' in locals() else [])]:
+                    attempted += 1  # Only count if not already counted in AI processing
+                
+                corp_id = r["corp_id"]
                 category = r["category"] if r["category"] is not None else ""
+                
+                logger.info(f"Uploading to Supabase: corp_id={corp_id}, category='{category}'")
+                
+                # Skip if category is Procedural/Administrative
                 if category == "Procedural/Administrative":
                     logger.info(f"Skipping Supabase upload for corp_id={corp_id} (Procedural/Administrative)")
                     # Still mark as sent to avoid reprocessing
@@ -622,6 +632,8 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
                     try:
                         # Insert into Supabase
                         response = supabase_client.table("corporatefilings").insert(payload).execute()
+                        logger.info(f"Successfully inserted to Supabase: corp_id={corp_id}")
+                        
                         # Mark local as sent
                         mark_local_sent_to_supabase(conn, corp_id)
                         
