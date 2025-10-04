@@ -401,6 +401,17 @@ def safely_upload_financial_data(supabase, financial_data, symbol, isin, max_ret
         logger.error(f"Error in safely_upload_financial_data: {e}")
         return False
 
+def safe_row_get(row, key, default=None):
+    """Safely get value from SQLite row object or dict"""
+    try:
+        if hasattr(row, 'keys') and key in row.keys():
+            value = row[key]
+            return value if value is not None else default
+        else:
+            return default
+    except (KeyError, TypeError):
+        return default
+
 def get_supabase_client():
     """Return a supabase client if env vars present, else None."""
     if create_client is None:
@@ -517,40 +528,28 @@ def fetch_rows_needing_processing(conn, date_str, batch=500):
 
 def row_to_payload(row):
     """Convert sqlite row tuple / dict to dict payload for Supabase insert."""
-    # row could be a tuple; best to access by index mapping - use column names if available
-    # We'll try to detect if row is sqlite3.Row (mapping)
-    if isinstance(row, sqlite3.Row):
-        get = lambda k: row[k]
-    else:
-        # Fallback: try index-based mapping (use schema order)
-        # Schema order used in earlier script:
-        # corp_id, securityid, summary, fileurl, date, ai_summary, category, isin,
-        # companyname, symbol, headline, sentiment, company_id, downloaded_pdf_file,
-        # pdf_pages, pdf_downloaded_at, ai_processed, ai_processed_at, ai_error,
-        # sent_to_supabase, sent_to_supabase_at
-        def get(k):
-            mapping = {
-                "corp_id": 0, "securityid": 1, "summary": 2, "fileurl": 3, "date": 4,
-                "ai_summary": 5, "category": 6, "isin": 7, "companyname": 8, "symbol": 9,
-                "headline": 10, "sentiment": 11, "company_id": 12
-            }
-            idx = mapping.get(k)
-            return row[idx] if idx is not None and idx < len(row) else None
-
+    # Handle sqlite3.Row objects which are dict-like but not exactly dicts
+    def safe_get(key, default=None):
+        try:
+            value = row[key]
+            return value if value is not None else default
+        except (KeyError, TypeError, IndexError):
+            return default
+    
     payload = {
-        "corp_id": get("corp_id"),
-        "securityid": get("securityid"),
-        "summary": get("summary"),
-        "fileurl": get("fileurl"),
-        "date": get("date"),
-        "ai_summary": get("ai_summary"),
-        "category": get("category"),
-        "isin": get("isin"),
-        "companyname": get("companyname"),
-        "symbol": get("symbol"),
-        "headline": get("headline"),
-        "sentiment": get("sentiment"),
-        "company_id": get("company_id"),
+        "corp_id": safe_get("corp_id"),
+        "securityid": safe_get("securityid"),
+        "summary": safe_get("summary"),
+        "fileurl": safe_get("fileurl"),
+        "date": safe_get("date"),
+        "ai_summary": safe_get("ai_summary"),
+        "category": safe_get("category"),
+        "isin": safe_get("isin"),
+        "companyname": safe_get("companyname"),
+        "symbol": safe_get("symbol"),
+        "headline": safe_get("headline"),
+        "sentiment": safe_get("sentiment"),
+        "company_id": safe_get("company_id"),
     }
     return payload
 
@@ -586,8 +585,9 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
         for r in rows:
             attempted += 1
             corp_id = r["corp_id"]
-            needs_ai_processing = not r.get("ai_processed", 0)
-            needs_supabase_upload = not r.get("sent_to_supabase", 0)
+            # Handle both sqlite3.Row and dict objects
+            needs_ai_processing = not (r["ai_processed"] if r["ai_processed"] is not None else 0)
+            needs_supabase_upload = not (r["sent_to_supabase"] if r["sent_to_supabase"] is not None else 0)
             
             logger.info(f"Processing corp_id={corp_id}, needs_ai={needs_ai_processing}, needs_upload={needs_supabase_upload}")
             
@@ -606,7 +606,7 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
             # Handle Supabase upload if needed
             if needs_supabase_upload:
                 # Skip if category is Procedural/Administrative
-                category = r.get("category", "")
+                category = r["category"] if r["category"] is not None else ""
                 if category == "Procedural/Administrative":
                     logger.info(f"Skipping Supabase upload for corp_id={corp_id} (Procedural/Administrative)")
                     # Still mark as sent to avoid reprocessing
@@ -669,8 +669,8 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
 def process_ai_for_row(row, conn, temp_dir, supabase_client):
     """Process AI for a single row that needs AI processing"""
     corp_id = row["corp_id"]
-    summary = row.get("summary", "")
-    fileurl = row.get("fileurl", "")
+    summary = row["summary"] if row["summary"] is not None else ""
+    fileurl = row["fileurl"] if row["fileurl"] is not None else ""
     
     logger.info(f"Starting AI processing for corp_id={corp_id}")
     
@@ -749,7 +749,7 @@ def upload_additional_data(row, supabase_client):
     
     try:
         # Handle financial data if available
-        category = row.get("category", "")
+        category = row["category"] if row["category"] is not None else ""
         if category != "Procedural/Administrative":
             # Parse financial data (assuming it was processed by AI)
             # This would be in the fileurl content or processed separately

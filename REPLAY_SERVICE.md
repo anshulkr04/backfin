@@ -7,11 +7,11 @@ The replay service continuously monitors for unprocessed announcements and unsen
 ## Features
 
 - **Continuous Monitoring**: Checks every 60 seconds for unprocessed data
+- **Current Date Focus**: Only processes today's announcements for real-time efficiency
 - **AI Processing**: Processes PDFs that weren't analyzed properly
 - **Supabase Upload**: Ensures all processed data reaches Supabase
 - **Smart Category Handling**: Skips AI for "Procedural/Administrative" categories
 - **Adaptive Intervals**: Increases check interval when no work is found
-- **Multi-day Coverage**: Checks last 7 days by default
 - **Graceful Shutdown**: Handles interrupts properly
 - **Comprehensive Logging**: Tracks all operations
 
@@ -41,7 +41,7 @@ python replay.py --continuous
 python replay.py --date 2025-10-04
 
 # Custom intervals and settings
-python replay.py --continuous --interval 30 --days-back 3 --batch 100
+python replay.py --continuous --interval 30 --batch 100
 
 # Disable AI processing
 python replay.py --continuous --no-ai
@@ -60,7 +60,6 @@ python replay_service.py
 |--------|---------|-------------|
 | `--continuous` | False | Run in continuous mode |
 | `--interval` | 60 | Check interval in seconds |
-| `--days-back` | 7 | Number of days to check for unprocessed data |
 | `--batch` | 200 | Number of rows to process per cycle |
 | `--retries` | 3 | Number of retries for failed operations |
 | `--no-ai` | False | Disable AI processing |
