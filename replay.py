@@ -588,8 +588,24 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
     try:
         # First pass: Handle AI processing
         if enable_ai_processing:
-            rows = fetch_rows_needing_processing(conn, date_str, batch=batch)
-            ai_rows = [r for r in rows if not (r["ai_processed"] if r["ai_processed"] is not None else 0)]
+            # Get rows that need AI processing regardless of Supabase status
+            cur = conn.cursor()
+            compact = date_str.replace("-", "")
+            like_iso = f"{date_str}%"
+            like_compact = f"{compact}%"
+            
+            cur.execute("""
+                SELECT * FROM corporatefilings
+                WHERE (ai_processed IS NULL OR ai_processed = 0)
+                AND (
+                    date = ?
+                    OR date LIKE ?
+                    OR date LIKE ?
+                )
+                LIMIT ?
+            """, (date_str, like_iso, like_compact, batch))
+            
+            ai_rows = cur.fetchall()
             
             if ai_rows:
                 logger.info(f"Found {len(ai_rows)} rows needing AI processing")
@@ -604,6 +620,41 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
         # Second pass: Handle Supabase uploads (including newly AI-processed rows)
         rows = fetch_rows_needing_processing(conn, date_str, batch=batch)
         upload_rows = [r for r in rows if not (r["sent_to_supabase"] if r["sent_to_supabase"] is not None else 0)]
+        
+        # Also check for rows that were AI processed but already sent to Supabase (need category update)
+        if enable_ai_processing and ai_processed > 0:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT * FROM corporatefilings 
+                WHERE (date LIKE ? OR date = ?) 
+                AND ai_processed = 1 
+                AND sent_to_supabase = 1
+                AND (category IS NOT NULL AND category != '')
+            """, (f"{date_str}%", date_str))
+            
+            update_rows = cur.fetchall()
+            if update_rows:
+                logger.info(f"Found {len(update_rows)} rows needing category update in Supabase")
+                for r in update_rows:
+                    corp_id = r["corp_id"]
+                    category = r["category"] if r["category"] is not None else ""
+                    
+                    logger.info(f"Updating Supabase category for corp_id={corp_id}, category='{category}'")
+                    
+                    try:
+                        # Update the existing row in Supabase with new AI data
+                        update_payload = {
+                            "category": r["category"],
+                            "ai_summary": r["ai_summary"],
+                            "headline": r["headline"],
+                            "sentiment": r["sentiment"]
+                        }
+                        
+                        response = supabase_client.table("corporatefilings").update(update_payload).eq("corp_id", corp_id).execute()
+                        logger.info(f"Successfully updated Supabase row: corp_id={corp_id}")
+                        succeeded += 1
+                    except Exception as e:
+                        logger.error(f"Failed to update Supabase row corp_id={corp_id}: {e}")
         
         if upload_rows:
             logger.info(f"Found {len(upload_rows)} rows needing Supabase upload")
