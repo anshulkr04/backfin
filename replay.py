@@ -586,83 +586,39 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
     logger.info(f"Created temporary directory: {temp_dir}")
 
     try:
-        # First pass: Handle AI processing
-        if enable_ai_processing:
-            # Get rows that need AI processing regardless of Supabase status
-            cur = conn.cursor()
-            compact = date_str.replace("-", "")
-            like_iso = f"{date_str}%"
-            like_compact = f"{compact}%"
-            
-            cur.execute("""
-                SELECT * FROM corporatefilings
-                WHERE (ai_processed IS NULL OR ai_processed = 0)
-                AND (
-                    date = ?
-                    OR date LIKE ?
-                    OR date LIKE ?
-                )
-                LIMIT ?
-            """, (date_str, like_iso, like_compact, batch))
-            
-            ai_rows = cur.fetchall()
-            
-            if ai_rows:
-                logger.info(f"Found {len(ai_rows)} rows needing AI processing")
-                for r in ai_rows:
-                    attempted += 1
-                    corp_id = r["corp_id"]
-                    logger.info(f"AI processing corp_id={corp_id}")
-                    
-                    if process_ai_for_row(r, conn, temp_dir, supabase_client):
-                        ai_processed += 1
-        
-        # Second pass: Handle Supabase uploads (including newly AI-processed rows)
+        # Get all rows that need processing (AI or Supabase upload)
         rows = fetch_rows_needing_processing(conn, date_str, batch=batch)
-        upload_rows = [r for r in rows if not (r["sent_to_supabase"] if r["sent_to_supabase"] is not None else 0)]
         
-        # Also check for rows that were AI processed but already sent to Supabase (need category update)
-        if enable_ai_processing and ai_processed > 0:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT * FROM corporatefilings 
-                WHERE (date LIKE ? OR date = ?) 
-                AND ai_processed = 1 
-                AND sent_to_supabase = 1
-                AND (category IS NOT NULL AND category != '')
-            """, (f"{date_str}%", date_str))
+        if not rows:
+            logger.info(f"No rows found needing processing for date {date_str}")
+            return 0, 0, 0
             
-            update_rows = cur.fetchall()
-            if update_rows:
-                logger.info(f"Found {len(update_rows)} rows needing category update in Supabase")
-                for r in update_rows:
-                    corp_id = r["corp_id"]
-                    category = r["category"] if r["category"] is not None else ""
-                    
-                    logger.info(f"Updating Supabase category for corp_id={corp_id}, category='{category}'")
-                    
-                    try:
-                        # Update the existing row in Supabase with new AI data
-                        update_payload = {
-                            "category": r["category"],
-                            "ai_summary": r["ai_summary"],
-                            "headline": r["headline"],
-                            "sentiment": r["sentiment"]
-                        }
-                        
-                        response = supabase_client.table("corporatefilings").update(update_payload).eq("corp_id", corp_id).execute()
-                        logger.info(f"Successfully updated Supabase row: corp_id={corp_id}")
-                        succeeded += 1
-                    except Exception as e:
-                        logger.error(f"Failed to update Supabase row corp_id={corp_id}: {e}")
+        logger.info(f"Found {len(rows)} rows needing processing")
         
-        if upload_rows:
-            logger.info(f"Found {len(upload_rows)} rows needing Supabase upload")
-            for r in upload_rows:
-                if r["corp_id"] not in [row["corp_id"] for row in (ai_rows if enable_ai_processing and 'ai_rows' in locals() else [])]:
-                    attempted += 1  # Only count if not already counted in AI processing
-                
-                corp_id = r["corp_id"]
+        for r in rows:
+            attempted += 1
+            corp_id = r["corp_id"]
+            ai_processed_flag = r["ai_processed"] if r["ai_processed"] is not None else 0
+            sent_to_supabase_flag = r["sent_to_supabase"] if r["sent_to_supabase"] is not None else 0
+            
+            logger.info(f"Processing corp_id={corp_id}, ai_processed={ai_processed_flag}, sent_to_supabase={sent_to_supabase_flag}")
+            
+            # First, handle AI processing if needed
+            if enable_ai_processing and not ai_processed_flag:
+                logger.info(f"Starting AI processing for corp_id={corp_id}")
+                if process_ai_for_row(r, conn, temp_dir, supabase_client):
+                    ai_processed += 1
+                    # Refresh the row data after AI processing
+                    cur = conn.cursor()
+                    cur.execute("SELECT * FROM corporatefilings WHERE corp_id = ?", (corp_id,))
+                    r = cur.fetchone()
+                    if not r:
+                        logger.error(f"Row disappeared after AI processing: corp_id={corp_id}")
+                        continue
+            
+            # Then, handle Supabase upload if needed
+            sent_to_supabase_flag = r["sent_to_supabase"] if r["sent_to_supabase"] is not None else 0
+            if not sent_to_supabase_flag:
                 category = r["category"] if r["category"] is not None else ""
                 
                 logger.info(f"Uploading to Supabase: corp_id={corp_id}, category='{category}'")
@@ -713,6 +669,8 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
 
                 if not success:
                     logger.error("Failed to replay corp_id=%s after %d attempts. Last error: %s", corp_id, retry_per_row, last_err)
+            else:
+                logger.info(f"Row corp_id={corp_id} already sent to Supabase, skipping")
 
         return attempted, succeeded, ai_processed
 
