@@ -600,6 +600,7 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
             corp_id = r["corp_id"]
             ai_processed_flag = r["ai_processed"] if r["ai_processed"] is not None else 0
             sent_to_supabase_flag = r["sent_to_supabase"] if r["sent_to_supabase"] is not None else 0
+            ai_processed_in_this_run = False
             
             logger.info(f"Processing corp_id={corp_id}, ai_processed={ai_processed_flag}, sent_to_supabase={sent_to_supabase_flag}")
             
@@ -608,6 +609,7 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
                 logger.info(f"Starting AI processing for corp_id={corp_id}")
                 if process_ai_for_row(r, conn, temp_dir, supabase_client):
                     ai_processed += 1
+                    ai_processed_in_this_run = True
                     # Refresh the row data after AI processing
                     cur = conn.cursor()
                     cur.execute("SELECT * FROM corporatefilings WHERE corp_id = ?", (corp_id,))
@@ -616,11 +618,50 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
                         logger.error(f"Row disappeared after AI processing: corp_id={corp_id}")
                         continue
             
-            # Then, handle Supabase upload if needed
+            # Then, handle Supabase upload/update if needed
             sent_to_supabase_flag = r["sent_to_supabase"] if r["sent_to_supabase"] is not None else 0
-            if not sent_to_supabase_flag:
-                category = r["category"] if r["category"] is not None else ""
+            category = r["category"] if r["category"] is not None else ""
+            
+            # Check if we just processed this row with AI and it was already sent to Supabase
+            if sent_to_supabase_flag and ai_processed_in_this_run:
+                # This row was AI processed in this run and already exists in Supabase - update it
+                logger.info(f"Updating existing Supabase row: corp_id={corp_id}, category='{category}'")
                 
+                # Skip update if category is Procedural/Administrative (no need to update)
+                if category == "Procedural/Administrative":
+                    logger.info(f"Skipping Supabase update for corp_id={corp_id} (Procedural/Administrative)")
+                    succeeded += 1
+                    continue
+                
+                success = False
+                last_err = None
+                
+                for attempt in range(1, retry_per_row + 1):
+                    try:
+                        # Update the existing row in Supabase with new AI data
+                        update_payload = {
+                            "category": r["category"],
+                            "ai_summary": r["ai_summary"],
+                            "headline": r["headline"],
+                            "sentiment": r["sentiment"]
+                        }
+                        
+                        response = supabase_client.table("corporatefilings").update(update_payload).eq("corp_id", corp_id).execute()
+                        logger.info(f"Successfully updated Supabase row: corp_id={corp_id}")
+                        succeeded += 1
+                        success = True
+                        break
+                    except Exception as e:
+                        last_err = e
+                        logger.warning("Attempt %d/%d failed to update corp_id %s: %s", attempt, retry_per_row, corp_id, e)
+                        if attempt < retry_per_row:
+                            time.sleep(wait_between_retries * attempt)
+                
+                if not success:
+                    logger.error("Failed to update corp_id=%s after %d attempts. Last error: %s", corp_id, retry_per_row, last_err)
+                    
+            elif not sent_to_supabase_flag:
+                # Row not yet sent to Supabase - insert it
                 logger.info(f"Uploading to Supabase: corp_id={corp_id}, category='{category}'")
                 
                 # Skip if category is Procedural/Administrative
@@ -670,7 +711,7 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
                 if not success:
                     logger.error("Failed to replay corp_id=%s after %d attempts. Last error: %s", corp_id, retry_per_row, last_err)
             else:
-                logger.info(f"Row corp_id={corp_id} already sent to Supabase, skipping")
+                logger.info(f"Row corp_id={corp_id} already sent to Supabase and no AI processing needed, skipping")
 
         return attempted, succeeded, ai_processed
 
