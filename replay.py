@@ -627,12 +627,6 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
                 # This row was AI processed in this run and already exists in Supabase - update it
                 logger.info(f"Updating existing Supabase row: corp_id={corp_id}, category='{category}'")
                 
-                # Skip update if category is Procedural/Administrative (no need to update)
-                if category == "Procedural/Administrative":
-                    logger.info(f"Skipping Supabase update for corp_id={corp_id} (Procedural/Administrative)")
-                    succeeded += 1
-                    continue
-                
                 success = False
                 last_err = None
                 
@@ -647,7 +641,7 @@ def replay_unsent_to_supabase(date_str, batch=100, retry_per_row=3, wait_between
                         }
                         
                         response = supabase_client.table("corporatefilings").update(update_payload).eq("corp_id", corp_id).execute()
-                        logger.info(f"Successfully updated Supabase row: corp_id={corp_id}")
+                        logger.info(f"Successfully updated Supabase row: corp_id={corp_id} with category='{category}'")
                         succeeded += 1
                         success = True
                         break
