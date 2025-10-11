@@ -1329,11 +1329,6 @@ class BseScraper:
             # Use processing lock to prevent concurrent execution
             with self._processing_lock():
                 announcements = self.fetch_data()
-                if announcements:
-                    try:
-                        save_raw_fetch(announcements, url=self.url, params=self.params)
-                    except Exception as e:
-                        logger.error(f"Failed to save raw fetch to local DB: {e}")
                 if not announcements:
                     logger.warning("No announcements found")
                     return False
@@ -1344,6 +1339,13 @@ class BseScraper:
                 # If no previous announcement saved, process only the latest one (first run)
                 if not last_latest_announcement:
                     logger.info("No previous announcement found, processing latest announcement only")
+                    # Save raw data only on first run
+                    try:
+                        save_raw_fetch([announcements[0]], url=self.url, params=self.params)
+                        logger.info("Saved raw data for first run")
+                    except Exception as e:
+                        logger.error(f"Failed to save raw fetch to local DB: {e}")
+                    
                     data = self.process_data(announcements[0])
                     if data:
                         save_latest_announcement(announcements[0])
@@ -1368,6 +1370,13 @@ class BseScraper:
                     return False
                 
                 logger.info(f"Found {len(new_announcements)} new announcements to process")
+                
+                # Save raw data only when there are new announcements
+                try:
+                    save_raw_fetch(new_announcements, url=self.url, params=self.params)
+                    logger.info(f"Saved raw data for {len(new_announcements)} new announcements")
+                except Exception as e:
+                    logger.error(f"Failed to save raw fetch to local DB: {e}")
                 
                 # Process new announcements in reverse order (oldest first)
                 # This ensures proper chronological processing

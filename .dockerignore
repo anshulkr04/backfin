@@ -4,6 +4,18 @@ data/*.db
 data/*.sqlite
 data/*.sqlite3
 
+# Exclude all backup files and directories
+data/backups/
+data/*backup*
+*.backup
+*.bak
+*.old
+*backup*.db
+
+# Exclude entire data directory except what's needed
+data/
+!data/.gitkeep
+
 # Exclude log files
 *.log
 logs/
@@ -61,3 +73,19 @@ env/
 *.bak
 *.backup
 *.old
+
+# Exclude large files and build artifacts
+*.tar
+*.zip
+*.gz
+*.tar.gz
+*.tgz
+node_modules/
+dist/
+build/
+
+# Exclude temporary files
+tmp/
+temp/
+*.tmp
+*.temp
