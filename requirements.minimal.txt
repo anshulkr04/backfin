@@ -6,6 +6,13 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.6
 pydantic==2.11.4
 
+# Flask Framework (for legacy API)
+flask==3.0.3
+flask-cors==4.0.1
+flask-socketio==5.3.6
+gevent==24.2.1
+eventlet==0.36.1
+
 # Redis
 redis==5.0.1
 
