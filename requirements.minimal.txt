@@ -35,8 +35,13 @@ pandas==2.2.3
 # Supabase (minimal)
 supabase==2.15.1
 
-# Google AI (using google-generativeai which is more stable)
-google-generativeai==0.8.3
+# Supabase (minimal)
+supabase==2.15.1
+
+# Google AI (using google-genai which matches the imports)
+google-genai==1.15.0
+
+# Web scraping basics
 
 # Web scraping basics
 beautifulsoup4==4.12.3
