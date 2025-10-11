@@ -3,7 +3,7 @@ import os
 import logging
 import time 
 import json
-import google.generativeai as genai
+from google import genai
 from dotenv import load_dotenv
 from collections import deque
 import re
