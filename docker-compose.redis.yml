@@ -12,93 +12,110 @@ services:
     networks:
       - backfin_network
 
-  # Scraper Service
-  scraper:
-    build: .
-    container_name: backfin-scraper
+  # Worker Spawner - manages ephemeral workers
+  worker-spawner:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker-spawner
+    container_name: backfin-worker-spawner
     depends_on:
       - redis
     environment:
-      - REDIS_URL=redis://redis:6379
-      - SUPABASE_URL2=${SUPABASE_URL2}
-      - SUPABASE_KEY2=${SUPABASE_KEY2}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
     networks:
       - backfin_network
     restart: unless-stopped
-    # Will be defined later as queue producer
+    command: python management/worker_spawner.py
 
-  # AI Worker Service  
-  ai-worker:
-    build: .
+  # BSE Scraper (scheduled)
+  bse-scraper:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.scraper
+    container_name: backfin-bse-scraper
     depends_on:
       - redis
     environment:
-      - REDIS_URL=redis://redis:6379
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - WORKER_TYPE=ai_processor
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SCRAPER_TYPE=bse
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data
-      - ./logs/workers:/app/logs
+      - ./logs:/app/logs
     networks:
       - backfin_network
     restart: unless-stopped
-    deploy:
-      replicas: 2
 
-  # Database Worker Service
-  db-worker:
-    build: .
+  # NSE Scraper (scheduled)
+  nse-scraper:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.scraper
+    container_name: backfin-nse-scraper
     depends_on:
       - redis
     environment:
-      - REDIS_URL=redis://redis:6379
-      - SUPABASE_URL2=${SUPABASE_URL2}
-      - SUPABASE_KEY2=${SUPABASE_KEY2}
-      - WORKER_TYPE=database_uploader
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SCRAPER_TYPE=nse
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data
-      - ./logs/workers:/app/logs
+      - ./logs:/app/logs
     networks:
       - backfin_network
     restart: unless-stopped
 
   # API Service
   api:
-    build: .
+    build: 
+      context: .
+      dockerfile: docker/Dockerfile.api
     container_name: backfin-api
     depends_on:
       - redis
     ports:
       - "8000:8000"
     environment:
-      - REDIS_URL=redis://redis:6379
-      - SUPABASE_URL2=${SUPABASE_URL2}
-      - SUPABASE_KEY2=${SUPABASE_KEY2}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data
     networks:
       - backfin_network
     restart: unless-stopped
-    command: python api/app.py
+    command: python api/main.py
 
-  # Queue Monitor (optional)
-  queue-monitor:
-    build: .
+  # Queue Monitor Dashboard
+  monitor:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.monitor
     container_name: backfin-monitor
     depends_on:
       - redis
     ports:
       - "8080:8080"
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     networks:
       - backfin_network
     restart: unless-stopped
-    # Will run monitoring dashboard
+    command: python scripts/live_monitor.py --web --port 8080
 
 volumes:
   redis_data:
