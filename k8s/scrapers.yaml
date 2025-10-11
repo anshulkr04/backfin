@@ -20,6 +20,7 @@ spec:
       - name: bse-scraper
         image: backfin/scraper:latest
         imagePullPolicy: Never
+        command: ["python", "src/scrapers/bse_scraper.py"]
         envFrom:
         - configMapRef:
             name: backfin-config
@@ -68,6 +69,7 @@ spec:
       - name: nse-scraper
         image: backfin/scraper:latest
         imagePullPolicy: Never
+        command: ["python", "src/scrapers/nse_scraper.py"]
         envFrom:
         - configMapRef:
             name: backfin-config
