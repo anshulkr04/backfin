@@ -93,7 +93,7 @@ spec:
     spec:
       containers:
       - name: queue-manager
-        image: backfin/queue-manager:latest  # We'll build this
+        image: backfin/monitor:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080

@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: ai-worker
-        image: backfin/ai-worker:latest  # We'll build this
+        image: backfin/worker-spawner:latest
         imagePullPolicy: Always
         envFrom:
         - configMapRef:
@@ -73,7 +73,7 @@ spec:
     spec:
       containers:
       - name: supabase-worker
-        image: backfin/supabase-worker:latest  # We'll build this
+        image: backfin/worker-spawner:latest
         imagePullPolicy: Always
         envFrom:
         - configMapRef:
@@ -128,7 +128,7 @@ spec:
     spec:
       containers:
       - name: investor-worker
-        image: backfin/investor-worker:latest  # We'll build this
+        image: backfin/worker-spawner:latest
         imagePullPolicy: Always
         envFrom:
         - configMapRef:

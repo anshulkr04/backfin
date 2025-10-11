@@ -20,7 +20,7 @@ spec:
         spec:
           containers:
           - name: bse-scraper
-            image: backfin/bse-scraper:latest
+            image: backfin/scraper:latest
             imagePullPolicy: Always
             command:
             - python
@@ -62,7 +62,7 @@ spec:
         spec:
           containers:
           - name: nse-scraper
-            image: backfin/nse-scraper:latest
+            image: backfin/scraper:latest
             imagePullPolicy: Always
             command:
             - python
@@ -104,7 +104,7 @@ spec:
         spec:
           containers:
           - name: cleanup
-            image: backfin/queue-manager:latest
+            image: backfin/monitor:latest
             imagePullPolicy: Always
             command:
             - python

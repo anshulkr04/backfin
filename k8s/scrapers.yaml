@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: bse-scraper
-        image: backfin/bse-scraper:latest  # We'll build this
+        image: backfin/scraper:latest
         imagePullPolicy: Always
         envFrom:
         - configMapRef:
@@ -66,7 +66,7 @@ spec:
     spec:
       containers:
       - name: nse-scraper
-        image: backfin/nse-scraper:latest  # We'll build this
+        image: backfin/scraper:latest
         imagePullPolicy: Always
         envFrom:
         - configMapRef:
