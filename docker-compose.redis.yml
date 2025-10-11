@@ -90,6 +90,7 @@ services:
       - REDIS_PORT=6379
       - API_HOST=0.0.0.0
       - API_PORT=8000
+      - PORT=8000
       - PROD=FALSE
     env_file:
       - .env
