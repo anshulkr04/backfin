@@ -97,7 +97,7 @@ services:
     networks:
       - backfin_network
     restart: unless-stopped
-    command: python api/main.py
+    command: python api/app.py
 
   # Queue Monitor Dashboard
   monitor:
