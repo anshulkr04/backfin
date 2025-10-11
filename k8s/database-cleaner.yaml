@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: database-cleaner
+  namespace: backfin
+  labels:
+    app: database-cleaner
+    component: maintenance
+spec:
+  schedule: "30 0 * * *"  # Daily at 12:30 AM
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: database-cleaner
+        spec:
+          containers:
+          - name: db-cleaner
+            image: backfin/db-cleaner:latest
+            imagePullPolicy: Never
+            env:
+            - name: DB_PATH
+              value: "/app/data/bse_raw.db"
+            - name: CLEANUP_TIME
+              value: "00:30"
+            volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+            - name: logs-volume
+              mountPath: /app/logs
+            resources:
+              requests:
+                memory: "64Mi"
+                cpu: "50m"
+              limits:
+                memory: "128Mi"
+                cpu: "100m"
+          volumes:
+          - name: data-volume
+            persistentVolumeClaim:
+              claimName: backfin-data-pvc
+          - name: logs-volume
+            persistentVolumeClaim:
+              claimName: backfin-logs-pvc
+          restartPolicy: OnFailure
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1

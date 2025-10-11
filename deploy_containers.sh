@@ -11,6 +11,7 @@
     echo "   ❤️  Health Check:   http://localhost:8000/health"
     echo "   📈 Queue Status:   http://localhost:8000/queues/status"
     echo "   📊 Monitor:        http://localhost:8081"
+    echo "   🧹 DB Cleaner:     Deletes ALL HISTORICAL data at 12:30 AM (keeps only today)"
     echo ""
     echo "🐳 Docker containers:"
     docker-compose -f docker-compose.redis.yml ps
@@ -18,7 +19,13 @@
     echo "💡 Example API call:"
     echo "curl -X POST http://localhost:8000/jobs/announcement \\"
     echo "  -H 'Content-Type: application/json' \\"
-    echo "  -d '{\"company_name\": \"RELIANCE\", \"announcement_text\": \"Q3 earnings released\"}'"dependencies needed
+    echo "  -d '{\"company_name\": \"RELIANCE\", \"announcement_text\": \"Q3 earnings released\"}'"
+    echo ""
+    echo "🧹 Database cleanup:"
+    echo "   Manual cleanup (all historical): python scripts/cleanup_database.py"
+    echo "   Manual cleanup (7 days old):     python scripts/cleanup_database.py --mode retention"
+    echo "   View cleaner logs:                docker logs backfin-db-cleaner"
+    echo "   Configure cleanup time:           Edit CLEANUP_TIME in docker-compose.redis.yml"dependencies needed
 
 set -e
 
