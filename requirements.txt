@@ -20,7 +20,8 @@ numpy==2.2.5
 python-dotenv==1.1.0
 
 # AI and Analysis
-google-generativeai==0.8.3
+# google-generativeai==0.8.3
+google-genai==1.15.0
 
 # Database (Supabase)
 supabase==2.15.1

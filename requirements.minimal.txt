@@ -26,8 +26,9 @@ pandas==2.2.3
 supabase==2.15.1
 
 # Google AI (updated version that supports 'from google import genai')
-google>=3.0.0
-google-generativeai>=0.8.3
+# google>=3.0.0
+# google-generativeai>=0.8.3
+google-genai==1.15.0
 
 # Web scraping basics
 beautifulsoup4==4.12.3
