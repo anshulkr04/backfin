@@ -128,16 +128,6 @@ main() {
     show_status
 }
 
-# Handle cleanup on exit
-cleanup() {
-    echo ""
-    echo "🛑 Shutting down containers..."
-    docker-compose -f docker-compose.redis.yml down
-}
-
-# Set trap for cleanup
-trap cleanup EXIT
-
 # Check for help
 if [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
     echo "Containerized Backfin Deployment"

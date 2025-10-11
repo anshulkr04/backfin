@@ -51,6 +51,7 @@ services:
     networks:
       - backfin_network
     restart: unless-stopped
+    command: python src/scrapers/bse_scraper.py
 
   # NSE Scraper (scheduled)
   nse-scraper:
@@ -72,6 +73,7 @@ services:
     networks:
       - backfin_network
     restart: unless-stopped
+    command: python src/scrapers/nse_scraper.py
 
   # API Service
   api:
