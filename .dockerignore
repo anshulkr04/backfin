@@ -1,0 +1,63 @@
+# Exclude database files
+data/bse_raw.db
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# Exclude log files
+*.log
+logs/
+nse_scraper.log
+bse_scraper.log
+
+# Exclude cache and temp files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.coverage
+.pytest_cache/
+
+# Exclude git and development files
+.git/
+.gitignore
+.env
+.env.local
+.env.*.local
+
+# Exclude documentation
+*.md
+readme.md
+inv.md
+
+# Exclude development scripts
+test*.py
+debug*.py
+count.sh
+pop.sh
+
+# Exclude Docker files themselves
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Exclude Kubernetes manifests
+k8s/
+
+# Exclude virtual environment
+.venv/
+venv/
+env/
+
+# Exclude IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Exclude backup files
+*.bak
+*.backup
+*.old
