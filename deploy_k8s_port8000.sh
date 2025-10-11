@@ -140,11 +140,12 @@ load_images_k8s() {
         minikube image load backfin/db-cleaner:latest
         log_success "Images loaded to minikube"
     elif kubectl config current-context | grep -q kind; then
-        log_info "Loading images to kind..."
-        kind load docker-image backfin/api-server:latest
-        kind load docker-image backfin/worker-spawner:latest
-        kind load docker-image backfin/scraper:latest
-        kind load docker-image backfin/monitor:latest
+        log_info "Loading images to kind cluster..."
+        kind load docker-image backfin/api-server:latest --name backfin-cluster
+        kind load docker-image backfin/worker-spawner:latest --name backfin-cluster
+        kind load docker-image backfin/scraper:latest --name backfin-cluster
+        kind load docker-image backfin/monitor:latest --name backfin-cluster
+        kind load docker-image backfin/db-cleaner:latest --name backfin-cluster
         log_success "Images loaded to kind"
     else
         log_warning "Not using local cluster - assuming images are in registry"
