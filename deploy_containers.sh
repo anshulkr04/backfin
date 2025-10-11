@@ -1,7 +1,24 @@
 #!/bin/bash
 
 # Containerized Deployment Script
-# Everything runs in Docker containers - no local dependencies needed
+# Everything runs in Docker cont    echo ""
+    echo "🎉 DEPLOYMENT COMPLETE!"
+    echo "======================"
+    echo ""
+    echo "🌐 Services running:"
+    echo "   📊 API Server:     http://localhost:8000"
+    echo "   📚 API Docs:       http://localhost:8000/docs"
+    echo "   ❤️  Health Check:   http://localhost:8000/health"
+    echo "   📈 Queue Status:   http://localhost:8000/queues/status"
+    echo "   📊 Monitor:        http://localhost:8081"
+    echo ""
+    echo "🐳 Docker containers:"
+    docker-compose -f docker-compose.redis.yml ps
+    echo ""
+    echo "💡 Example API call:"
+    echo "curl -X POST http://localhost:8000/jobs/announcement \\"
+    echo "  -H 'Content-Type: application/json' \\"
+    echo "  -d '{\"company_name\": \"RELIANCE\", \"announcement_text\": \"Q3 earnings released\"}'"dependencies needed
 
 set -e
 
@@ -82,17 +99,17 @@ show_status() {
     echo "======================"
     echo ""
     echo "🌐 Services running:"
-    echo "   📊 API Server:     http://localhost:8000"
-    echo "   📚 API Docs:       http://localhost:8000/docs"
-    echo "   ❤️  Health Check:   http://localhost:8000/health"
-    echo "   📈 Queue Status:   http://localhost:8000/queues/status"
-    echo "   📊 Monitor:        http://localhost:8080"
+    echo "   📊 API Server:     http://localhost:8001"
+    echo "   📚 API Docs:       http://localhost:8001/docs"
+    echo "   ❤️  Health Check:   http://localhost:8001/health"
+    echo "   📈 Queue Status:   http://localhost:8001/queues/status"
+    echo "   📊 Monitor:        http://localhost:8082"
     echo ""
     echo "🐳 Docker containers:"
     docker-compose -f docker-compose.redis.yml ps
     echo ""
     echo "💡 Example API call:"
-    echo "curl -X POST http://localhost:8000/jobs/announcement \\"
+    echo "curl -X POST http://localhost:8001/jobs/announcement \\"
     echo "  -H 'Content-Type: application/json' \\"
     echo "  -d '{\"company_name\": \"RELIANCE\", \"announcement_text\": \"Q3 earnings released\"}'"
     echo ""
