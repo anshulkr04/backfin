@@ -3,7 +3,7 @@ import os
 import logging
 import time 
 import json
-import google as genai
+from google import genai
 from dotenv import load_dotenv
 from collections import deque
 import re
@@ -21,6 +21,13 @@ try:
 except ImportError:
     PDF_SUPPORT = False
 from pydantic import BaseModel, Field
+
+# Add the project root to Python path for imports
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from src.ai.prompts import *
 from src.services.investor_analyzer import uploadInvestor
 import fcntl  
