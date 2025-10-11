@@ -94,7 +94,7 @@ spec:
       containers:
       - name: queue-manager
         image: backfin/monitor:latest
-        imagePullPolicy: Always
+        imagePullPolicy: Never
         ports:
         - containerPort: 8080
           name: http
