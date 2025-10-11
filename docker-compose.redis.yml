@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: backfin-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - backfin_network
+
+  # Scraper Service
+  scraper:
+    build: .
+    container_name: backfin-scraper
+    depends_on:
+      - redis
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - SUPABASE_URL2=${SUPABASE_URL2}
+      - SUPABASE_KEY2=${SUPABASE_KEY2}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - backfin_network
+    restart: unless-stopped
+    # Will be defined later as queue producer
+
+  # AI Worker Service  
+  ai-worker:
+    build: .
+    depends_on:
+      - redis
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - WORKER_TYPE=ai_processor
+    volumes:
+      - ./data:/app/data
+      - ./logs/workers:/app/logs
+    networks:
+      - backfin_network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Database Worker Service
+  db-worker:
+    build: .
+    depends_on:
+      - redis
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - SUPABASE_URL2=${SUPABASE_URL2}
+      - SUPABASE_KEY2=${SUPABASE_KEY2}
+      - WORKER_TYPE=database_uploader
+    volumes:
+      - ./data:/app/data
+      - ./logs/workers:/app/logs
+    networks:
+      - backfin_network
+    restart: unless-stopped
+
+  # API Service
+  api:
+    build: .
+    container_name: backfin-api
+    depends_on:
+      - redis
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - SUPABASE_URL2=${SUPABASE_URL2}
+      - SUPABASE_KEY2=${SUPABASE_KEY2}
+    volumes:
+      - ./data:/app/data
+    networks:
+      - backfin_network
+    restart: unless-stopped
+    command: python api/app.py
+
+  # Queue Monitor (optional)
+  queue-monitor:
+    build: .
+    container_name: backfin-monitor
+    depends_on:
+      - redis
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    networks:
+      - backfin_network
+    restart: unless-stopped
+    # Will run monitoring dashboard
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  backfin_network:
+    driver: bridge
