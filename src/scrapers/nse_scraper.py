@@ -53,8 +53,8 @@ try:
 except ImportError:
     PDF_SUPPORT = False
 from pydantic import BaseModel, Field
-from prompt import *
-from invanl import uploadInvestor
+from src.ai.prompts import *
+from src.services.investor_analyzer import uploadInvestor
 import fcntl  
 import contextlib
 

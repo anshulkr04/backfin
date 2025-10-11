@@ -1,0 +1,13 @@
+# BSE Scraper Dockerfile
+FROM backfin/base:latest
+
+# Set specific environment variables
+ENV WORKER_TYPE=bse_scraper
+ENV SERVICE_NAME=bse-scraper
+
+# Health check specific to BSE scraper
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "from src.scrapers.bse_scraper import health_check; health_check()" || exit 1
+
+# Run BSE scraper
+CMD ["python", "src/scrapers/bse_scraper.py"]

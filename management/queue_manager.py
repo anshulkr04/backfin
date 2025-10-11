@@ -4,17 +4,25 @@ Queue management utilities for monitoring and controlling Redis queues
 
 import json
 import time
+import sys
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from src.queue.redis_client import redis_client, QueueNames
+from src.queue.redis_client import RedisConfig, QueueNames
 from src.queue.job_types import deserialize_job, BaseJob
+import redis
 
 class QueueManager:
     """Manager for Redis queue operations"""
     
     def __init__(self):
-        self.redis = redis_client
+        config = RedisConfig()
+        self.redis = redis.Redis(
+            host=config.redis_host,
+            port=config.redis_port,
+            db=config.redis_db,
+            decode_responses=True
+        )
         
     def get_queue_lengths(self) -> Dict[str, int]:
         """Get length of all queues"""

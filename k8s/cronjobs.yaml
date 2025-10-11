@@ -1,0 +1,126 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bse-scraper-job
+  namespace: backfin
+  labels:
+    app: bse-scraper-cron
+    component: scheduled-job
+spec:
+  schedule: "*/15 * * * *"  # Every 15 minutes
+  concurrencyPolicy: Forbid  # Don't run concurrent jobs
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: bse-scraper-cron
+        spec:
+          containers:
+          - name: bse-scraper
+            image: backfin/bse-scraper:latest
+            imagePullPolicy: Always
+            command:
+            - python
+            - src/scrapers/bse_scraper.py
+            - --mode=cron
+            envFrom:
+            - configMapRef:
+                name: backfin-config
+            - secretRef:
+                name: backfin-secrets
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "250m"
+          restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nse-scraper-job
+  namespace: backfin
+  labels:
+    app: nse-scraper-cron
+    component: scheduled-job
+spec:
+  schedule: "*/10 * * * *"  # Every 10 minutes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: nse-scraper-cron
+        spec:
+          containers:
+          - name: nse-scraper
+            image: backfin/nse-scraper:latest
+            imagePullPolicy: Always
+            command:
+            - python
+            - src/scrapers/nse_scraper.py
+            - --mode=cron
+            envFrom:
+            - configMapRef:
+                name: backfin-config
+            - secretRef:
+                name: backfin-secrets
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "250m"
+          restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cleanup-job
+  namespace: backfin
+  labels:
+    app: cleanup-cron
+    component: maintenance
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: cleanup-cron
+        spec:
+          containers:
+          - name: cleanup
+            image: backfin/queue-manager:latest
+            imagePullPolicy: Always
+            command:
+            - python
+            - management/queue_manager.py
+            - cleanup
+            - --older-than=7d
+            envFrom:
+            - configMapRef:
+                name: backfin-config
+            - secretRef:
+                name: backfin-secrets
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "50m"
+              limits:
+                memory: "256Mi"
+                cpu: "100m"
+          restartPolicy: OnFailure

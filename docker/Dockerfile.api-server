@@ -1,0 +1,20 @@
+# API Server Dockerfile
+FROM backfin/base:latest
+
+# Install additional dependencies for web server
+RUN pip install fastapi uvicorn
+
+# Set specific environment variables
+ENV SERVICE_NAME=api-server
+ENV PORT=8000
+ENV HOST=0.0.0.0
+
+# Expose port
+EXPOSE 8000
+
+# Health check specific to API server
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run API server
+CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]

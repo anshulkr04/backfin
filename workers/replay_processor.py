@@ -53,8 +53,8 @@ from pydantic import BaseModel, Field
 
 # Import functions from other files
 try:
-    from prompt import all_prompt, category_prompt, headline_prompt, sum_prompt, financial_data_prompt
-    from invanl import uploadInvestor
+    from src.ai.prompts import all_prompt, category_prompt, headline_prompt, sum_prompt, financial_data_prompt
+    from src.services.investor_analyzer import uploadInvestor
 except ImportError as e:
     logging.warning(f"Could not import some modules: {e}")
 

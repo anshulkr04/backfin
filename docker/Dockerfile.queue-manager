@@ -1,0 +1,16 @@
+# Queue Manager Dockerfile
+FROM backfin/base:latest
+
+# Set specific environment variables
+ENV SERVICE_NAME=queue-manager
+ENV PORT=8080
+
+# Expose port
+EXPOSE 8080
+
+# Health check specific to Queue manager
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "from management.queue_manager import health_check; health_check()" || exit 1
+
+# Run Queue manager
+CMD ["python", "management/queue_manager.py", "server"]
