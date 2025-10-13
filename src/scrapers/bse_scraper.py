@@ -1332,10 +1332,22 @@ class BseScraper:
                 if not announcements:
                     logger.warning("No announcements found")
                     return False
+                
+                logger.info(f"🔍 DEBUG: Fetched {len(announcements)} announcements")
+                if announcements:
+                    latest = announcements[0]
+                    logger.info(f"🔍 DEBUG: Latest announcement NEWSID: {latest.get('NEWSID', 'Unknown')}")
+                    logger.info(f"🔍 DEBUG: Latest announcement date: {latest.get('DT_TM', 'Unknown')}")
                     
                 # Load the last processed announcement
                 last_latest_announcement = load_latest_announcement()
                 
+                if last_latest_announcement:
+                    logger.info(f"🔍 DEBUG: Baseline NEWSID: {last_latest_announcement.get('NEWSID', 'Unknown')}")
+                    logger.info(f"🔍 DEBUG: Baseline date: {last_latest_announcement.get('DT_TM', 'Unknown')}")
+                else:
+                    logger.info("🔍 DEBUG: No baseline found - first run")
+                    
                 # If no previous announcement saved, process only the latest one (first run)
                 if not last_latest_announcement:
                     logger.info("No previous announcement found, processing latest announcement only")
