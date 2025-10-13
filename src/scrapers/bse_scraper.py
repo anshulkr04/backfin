@@ -1396,10 +1396,10 @@ class BseScraper:
                 
                 # Save the newest announcement as the latest processed
                 if new_announcements:
-                    # Save the newest one (last in reversed list)
-                    newest_announcement = new_announcements[-1]
+                    # Save the newest one (first in the list since BSE provides newest first)
+                    newest_announcement = new_announcements[0]
                     save_latest_announcement(newest_announcement)
-                    logger.info(f"Processed {processed_count} new announcements")
+                    logger.info(f"Processed {processed_count} new announcements, saved newest as baseline")
                     
                 return processed_count > 0
                             
