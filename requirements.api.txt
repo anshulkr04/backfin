@@ -34,3 +34,4 @@ beautifulsoup4==4.12.3
 
 # Utilities
 python-dateutil==2.9.0.post0
+schedule==1.2.2

@@ -119,24 +119,24 @@ services:
     restart: unless-stopped
     command: python scripts/live_monitor.py --web --port 8080
 
-  # Database Cleaner Service
-  db-cleaner:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.db-cleaner
-    container_name: backfin-db-cleaner
-    depends_on:
-      - redis
-    environment:
-      - DB_PATH=/app/data/bse_raw.db
-      - CLEANUP_TIME=00:30  # 12:30 AM daily
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    networks:
-      - backfin_network
-    restart: unless-stopped
-    command: python services/database_cleaner.py
+  # Database Cleaner Service (DISABLED - dependency issues)
+  # db-cleaner:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/Dockerfile.db-cleaner
+  #   container_name: backfin-db-cleaner
+  #   depends_on:
+  #     - redis
+  #   environment:
+  #     - DB_PATH=/app/data/bse_raw.db
+  #     - CLEANUP_TIME=00:30  # 12:30 AM daily
+  #   volumes:
+  #     - ./data:/app/data
+  #     - ./logs:/app/logs
+  #   networks:
+  #     - backfin_network
+  #   restart: unless-stopped
+  #   command: python services/database_cleaner.py
 
 volumes:
   redis_data:
