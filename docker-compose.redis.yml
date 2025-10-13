@@ -39,10 +39,13 @@ services:
     container_name: backfin-bse-scraper
     depends_on:
       - redis
+      - api
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - SCRAPER_TYPE=bse
+      - API_HOST=api
+      - API_PORT=8000
     env_file:
       - .env
     volumes:
@@ -61,10 +64,13 @@ services:
     container_name: backfin-nse-scraper
     depends_on:
       - redis
+      - api
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - SCRAPER_TYPE=nse
+      - API_HOST=api
+      - API_PORT=8000
     env_file:
       - .env
     volumes:

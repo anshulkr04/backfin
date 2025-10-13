@@ -101,7 +101,7 @@ if not (SUPABASE_URL and SUPABASE_KEY):
     logger.warning("Will operate in limited mode without Supabase credentials")
 
 # API endpoint configuration
-API_ENDPOINT = os.getenv("WEBSOCKET_API_ENDPOINT", "http://localhost:8000/api/insert_new_announcement")
+API_ENDPOINT = os.getenv("WEBSOCKET_API_ENDPOINT", "http://api:8000/api/insert_new_announcement")
 ENABLE_WEBSOCKET_API = os.getenv("ENABLE_WEBSOCKET_API", "true").lower() == "true"
 
 if ENABLE_WEBSOCKET_API:
@@ -189,8 +189,8 @@ def safely_upload_financial_data(supabase, financial_data, symbol, isin, max_ret
 # Add functions to handle announcement tracking in JSON file
 def get_data_dir():
     """Get or create the data directory"""
-    # Create a 'data' directory in the same folder as this script
-    data_dir = Path(__file__).parent / "data"
+    # Use the mounted data directory from the container
+    data_dir = Path("/app/data")
     os.makedirs(data_dir, exist_ok=True)
     return data_dir
 
@@ -1046,7 +1046,10 @@ class NseScraper:
                         
                         # Send to API endpoint (which will handle websocket communication)
                         try:
-                            post_url = "http://localhost:8000/api/insert_new_announcement"  # BSE
+                            # Use Docker service name for container communication
+                            api_host = os.getenv("API_HOST", "api")  # Docker service name
+                            api_port = os.getenv("API_PORT", "8000")
+                            post_url = f"http://{api_host}:{api_port}/api/insert_new_announcement"  # BSE
                             # For NSE, use: API_ENDPOINT if ENABLE_WEBSOCKET_API else None
                             data["is_fresh"] = True  # Mark as fresh for broadcasting
                             res = requests.post(url=post_url, json=data)
