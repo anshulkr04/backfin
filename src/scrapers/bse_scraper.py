@@ -1380,7 +1380,7 @@ class BseScraper:
                 if not new_announcements:
                     logger.info("No new announcements to process")
                     return False
-                
+
                 logger.info(f"Found {len(new_announcements)} new announcements to process")
                 
                 # Save raw data only when there are new announcements
@@ -1390,29 +1390,34 @@ class BseScraper:
                 except Exception as e:
                     logger.error(f"Failed to save raw fetch to local DB: {e}")
                 
+                # Set baseline to the oldest announcement from the batch (so we can catch up)
+                # BSE provides newest first, so oldest is at index -1
+                oldest_announcement = new_announcements[-1]
+                save_latest_announcement(oldest_announcement)
+                logger.info(f"Set baseline to oldest announcement: NEWSID {oldest_announcement.get('NEWSID')}")
+                
                 # Process new announcements in reverse order (oldest first)
                 # This ensures proper chronological processing
                 new_announcements.reverse()
                 
                 processed_count = 0
                 for i, announcement in enumerate(new_announcements):
-                    logger.info(f"Processing new announcement {i+1}/{len(new_announcements)}")
+                    logger.info(f"Processing announcement {i+1}/{len(new_announcements)}: NEWSID {announcement.get('NEWSID')}")
                     
                     data = self.process_data(announcement)
                     if data:
                         processed_count += 1
                         self._send_to_api_if_needed(data)
+                    
+                    # Update baseline after processing each announcement
+                    save_latest_announcement(announcement)
+                    logger.info(f"Updated baseline to processed announcement: NEWSID {announcement.get('NEWSID')}")
                         
                     # Small delay between processing announcements
                     time.sleep(0.5)
                 
-                # Save the newest announcement as the latest processed
-                if new_announcements:
-                    # Save the newest one (first in the list since BSE provides newest first)
-                    newest_announcement = new_announcements[0]
-                    save_latest_announcement(newest_announcement)
-                    logger.info(f"Processed {processed_count} new announcements, saved newest as baseline")
-                    
+                logger.info(f"Processed {processed_count} announcements, baseline now at newest processed announcement")
+                
                 return processed_count > 0
                             
         except BlockingIOError:
