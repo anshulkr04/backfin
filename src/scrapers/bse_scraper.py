@@ -776,6 +776,22 @@ class BseScraper:
         # Track if this is the first run - FIXED: Check if flag file does NOT exist
         self.first_run_flag_path = Path(__file__).parent / "data" / "first_run_flag.txt"
 
+    def update_date_params(self):
+        """Update the date parameters to fetch recent announcements"""
+        from datetime import datetime, timedelta
+        
+        # Fetch announcements from the last 3 days to ensure we don't miss anything
+        # if the scraper was down
+        today = datetime.today()
+        three_days_ago = today - timedelta(days=3)
+        
+        today_str = today.strftime('%Y%m%d')
+        prev_date_str = three_days_ago.strftime('%Y%m%d')
+        
+        self.params["strPrevDate"] = prev_date_str
+        self.params["strToDate"] = today_str
+        logger.info(f"Updated date parameters: from {prev_date_str} to {today_str}")
+
     def __del__(self):
         """Clean up temporary directory on object destruction"""
         try:
@@ -787,6 +803,9 @@ class BseScraper:
 
     def fetch_data(self):
         """Fetch announcement data with retries and error handling"""
+        # Update date parameters to ensure we're fetching today's announcements
+        self.update_date_params()
+        
         for attempt in range(1, self.max_retries + 1):
             try:
                 with requests.Session() as session:
@@ -1338,6 +1357,13 @@ class BseScraper:
                     latest = announcements[0]
                     logger.info(f"🔍 DEBUG: Latest announcement NEWSID: {latest.get('NEWSID', 'Unknown')}")
                     logger.info(f"🔍 DEBUG: Latest announcement date: {latest.get('DT_TM', 'Unknown')}")
+                    logger.info(f"🔍 DEBUG: Latest announcement keys: {list(latest.keys())}")
+                    # Check if NEWSID is actually under a different key
+                    for key, value in latest.items():
+                        if 'id' in key.lower() or 'news' in key.lower():
+                            logger.info(f"🔍 DEBUG: Found ID-like key '{key}': {value}")
+                else:
+                    logger.warning("🔍 DEBUG: No announcements in the fetched data")
                     
                 # Load the last processed announcement
                 last_latest_announcement = load_latest_announcement()
@@ -1367,12 +1393,20 @@ class BseScraper:
                 # Find all new announcements
                 new_announcements = []
                 last_newsid = last_latest_announcement.get('NEWSID')
+                last_date = last_latest_announcement.get('DT_TM')
                 
-                for announcement in announcements:
+                logger.info(f"🔍 DEBUG: Looking for announcements newer than NEWSID: {last_newsid}")
+                logger.info(f"🔍 DEBUG: Looking for announcements newer than date: {last_date}")
+                
+                for i, announcement in enumerate(announcements):
                     current_newsid = announcement.get('NEWSID')
+                    current_date = announcement.get('DT_TM')
+                    
+                    logger.info(f"🔍 DEBUG: Checking announcement {i}: NEWSID={current_newsid}, Date={current_date}")
                     
                     # Stop when we reach the last processed announcement
-                    if current_newsid == last_newsid:
+                    if current_newsid and current_newsid == last_newsid:
+                        logger.info(f"🔍 DEBUG: Found baseline announcement at index {i}, stopping")
                         break
                         
                     new_announcements.append(announcement)
