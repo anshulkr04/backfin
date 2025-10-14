@@ -810,19 +810,37 @@ class BseScraper:
             try:
                 with requests.Session() as session:
                     session.headers.update(self.headers)
+                    
+                    # Debug: Log the full request details
+                    logger.info(f"🔍 DEBUG: Making API request to {self.url}")
+                    logger.info(f"🔍 DEBUG: Request params: {self.params}")
+                    logger.info(f"🔍 DEBUG: Request headers: {self.headers}")
+                    
                     response = session.get(
                         self.url, 
                         params=self.params, 
                         timeout=self.request_timeout
                     )
                     
+                    logger.info(f"🔍 DEBUG: Response status code: {response.status_code}")
+                    logger.info(f"🔍 DEBUG: Response headers: {dict(response.headers)}")
+                    
                     response.raise_for_status()  # Raises an exception for 4XX/5XX responses
                     
+                    # Debug: Log the raw response text (first 500 chars)
+                    raw_text = response.text
+                    logger.info(f"🔍 DEBUG: Raw response (first 500 chars): {raw_text[:500]}")
+                    
                     data = response.json()
+                    logger.info(f"🔍 DEBUG: JSON keys in response: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+                    
                     announcements = data.get("Table", [])
                     
                     if not announcements and isinstance(announcements, list):
                         logger.warning("API returned empty announcement list")
+                        logger.info(f"🔍 DEBUG: Full response data: {data}")
+                    else:
+                        logger.info(f"🔍 DEBUG: Found {len(announcements)} announcements")
                     
                     return announcements
             except requests.exceptions.Timeout:
