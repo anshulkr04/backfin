@@ -512,4 +512,4 @@ cd /opt/backfin && source .venv/bin/activate && python scripts/live_monitor.py
 python -c "import redis, json, uuid; r=redis.Redis(decode_responses=True); r.lpush('backfin:queue:ai_processing', json.dumps({'job_id': str(uuid.uuid4()), 'job_type': 'ai_processing', 'corp_id': 'TEST'}))"
 ```
 
-**Your system is now production-ready on the VM! 🚀**
+**Your system is now production-ready on the VM e2e! 🚀**
