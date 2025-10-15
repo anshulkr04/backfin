@@ -778,19 +778,15 @@ class BseScraper:
 
     def update_date_params(self):
         """Update the date parameters to fetch recent announcements"""
-        from datetime import datetime, timedelta
+        from datetime import datetime
         
-        # Fetch announcements from the last 3 days to ensure we don't miss anything
-        # if the scraper was down
+        # Use today's date for both parameters - this matches the working scraper
         today = datetime.today()
-        three_days_ago = today - timedelta(days=3)
-        
         today_str = today.strftime('%Y%m%d')
-        prev_date_str = three_days_ago.strftime('%Y%m%d')
         
-        self.params["strPrevDate"] = prev_date_str
+        self.params["strPrevDate"] = today_str
         self.params["strToDate"] = today_str
-        logger.info(f"Updated date parameters: from {prev_date_str} to {today_str}")
+        logger.info(f"Updated date parameters: from {today_str} to {today_str}")
 
     def __del__(self):
         """Clean up temporary directory on object destruction"""
@@ -811,10 +807,9 @@ class BseScraper:
                 with requests.Session() as session:
                     session.headers.update(self.headers)
                     
-                    # Debug: Log the full request details
+                    # Debug: Log the request details
                     logger.info(f"🔍 DEBUG: Making API request to {self.url}")
                     logger.info(f"🔍 DEBUG: Request params: {self.params}")
-                    logger.info(f"🔍 DEBUG: Request headers: {self.headers}")
                     
                     response = session.get(
                         self.url, 
@@ -823,24 +818,45 @@ class BseScraper:
                     )
                     
                     logger.info(f"🔍 DEBUG: Response status code: {response.status_code}")
-                    logger.info(f"🔍 DEBUG: Response headers: {dict(response.headers)}")
                     
                     response.raise_for_status()  # Raises an exception for 4XX/5XX responses
                     
-                    # Debug: Log the raw response text (first 500 chars)
+                    # Debug: Check response content
                     raw_text = response.text
-                    logger.info(f"🔍 DEBUG: Raw response (first 500 chars): {raw_text[:500]}")
+                    logger.info(f"🔍 DEBUG: Raw response length: {len(raw_text)}")
+                    logger.info(f"🔍 DEBUG: Raw response (first 200 chars): {raw_text[:200]}")
                     
-                    data = response.json()
-                    logger.info(f"🔍 DEBUG: JSON keys in response: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+                    if not raw_text.strip():
+                        logger.warning("🔍 DEBUG: Empty response received")
+                        return []
                     
-                    announcements = data.get("Table", [])
+                    try:
+                        data = response.json()
+                    except json.JSONDecodeError as e:
+                        logger.error(f"🔍 DEBUG: Failed to parse JSON: {e}")
+                        logger.error(f"🔍 DEBUG: Raw response: {raw_text}")
+                        return []
                     
-                    if not announcements and isinstance(announcements, list):
-                        logger.warning("API returned empty announcement list")
+                    logger.info(f"🔍 DEBUG: JSON response type: {type(data)}")
+                    
+                    if isinstance(data, dict):
+                        logger.info(f"🔍 DEBUG: JSON keys: {list(data.keys())}")
+                        announcements = data.get("Table", [])
+                    elif isinstance(data, list):
+                        logger.info(f"🔍 DEBUG: Response is a list with {len(data)} items")
+                        announcements = data
+                    else:
+                        logger.warning(f"🔍 DEBUG: Unexpected response type: {type(data)}")
+                        return []
+                    
+                    if not announcements:
+                        logger.warning("🔍 DEBUG: No announcements found in response")
                         logger.info(f"🔍 DEBUG: Full response data: {data}")
                     else:
                         logger.info(f"🔍 DEBUG: Found {len(announcements)} announcements")
+                        if announcements:
+                            first_ann = announcements[0]
+                            logger.info(f"🔍 DEBUG: First announcement keys: {list(first_ann.keys()) if isinstance(first_ann, dict) else 'Not a dict'}")
                     
                     return announcements
             except requests.exceptions.Timeout:
