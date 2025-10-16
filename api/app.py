@@ -1724,13 +1724,38 @@ def fetch_saved_announcements(current_user):
     if request.method == 'OPTIONS':
         return _handle_options()
     try:
-        response = supabase.rpc("fetch_saved_announcements", {"user_id_input": user_id}).execute()
+        # Direct query to saved_items table with join to corporatefilings
+        response = supabase.table('saved_items').select("""
+            id,
+            item_type,
+            related_announcement_id,
+            related_deal_id,
+            note,
+            saved_at,
+            saved_price,
+            corporatefilings!saved_items_related_announcement_id_fkey(
+                corp_id,
+                securityid,
+                summary,
+                fileurl,
+                date,
+                ai_summary,
+                category,
+                isin,
+                companyname,
+                symbol,
+                headline,
+                sentiment
+            )
+        """).eq('user_id', user_id).order('saved_at', desc=True).execute()
+        
         if hasattr(response, 'error') and response.error:
             logger.error(f"Error fetching saved announcements: {response.error}")
             return jsonify({
                 "message": "Failed to fetch saved announcements",
                 "status": "error"
             }), 500
+        
         if not response.data:
             logger.info("No saved announcements found")
             return jsonify({
@@ -1741,12 +1766,39 @@ def fetch_saved_announcements(current_user):
 
         # Enhance each announcement with price difference calculations
         enhanced_data = []
-        for announcement in response.data:
-            enhanced_announcement = announcement.copy()
+        for saved_item in response.data:
+            # Create enhanced announcement object
+            enhanced_announcement = {
+                'saved_item_id': saved_item.get('id'),
+                'item_type': saved_item.get('item_type'),
+                'note': saved_item.get('note', ''),
+                'saved_at': saved_item.get('saved_at'),
+                'saved_price': saved_item.get('saved_price'),
+                'related_announcement_id': saved_item.get('related_announcement_id'),
+                'related_deal_id': saved_item.get('related_deal_id')
+            }
             
-            # Only calculate price diff if we have saved_price and isin
-            saved_price = announcement.get('saved_price')
-            isin = announcement.get('isin')
+            # Add corporate filing data if available
+            corp_filing = saved_item.get('corporatefilings')
+            if corp_filing:
+                enhanced_announcement.update({
+                    'corp_id': corp_filing.get('corp_id'),
+                    'securityid': corp_filing.get('securityid'),
+                    'summary': corp_filing.get('summary'),
+                    'fileurl': corp_filing.get('fileurl'),
+                    'date': corp_filing.get('date'),
+                    'ai_summary': corp_filing.get('ai_summary'),
+                    'category': corp_filing.get('category'),
+                    'isin': corp_filing.get('isin'),
+                    'companyname': corp_filing.get('companyname'),
+                    'symbol': corp_filing.get('symbol'),
+                    'headline': corp_filing.get('headline'),
+                    'sentiment': corp_filing.get('sentiment')
+                })
+            
+            # Calculate price difference if we have saved_price and isin
+            saved_price = saved_item.get('saved_price')
+            isin = corp_filing.get('isin') if corp_filing else None
             
             if saved_price is not None and isin:
                 try:
@@ -1807,6 +1859,100 @@ def fetch_saved_announcements(current_user):
         logger.error(f"Error fetching saved announcements: {str(e)}")
         return jsonify({
             "message": f"Error fetching saved announcements: {str(e)}",
+            "status": "error"
+        }), 500
+
+
+@app.route('/api/update_saved_announcement/<saved_item_id>', methods=['PUT', 'OPTIONS'])
+@auth_required
+def update_saved_announcement(current_user, saved_item_id):
+    """Update the note of a saved announcement"""
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    
+    try:
+        user_id = current_user['UserID']
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "message": "No data provided",
+                "status": "error"
+            }), 400
+        
+        new_note = data.get('note', '')
+        
+        # Validate that the saved_item_id is a valid UUID format
+        try:
+            import uuid
+            uuid.UUID(saved_item_id)
+        except ValueError:
+            return jsonify({
+                "message": "Invalid saved item ID format",
+                "status": "error"
+            }), 400
+        
+        # First, verify that the saved item exists and belongs to the current user
+        check_response = supabase.table('saved_items').select('id, user_id, note').eq('id', saved_item_id).execute()
+        
+        if hasattr(check_response, 'error') and check_response.error:
+            logger.error(f"Error checking saved item: {check_response.error}")
+            return jsonify({
+                "message": "Failed to verify saved item",
+                "status": "error"
+            }), 500
+        
+        if not check_response.data or len(check_response.data) == 0:
+            return jsonify({
+                "message": "Saved item not found",
+                "status": "error"
+            }), 404
+        
+        saved_item = check_response.data[0]
+        
+        # Verify that the user_id matches
+        if saved_item['user_id'] != user_id:
+            logger.warning(f"User {user_id} attempted to update saved item {saved_item_id} belonging to user {saved_item['user_id']}")
+            return jsonify({
+                "message": "Unauthorized: You can only update your own saved items",
+                "status": "error"
+            }), 403
+        
+        # Update the note
+        update_response = supabase.table('saved_items').update({
+            'note': new_note
+        }).eq('id', saved_item_id).execute()
+        
+        if hasattr(update_response, 'error') and update_response.error:
+            logger.error(f"Error updating saved item: {update_response.error}")
+            return jsonify({
+                "message": "Failed to update saved item",
+                "status": "error"
+            }), 500
+        
+        if not update_response.data or len(update_response.data) == 0:
+            return jsonify({
+                "message": "Failed to update saved item - no rows affected",
+                "status": "error"
+            }), 500
+        
+        logger.info(f"User {user_id} successfully updated note for saved item {saved_item_id}")
+        
+        return jsonify({
+            "message": "Note updated successfully",
+            "status": "success",
+            "data": {
+                "saved_item_id": saved_item_id,
+                "old_note": saved_item['note'],
+                "new_note": new_note,
+                "updated_at": datetime.datetime.now().isoformat()
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in update_saved_announcement: {str(e)}")
+        return jsonify({
+            "message": f"Server error: {str(e)}",
             "status": "error"
         }), 500
 
