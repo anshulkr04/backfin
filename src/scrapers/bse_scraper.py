@@ -152,7 +152,7 @@ class StrucOutput(BaseModel):
     """Schema for structured output from the model."""
     category: str = Field(... , description = category_prompt)
     headline: str = Field(..., description= headline_prompt)
-    summary: str = Field(..., description= sum_prompt)
+    summary: str = Field(..., description= all_prompt)
     findata: str =Field(..., description= financial_data_prompt)
     individual_investor_list: list[str] = Field(..., description="List of individual investors not company mentioned in the announcement. It should be in a form of an array of strings.")
     company_investor_list: list[str] = Field(..., description="List of company investors mentioned in the announcement. It should be in a form of an array of strings.")
