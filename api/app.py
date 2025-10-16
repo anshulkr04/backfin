@@ -2040,6 +2040,98 @@ def delete_saved_announcement(current_user, saved_item_id):
         }), 500
 
 
+@app.route('/api/delete_saved_announcement_post', methods=['POST', 'OPTIONS'])
+@auth_required
+def delete_saved_announcement_post(current_user):
+    """Delete a saved announcement using POST method (alternative endpoint)"""
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    
+    try:
+        user_id = current_user['UserID']
+        data = request.get_json()
+        
+        if not data or not data.get('saved_item_id'):
+            return jsonify({
+                "message": "saved_item_id is required in request body",
+                "status": "error"
+            }), 400
+        
+        saved_item_id = data.get('saved_item_id')
+        
+        # Validate that the saved_item_id is a valid UUID format
+        try:
+            import uuid
+            uuid.UUID(saved_item_id)
+        except ValueError:
+            return jsonify({
+                "message": "Invalid saved item ID format",
+                "status": "error"
+            }), 400
+        
+        # First, verify that the saved item exists and belongs to the current user
+        check_response = supabase.table('saved_items').select('id, user_id, item_type, note').eq('id', saved_item_id).execute()
+        
+        if hasattr(check_response, 'error') and check_response.error:
+            logger.error(f"Error checking saved item: {check_response.error}")
+            return jsonify({
+                "message": "Failed to verify saved item",
+                "status": "error"
+            }), 500
+        
+        if not check_response.data or len(check_response.data) == 0:
+            return jsonify({
+                "message": "Saved item not found",
+                "status": "error"
+            }), 404
+        
+        saved_item = check_response.data[0]
+        
+        # Verify that the user_id matches
+        if saved_item['user_id'] != user_id:
+            logger.warning(f"User {user_id} attempted to delete saved item {saved_item_id} belonging to user {saved_item['user_id']}")
+            return jsonify({
+                "message": "Unauthorized: You can only delete your own saved items",
+                "status": "error"
+            }), 403
+        
+        # Delete the saved item
+        delete_response = supabase.table('saved_items').delete().eq('id', saved_item_id).execute()
+        
+        if hasattr(delete_response, 'error') and delete_response.error:
+            logger.error(f"Error deleting saved item: {delete_response.error}")
+            return jsonify({
+                "message": "Failed to delete saved item",
+                "status": "error"
+            }), 500
+        
+        if not delete_response.data or len(delete_response.data) == 0:
+            return jsonify({
+                "message": "Failed to delete saved item - no rows affected",
+                "status": "error"
+            }), 500
+        
+        logger.info(f"User {user_id} successfully deleted saved item {saved_item_id}")
+        
+        return jsonify({
+            "message": "Saved announcement deleted successfully",
+            "status": "success",
+            "data": {
+                "deleted_item_id": saved_item_id,
+                "deleted_item_type": saved_item['item_type'],
+                "deleted_note": saved_item['note'],
+                "deleted_at": datetime.datetime.now().isoformat()
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in delete_saved_announcement_post: {str(e)}")
+        return jsonify({
+            "message": f"Server error: {str(e)}",
+            "status": "error"
+        }), 500
+
+
 @app.route('/api/calc_price_diff', methods=['POST', 'OPTIONS'])  # Changed to POST
 @auth_required
 def calc_price_diff(current_user):
