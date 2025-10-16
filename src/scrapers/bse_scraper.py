@@ -21,9 +21,19 @@ try:
 except ImportError:
     PDF_SUPPORT = False
 from pydantic import BaseModel, Field
+import redis
 
 # Add the project root to Python path for imports
 import sys
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+# Import Redis queue functionality
+try:
+    from src.queue.redis_client import RedisConfig, QueueNames
+    from src.queue.job_types import AIProcessingJob, serialize_job
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
 from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -157,6 +167,68 @@ def get_data_dir():
     data_dir = Path("/app/data")
     os.makedirs(data_dir, exist_ok=True)
     return data_dir
+
+
+def is_announcement_processed(newsid, db_path=None):
+    """Check if announcement has already been processed"""
+    if not newsid:
+        return False
+        
+    if db_path is None:
+        db_path = get_data_dir() / "bse_raw.db"
+    
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=30)
+        cur = conn.cursor()
+        
+        # Check if announcement exists and has been processed
+        cur.execute("""
+            SELECT COUNT(*) FROM corporatefilings 
+            WHERE corp_id IN (
+                SELECT corp_id FROM announcements 
+                WHERE newsid = ? AND sent_to_supabase = 1
+            )
+        """, (str(newsid),))
+        
+        count = cur.fetchone()[0]
+        conn.close()
+        return count > 0
+        
+    except Exception as e:
+        logger.error(f"Error checking if announcement processed: {e}")
+        return False
+
+def mark_announcement_queued(newsid, corp_id, db_path=None):
+    """Mark announcement as queued for processing"""
+    if not newsid:
+        return False
+        
+    if db_path is None:
+        db_path = get_data_dir() / "bse_raw.db"
+    
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=30)
+        cur = conn.cursor()
+        
+        # Insert or update announcement record with queued status
+        cur.execute("""
+            INSERT OR REPLACE INTO corporatefilings (
+                corp_id, sent_to_supabase, sent_to_supabase_at
+            ) VALUES (?, 0, ?)
+        """, (corp_id, datetime.now(timezone.utc).isoformat()))
+        
+        # Also update announcements table
+        cur.execute("""
+            UPDATE announcements SET sent_to_supabase = 0 WHERE newsid = ?
+        """, (str(newsid),))
+        
+        conn.commit()
+        conn.close()
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error marking announcement as queued: {e}")
+        return False
 
 
 LOCAL_DB_PATH = get_data_dir() / "bse_raw.db"
@@ -775,6 +847,18 @@ class BseScraper:
         
         # Track if this is the first run - FIXED: Check if flag file does NOT exist
         self.first_run_flag_path = Path(__file__).parent / "data" / "first_run_flag.txt"
+        
+        # Initialize Redis client for queue operations
+        self.redis_client = None
+        if REDIS_AVAILABLE:
+            try:
+                redis_config = RedisConfig()
+                self.redis_client = redis_config.get_connection()
+                self.redis_client.ping()
+                logger.info("✅ Redis client initialized for queue operations")
+            except Exception as e:
+                logger.warning(f"⚠️ Redis not available, falling back to direct processing: {e}")
+                self.redis_client = None
 
     def update_date_params(self):
         """Update the date parameters to fetch recent announcements"""
@@ -1051,6 +1135,48 @@ class BseScraper:
                 
         logger.error(f"Failed to get ISIN for {scrip_id} after {self.max_retries} attempts")
         return "N/A"
+    
+    def queue_announcement_for_processing(self, announcement):
+        """Queue announcement for processing via Redis queue system"""
+        if not self.redis_client:
+            logger.warning("Redis not available, processing directly")
+            return self.process_data(announcement)
+        
+        try:
+            # Generate corp_id for tracking
+            corp_id = str(uuid.uuid4())
+            newsid = announcement.get('NEWSID')
+            
+            # Check if already processed
+            if is_announcement_processed(newsid):
+                logger.info(f"Announcement {newsid} already processed, skipping")
+                return None
+            
+            # Mark as queued in database
+            if not mark_announcement_queued(newsid, corp_id):
+                logger.warning(f"Failed to mark announcement {newsid} as queued")
+                return None
+            
+            # Create AI processing job
+            ai_job = AIProcessingJob(
+                job_id=corp_id,
+                corp_id=corp_id,
+                announcement_data=announcement,
+                priority="normal",
+                created_at=datetime.now(timezone.utc).isoformat()
+            )
+            
+            # Add to AI processing queue
+            serialized_job = serialize_job(ai_job)
+            self.redis_client.lpush(QueueNames.AI_PROCESSING, serialized_job)
+            
+            logger.info(f"✅ Queued announcement {newsid} for AI processing (corp_id: {corp_id})")
+            return {"corp_id": corp_id, "queued": True}
+            
+        except Exception as e:
+            logger.error(f"Error queuing announcement for processing: {e}")
+            # Fallback to direct processing
+            return self.process_data(announcement)
     def _get_lock_file_path(self):
         """Get the path for the lock file specific to this scraper type"""
         script_name = Path(__file__).stem  # Gets 'bse_scraper' or 'nse_scraper'
@@ -1377,73 +1503,55 @@ class BseScraper:
 
 
     def processNewAnnouncements(self):
-        """Process ALL new announcements, not just the latest one"""
+        """Process ALL new announcements using queue system with deduplication"""
         try:
             # Use processing lock to prevent concurrent execution
             with self._processing_lock():
                 announcements = self.fetch_data()
+                if announcements:
+                    try:
+                        save_raw_fetch(announcements, url=self.url, params=self.params)
+                    except Exception as e:
+                        logger.error(f"Failed to save raw fetch to local DB: {e}")
                 if not announcements:
                     logger.warning("No announcements found")
                     return False
-                
-                logger.info(f"🔍 DEBUG: Fetched {len(announcements)} announcements")
-                if announcements:
-                    latest = announcements[0]
-                    logger.info(f"🔍 DEBUG: Latest announcement NEWSID: {latest.get('NEWSID', 'Unknown')}")
-                    logger.info(f"🔍 DEBUG: Latest announcement date: {latest.get('DT_TM', 'Unknown')}")
-                    logger.info(f"🔍 DEBUG: Latest announcement keys: {list(latest.keys())}")
-                    # Check if NEWSID is actually under a different key
-                    for key, value in latest.items():
-                        if 'id' in key.lower() or 'news' in key.lower():
-                            logger.info(f"🔍 DEBUG: Found ID-like key '{key}': {value}")
-                else:
-                    logger.warning("🔍 DEBUG: No announcements in the fetched data")
                     
                 # Load the last processed announcement
                 last_latest_announcement = load_latest_announcement()
                 
-                if last_latest_announcement:
-                    logger.info(f"🔍 DEBUG: Baseline NEWSID: {last_latest_announcement.get('NEWSID', 'Unknown')}")
-                    logger.info(f"🔍 DEBUG: Baseline date: {last_latest_announcement.get('DT_TM', 'Unknown')}")
-                else:
-                    logger.info("🔍 DEBUG: No baseline found - first run")
-                    
                 # If no previous announcement saved, process only the latest one (first run)
                 if not last_latest_announcement:
                     logger.info("No previous announcement found, processing latest announcement only")
-                    # Save raw data only on first run
-                    try:
-                        save_raw_fetch([announcements[0]], url=self.url, params=self.params)
-                        logger.info("Saved raw data for first run")
-                    except Exception as e:
-                        logger.error(f"Failed to save raw fetch to local DB: {e}")
                     
-                    data = self.process_data(announcements[0])
-                    if data:
-                        save_latest_announcement(announcements[0])
-                        self._send_to_api_if_needed(data)
+                    # Use queue system or direct processing
+                    if self.redis_client:
+                        result = self.queue_announcement_for_processing(announcements[0])
+                        if result and not result.get("queued"):
+                            save_latest_announcement(announcements[0])
+                    else:
+                        data = self.process_data(announcements[0])
+                        if data:
+                            save_latest_announcement(announcements[0])
+                            self._send_to_api_if_needed(data)
                     return True
                 
-                # Find all new announcements
+                # Find all new announcements with deduplication
                 new_announcements = []
                 last_newsid = last_latest_announcement.get('NEWSID')
-                last_date = last_latest_announcement.get('DT_TM')
                 
-                logger.info(f"🔍 DEBUG: Looking for announcements newer than NEWSID: {last_newsid}")
-                logger.info(f"🔍 DEBUG: Looking for announcements newer than date: {last_date}")
-                
-                for i, announcement in enumerate(announcements):
+                for announcement in announcements:
                     current_newsid = announcement.get('NEWSID')
-                    current_date = announcement.get('DT_TM')
-                    
-                    logger.info(f"🔍 DEBUG: Checking announcement {i}: NEWSID={current_newsid}, Date={current_date}")
                     
                     # Stop when we reach the last processed announcement
-                    if current_newsid and current_newsid == last_newsid:
-                        logger.info(f"🔍 DEBUG: Found baseline announcement at index {i}, stopping")
+                    if current_newsid == last_newsid:
                         break
                         
-                    new_announcements.append(announcement)
+                    # Check if already processed to prevent duplicates
+                    if not is_announcement_processed(current_newsid):
+                        new_announcements.append(announcement)
+                    else:
+                        logger.info(f"Skipping already processed announcement: {current_newsid}")
                 
                 if not new_announcements:
                     logger.info("No new announcements to process")
@@ -1451,42 +1559,48 @@ class BseScraper:
 
                 logger.info(f"Found {len(new_announcements)} new announcements to process")
                 
-                # Save raw data only when there are new announcements
-                try:
-                    save_raw_fetch(new_announcements, url=self.url, params=self.params)
-                    logger.info(f"Saved raw data for {len(new_announcements)} new announcements")
-                except Exception as e:
-                    logger.error(f"Failed to save raw fetch to local DB: {e}")
-                
-                # Set baseline to the oldest announcement from the batch (so we can catch up)
-                # BSE provides newest first, so oldest is at index -1
-                oldest_announcement = new_announcements[-1]
-                save_latest_announcement(oldest_announcement)
-                logger.info(f"Set baseline to oldest announcement: NEWSID {oldest_announcement.get('NEWSID')}")
+                # Process announcements using queue system
+                queued_count = 0
+                processed_count = 0
                 
                 # Process new announcements in reverse order (oldest first)
-                # This ensures proper chronological processing
                 new_announcements.reverse()
                 
-                processed_count = 0
                 for i, announcement in enumerate(new_announcements):
                     logger.info(f"Processing announcement {i+1}/{len(new_announcements)}: NEWSID {announcement.get('NEWSID')}")
                     
-                    data = self.process_data(announcement)
-                    if data:
-                        processed_count += 1
-                        self._send_to_api_if_needed(data)
-                    
-                    # Update baseline after processing each announcement
-                    save_latest_announcement(announcement)
-                    logger.info(f"Updated baseline to processed announcement: NEWSID {announcement.get('NEWSID')}")
+                    if self.redis_client:
+                        # Use queue system
+                        result = self.queue_announcement_for_processing(announcement)
+                        if result:
+                            if result.get("queued"):
+                                queued_count += 1
+                            else:
+                                processed_count += 1
+                                self._send_to_api_if_needed(result)
+                    else:
+                        # Direct processing fallback
+                        data = self.process_data(announcement)
+                        if data:
+                            processed_count += 1
+                            self._send_to_api_if_needed(data)
                         
                     # Small delay between processing announcements
                     time.sleep(0.5)
                 
-                logger.info(f"Processed {processed_count} announcements, baseline now at newest processed announcement")
+                # ATOMIC BASELINE UPDATE: Only update after all announcements are processed/queued
+                if new_announcements and (queued_count > 0 or processed_count > 0):
+                    # Update baseline to newest announcement (last in reversed list)
+                    newest_announcement = new_announcements[-1]
+                    save_latest_announcement(newest_announcement)
+                    logger.info(f"✅ ATOMIC baseline update: Set to newest announcement NEWSID {newest_announcement.get('NEWSID')}")
                 
-                return processed_count > 0
+                if self.redis_client:
+                    logger.info(f"✅ Queued {queued_count} announcements, processed {processed_count} directly")
+                else:
+                    logger.info(f"✅ Processed {processed_count} announcements directly")
+                
+                return (queued_count + processed_count) > 0
                             
         except BlockingIOError:
             logger.info("Skipping this run - another instance is already processing")

@@ -43,6 +43,7 @@ class AIProcessingJob(BaseJob):
     """Job for AI processing of announcements"""
     job_type: str = "ai_processing"
     corp_id: str = Field(..., description="Corporate filing ID")
+    announcement_data: Dict[str, Any] = Field(..., description="Raw announcement data from BSE/NSE")
     pdf_url: Optional[str] = None
     summary_text: Optional[str] = None
     company_name: str = ""
