@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
 Ephemeral AI Worker - Processes jobs then shuts down
-Now includes retry logic for AI processing failures
+Now includes retry logic for AI processing failures and actual AI implementation
 """
 
 import time
 import sys
 import logging
 import os
+import json
+import requests
+import tempfile
+import uuid
 from pathlib import Path
 from datetime import datetime
 import redis
-import json
+from google import genai
+from pydantic import BaseModel, Field
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -19,8 +24,13 @@ sys.path.append(str(Path(__file__).parent.parent))
 from src.queue.redis_client import RedisConfig, QueueNames
 from src.queue.job_types import deserialize_job, AIProcessingJob, SupabaseUploadJob, serialize_job
 
-# Import your actual AI processing function
-sys.path.append(str(Path(__file__).parent.parent / "src" / "ai"))
+# Import AI processing components
+try:
+    from src.ai.prompts import *
+    AI_IMPORTS_AVAILABLE = True
+except ImportError:
+    # Will log warning after logger is set up
+    AI_IMPORTS_AVAILABLE = False
 
 # Setup logging first
 worker_id = f"ephemeral_ai_{os.getpid()}"
@@ -30,12 +40,103 @@ logging.basicConfig(
 )
 logger = logging.getLogger(worker_id)
 
-try:
-    from src.ai.prompts import *  # Import prompts
-    # You'll need to implement the actual AI processing function here
-    # For now, I'll create a placeholder that calls your existing AI logic
-except ImportError:
+# Log import warning if needed
+if not AI_IMPORTS_AVAILABLE:
     logger.warning("Could not import AI prompts")
+
+# Structured output model for AI
+class StrucOutput(BaseModel):
+    """Schema for structured output from the model."""
+    category: str = Field(... , description = category_prompt)
+    headline: str = Field(..., description= headline_prompt)
+    summary: str = Field(..., description= all_prompt)
+    findata: str =Field(..., description= financial_data_prompt)
+    individual_investor_list: list[str] = Field(..., description="List of individual investors not company mentioned in the announcement. It should be in a form of an array of strings.")
+    company_investor_list: list[str] = Field(..., description="List of company investors mentioned in the announcement. It should be in a form of an array of strings.")
+    sentiment: str = Field(..., description = "Analyze the sentiment of the announcement and give appropriate output. The output should be only: Postive, Negative and Netural. Nothing other than these." )
+
+# Rate-limited Gemini client
+class RateLimitedGeminiClient:
+    """Gemini client with rate limiting and error handling"""
+    
+    def __init__(self, api_key, rate_limit_delay=2):
+        self.api_key = api_key
+        self.rate_limit_delay = rate_limit_delay
+        self.last_request_time = 0
+        self.client = None
+        
+        try:
+            self.client = genai.Client(api_key=api_key)
+            logger.info("✅ Gemini client initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Gemini client: {e}")
+    
+    def files(self):
+        """Return files interface with rate limiting"""
+        return RateLimitedFiles(self.client.files if self.client else None, self.rate_limit_delay)
+    
+    def generate_content(self, contents, config=None):
+        """Generate content with rate limiting"""
+        if not self.client:
+            raise Exception("Gemini client not initialized")
+        
+        # Rate limiting
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        
+        if time_since_last < self.rate_limit_delay:
+            sleep_time = self.rate_limit_delay - time_since_last
+            logger.debug(f"Rate limiting: sleeping for {sleep_time:.2f}s")
+            time.sleep(sleep_time)
+        
+        try:
+            response = self.client.generate_content(contents=contents, config=config)
+            self.last_request_time = time.time()
+            return response
+        except Exception as e:
+            logger.error(f"Error in generate_content: {e}")
+            raise
+
+class RateLimitedFiles:
+    """Rate-limited files interface"""
+    
+    def __init__(self, files_client, rate_limit_delay):
+        self.files_client = files_client
+        self.rate_limit_delay = rate_limit_delay
+        self.last_request_time = 0
+    
+    def upload(self, file):
+        """Upload file with rate limiting"""
+        if not self.files_client:
+            raise Exception("Files client not available")
+        
+        # Rate limiting
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        
+        if time_since_last < self.rate_limit_delay:
+            sleep_time = self.rate_limit_delay - time_since_last
+            logger.debug(f"Rate limiting file upload: sleeping for {sleep_time:.2f}s")
+            time.sleep(sleep_time)
+        
+        try:
+            result = self.files_client.upload(file=file)
+            self.last_request_time = time.time()
+            return result
+        except Exception as e:
+            logger.error(f"Error uploading file: {e}")
+            raise
+
+# Initialize Gemini client
+genai_client = None
+try:
+    API_KEY = os.getenv('GEMINI_API_KEY')
+    if API_KEY:
+        genai_client = RateLimitedGeminiClient(api_key=API_KEY)
+    else:
+        logger.error("GEMINI_API_KEY environment variable not set")
+except Exception as e:
+    logger.error(f"Failed to initialize Gemini client: {e}")
 
 # Valid categories list
 VALID_CATEGORIES = [
@@ -116,37 +217,154 @@ class EphemeralAIWorker:
             logger.error(f"❌ Redis connection failed: {e}")
             return False
     
+    def download_pdf_file(self, url: str) -> str:
+        """Download PDF file from URL and return local file path"""
+        if not url:
+            raise ValueError("No PDF URL provided")
+        
+        # Create temporary file
+        filename = url.split("/")[-1]
+        if not filename.endswith('.pdf'):
+            filename += '.pdf'
+        
+        temp_dir = tempfile.gettempdir()
+        filepath = os.path.join(temp_dir, f"{uuid.uuid4()}_{filename}")
+        
+        try:
+            logger.info(f"📥 Downloading PDF: {url}")
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            
+            with open(filepath, "wb") as file:
+                file.write(response.content)
+            
+            logger.info(f"✅ Downloaded PDF to: {filepath}")
+            return filepath
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to download PDF {url}: {e}")
+            raise
+    
+    def ai_process_pdf(self, filepath: str) -> tuple:
+        """Process PDF with AI using Gemini API (migrated from scrapers)"""
+        if not filepath:
+            logger.error("No valid filename provided for AI processing")
+            return "Error", "No valid filename provided", "", "", [], [], "Neutral"
+            
+        if not os.path.exists(filepath):
+            logger.error(f"File not found: {filepath}")
+            return "Error", "File not found", "", "", [], [], "Neutral"
+            
+        # Handle case where Gemini client failed to initialize
+        if not genai_client or not genai_client.client:
+            logger.error("Cannot process file: Gemini client not initialized")
+            return "Procedural/Administrative", "AI processing unavailable", "", "", [], [], "Neutral"
+
+        uploaded_file = None
+        
+        try:
+            logger.info(f"📤 Uploading file to Gemini: {filepath}")
+            # Upload the PDF file
+            uploaded_file = genai_client.files().upload(file=filepath)
+            
+            # Generate content with structured output
+            logger.info("🤖 Generating AI content...")
+            response = genai_client.generate_content(
+                contents=[all_prompt, uploaded_file],
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": list[StrucOutput]
+                },
+            )
+            
+            if not hasattr(response, 'text'):
+                logger.error("AI response missing text attribute")
+                return "Error", "AI processing failed: invalid response format", "", "", [], [], "Neutral"
+                
+            # Parse JSON response
+            logger.info("📝 Parsing AI response...")
+            summary = json.loads(response.text.strip())
+            
+            # Extract all fields from the summary
+            try:
+                category_text = summary[0]["category"]
+                headline = summary[0]["headline"]
+                summary_text = summary[0]["summary"]
+                financial_data = summary[0]["findata"]
+                individual_investor_list = summary[0]["individual_investor_list"]
+                company_investor_list = summary[0]["company_investor_list"]
+                sentiment = summary[0]["sentiment"]
+                
+                logger.info(f"✅ AI processing completed successfully")
+                logger.info(f"📊 Category: {category_text}")
+                return category_text, summary_text, headline, financial_data, individual_investor_list, company_investor_list, sentiment
+                
+            except (IndexError, KeyError) as e:
+                logger.error(f"Failed to extract fields from AI response: {e}")
+                return "Error", "Failed to extract fields from AI response", "", "", [], [], "Neutral"
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON from AI response: {e}")
+            return "Error", "Failed to parse AI response", "", "", [], [], "Neutral"
+        except Exception as e:
+            logger.error(f"Error in AI processing: {e}")
+            return "Error", f"Error processing file: {str(e)}", "", "", [], [], "Neutral"
+        finally:
+            # Clean up uploaded file
+            try:
+                if uploaded_file and hasattr(uploaded_file, 'delete'):
+                    uploaded_file.delete()
+            except:
+                pass  # Ignore cleanup errors
+    
     def call_ai_processing_function(self, job: AIProcessingJob) -> tuple:
         """
-        Call your actual AI processing function here.
-        This is a placeholder - you need to integrate with your existing AI processing logic.
+        Call actual AI processing function with PDF download and processing.
+        Now implemented with real AI processing logic migrated from scrapers.
         
         Returns: (category, summary, headline, findata, individual_investor_list, company_investor_list, sentiment)
         """
         try:
-            # TODO: Replace this with your actual AI processing call
-            # For example, if you have a PDF file path in the job:
-            # from replay import ai_process_pdf
-            # return ai_process_pdf(job.pdf_file_path)
+            # Extract PDF URL from announcement data
+            announcement_data = job.announcement_data
+            pdf_url = None
             
-            # For now, simulate AI processing
-            time.sleep(2)  # Simulate processing time
+            # Try different possible fields for PDF URL
+            if isinstance(announcement_data, dict):
+                pdf_url = (announcement_data.get('PDFPATH') or 
+                          announcement_data.get('pdf_url') or 
+                          announcement_data.get('fileurl') or
+                          announcement_data.get('AttchmntFile'))
             
-            # Simulate different outcomes for testing
-            import random
-            rand = random.random()
+            if not pdf_url:
+                logger.error(f"No PDF URL found in announcement data for job {job.job_id}")
+                return "Error", "No PDF URL found in announcement data", "", "", [], [], "Neutral"
             
-            if rand < 0.1:  # 10% chance of "Error"
-                return ("Error", "AI processing failed", "", "", [], [], "Neutral")
-            elif rand < 0.2:  # 10% chance of invalid category
-                return ("Invalid Category", "AI-generated summary", "", "", [], [], "Neutral")
-            else:  # 80% chance of success
-                return ("Financial Results", f"AI-generated summary for {job.company_name}", 
-                       "Test headline", "", [], [], "Neutral")
+            # Download PDF file
+            try:
+                filepath = self.download_pdf_file(pdf_url)
+            except Exception as e:
+                logger.error(f"Failed to download PDF: {e}")
+                return "Error", f"Failed to download PDF: {str(e)}", "", "", [], [], "Neutral"
+            
+            try:
+                # Process PDF with AI
+                result = self.ai_process_pdf(filepath)
+                logger.info(f"🎯 AI processing result for {job.job_id}: {result[0]}")
+                return result
+                
+            finally:
+                # Clean up downloaded file
+                try:
+                    if os.path.exists(filepath):
+                        os.unlink(filepath)
+                        logger.debug(f"🗑️ Cleaned up temporary file: {filepath}")
+                except:
+                    pass  # Ignore cleanup errors
                 
         except Exception as e:
-            logger.error(f"AI processing exception: {e}")
-            return ("Error", f"Exception in AI processing: {str(e)}", "", "", [], [], "Neutral")
+            logger.error(f"AI processing exception for job {job.job_id}: {e}")
+            return "Error", f"Exception in AI processing: {str(e)}", "", "", [], [], "Neutral"
     
     def is_valid_category(self, category: str) -> bool:
         """Check if the category is in the valid categories list"""
@@ -202,11 +420,12 @@ class EphemeralAIWorker:
         try:
             category, summary, headline, findata, individual_investor_list, company_investor_list, sentiment = result
             
+            # Extract additional data from the job for Supabase upload
+            announcement_data = job.announcement_data or {}
+            
             # Create processed data for Supabase upload
             processed_data = {
                 "corp_id": job.corp_id,
-                "company_name": job.company_name,
-                "security_id": job.security_id,
                 "summary": summary,
                 "category": category,
                 "headline": headline,
@@ -216,7 +435,15 @@ class EphemeralAIWorker:
                 "sentiment": sentiment,
                 "processed_by": self.worker_id,
                 "processed_at": datetime.now().isoformat(),
-                "retry_count": retry_count
+                "retry_count": retry_count,
+                # Include original announcement data
+                "securityid": announcement_data.get('SCRIP_CD') or announcement_data.get('securityid', ''),
+                "companyname": announcement_data.get('COMPNAME') or announcement_data.get('companyname', ''),
+                "symbol": announcement_data.get('SYMBOL') or announcement_data.get('symbol', ''),
+                "isin": announcement_data.get('ISIN') or announcement_data.get('isin', ''),
+                "date": announcement_data.get('DT_TM') or announcement_data.get('date', ''),
+                "fileurl": announcement_data.get('PDFPATH') or announcement_data.get('fileurl', ''),
+                "newsid": announcement_data.get('NEWSID') or announcement_data.get('newsid', ''),
             }
             
             # Create Supabase upload job
