@@ -374,6 +374,36 @@ class EphemeralAIWorker:
         """Determine if AI processing should be retried based on the category"""
         return category == "Error" or not self.is_valid_category(category)
     
+    def requeue_failed_job(self, job: AIProcessingJob, retry_count: int, reason: str) -> bool:
+        """Push failed job back to the queue for later retry with delay"""
+        try:
+            # Add metadata to track retry attempts
+            job.retry_count = getattr(job, 'retry_count', 0) + retry_count
+            job.last_failure_reason = reason
+            job.last_retry_timestamp = datetime.now().isoformat()
+            
+            # Calculate delay based on total retry attempts (exponential backoff)
+            base_delay = 300  # 5 minutes base delay
+            max_delay = 3600  # 1 hour max delay
+            delay = min(base_delay * (2 ** min(job.retry_count // 3, 6)), max_delay)
+            
+            # Use Redis ZADD with score as timestamp for delayed processing
+            future_timestamp = time.time() + delay
+            
+            # Serialize job for delayed queue
+            job_data = serialize_job(job)
+            
+            # Add to delayed queue (sorted set) instead of immediate queue
+            delayed_queue_name = f"{QueueNames.AI_PROCESSING}:delayed"
+            self.redis_client.zadd(delayed_queue_name, {job_data: future_timestamp})
+            
+            logger.warning(f"🔄 Requeued failed job {job.corp_id} for retry in {delay/60:.1f} minutes (total attempts: {job.retry_count}, reason: {reason})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to requeue job {job.corp_id}: {e}")
+            return False
+    
     def process_ai_job_with_retry(self, job: AIProcessingJob) -> bool:
         """Process an AI job with retry logic for failures"""
         logger.info(f"🤖 Processing AI job for corp_id: {job.corp_id}")
@@ -398,9 +428,8 @@ class EphemeralAIWorker:
                         continue
                     else:
                         logger.error(f"❌ AI processing failed after {self.max_retries_per_job} retries for corp_id: {job.corp_id}")
-                        # Use the last result even if it failed
-                        result = last_result or ("Error", "Max retries exceeded", "", "", [], [], "Neutral")
-                        break
+                        # Push back to queue for later retry instead of uploading Error
+                        return self.requeue_failed_job(job, retry_count, "Max retries exceeded in current session")
                 else:
                     # Success! Valid category returned
                     logger.info(f"✅ AI processing successful for corp_id: {job.corp_id}, category: {category}")
@@ -411,14 +440,20 @@ class EphemeralAIWorker:
                 logger.error(f"❌ AI processing exception (attempt {retry_count}): {e}")
                 
                 if retry_count >= self.max_retries_per_job:
-                    result = ("Error", f"Exception after {self.max_retries_per_job} retries: {str(e)}", "", "", [], [], "Neutral")
-                    break
+                    # Push back to queue for later retry instead of uploading Error
+                    return self.requeue_failed_job(job, retry_count, f"Exception after retries: {str(e)}")
                     
                 time.sleep(2 * retry_count)  # Exponential backoff
         
         # Process the final result
         try:
             category, summary, headline, findata, individual_investor_list, company_investor_list, sentiment = result
+            
+            # Check if category is still "Error" after all retries
+            if category == "Error":
+                logger.error(f"❌ Skipping upload for corp_id: {job.corp_id} - category is still 'Error' after {retry_count} retries")
+                # Return false to indicate processing failed
+                return False
             
             # Extract additional data from the job for Supabase upload
             announcement_data = job.announcement_data or {}
@@ -456,7 +491,7 @@ class EphemeralAIWorker:
             # Add to Supabase queue
             self.redis_client.lpush(QueueNames.SUPABASE_UPLOAD, serialize_job(supabase_job))
             
-            logger.info(f"✅ AI processing completed for corp_id: {job.corp_id} (retries: {retry_count})")
+            logger.info(f"✅ AI processing completed for corp_id: {job.corp_id} (retries: {retry_count}, category: {category})")
             self.jobs_processed += 1
             return True
             
@@ -468,6 +503,45 @@ class EphemeralAIWorker:
         """Process an AI job (legacy method for compatibility)"""
         return self.process_ai_job_with_retry(job)
     
+    def process_delayed_jobs(self):
+        """Check for and process jobs from the delayed queue that are ready"""
+        try:
+            delayed_queue_name = f"{QueueNames.AI_PROCESSING}:delayed"
+            current_time = time.time()
+            
+            # Get jobs that are ready (score <= current time)
+            ready_jobs = self.redis_client.zrangebyscore(
+                delayed_queue_name, 
+                0, 
+                current_time, 
+                withscores=True, 
+                start=0, 
+                num=5  # Process max 5 delayed jobs at once
+            )
+            
+            if ready_jobs:
+                logger.info(f"🕒 Found {len(ready_jobs)} delayed jobs ready for processing")
+                
+                for job_data, score in ready_jobs:
+                    try:
+                        # Remove from delayed queue first
+                        self.redis_client.zrem(delayed_queue_name, job_data)
+                        
+                        # Add back to immediate processing queue
+                        self.redis_client.lpush(QueueNames.AI_PROCESSING, job_data)
+                        
+                        job = deserialize_job(job_data)
+                        delay_minutes = (current_time - (score - 300)) / 60  # Approximate delay
+                        logger.info(f"🔄 Moved delayed job {job.corp_id} back to processing queue (was delayed {delay_minutes:.1f} minutes)")
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing delayed job: {e}")
+                        # Re-add to delayed queue if processing failed
+                        self.redis_client.zadd(delayed_queue_name, {job_data: score})
+                        
+        except Exception as e:
+            logger.error(f"Error checking delayed jobs: {e}")
+
     def run(self):
         """Main worker loop - process jobs then shutdown"""
         logger.info(f"🚀 {self.worker_id} starting (ephemeral mode with retry logic)")
@@ -488,6 +562,9 @@ class EphemeralAIWorker:
                 if time.time() - last_job_time > self.idle_timeout:
                     logger.info(f"⏰ No jobs for {self.idle_timeout}s, shutting down")
                     break
+                
+                # Check for delayed jobs that are ready for processing
+                self.process_delayed_jobs()
                 
                 try:
                     # Get job with short timeout

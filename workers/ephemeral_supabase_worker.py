@@ -7,6 +7,7 @@ import time
 import sys
 import logging
 import os
+import json
 from pathlib import Path
 from datetime import datetime
 import redis
@@ -56,18 +57,106 @@ class EphemeralSupabaseWorker:
         try:
             logger.info(f"📤 Uploading data to Supabase for corp_id: {job.corp_id}")
             
-            # Simulate Supabase upload
-            time.sleep(1.5)  # Simulate upload time
-            
-            # Create investor analysis job if category suggests it
             processed_data = job.processed_data
-            if processed_data and processed_data.get('category') not in ['routine', 'minor']:
+            if not processed_data:
+                logger.error(f"No processed data for corp_id: {job.corp_id}")
+                return False
+            
+            # Check if category is Error - skip upload if so
+            category = processed_data.get('category', '')
+            if category == "Error":
+                logger.warning(f"⚠️ Skipping Supabase upload for corp_id {job.corp_id} - category is 'Error'")
+                return False
+                
+            # Initialize Supabase client
+            try:
+                from supabase import create_client, Client
+                
+                # Get Supabase credentials from environment
+                supabase_url = os.getenv('SUPABASE_URL')
+                supabase_key = os.getenv('SUPABASE_ANON_KEY')
+                
+                if not supabase_url or not supabase_key:
+                    logger.error("Supabase credentials not found in environment")
+                    return False
+                
+                supabase: Client = create_client(supabase_url, supabase_key)
+                
+            except Exception as e:
+                logger.error(f"Failed to initialize Supabase client: {e}")
+                return False
+            
+            # Prepare data for upload
+            upload_data = {
+                "corp_id": processed_data.get("corp_id"),
+                "securityid": processed_data.get("securityid", ""),
+                "summary": processed_data.get("summary", ""),
+                "fileurl": processed_data.get("fileurl", ""),
+                "date": processed_data.get("date", ""),
+                "ai_summary": processed_data.get("summary", ""),  # Use summary as ai_summary
+                "category": category,
+                "isin": processed_data.get("isin", ""),
+                "companyname": processed_data.get("companyname", ""),
+                "symbol": processed_data.get("symbol", ""),
+                "sentiment": processed_data.get("sentiment", "Neutral"),
+                "headline": processed_data.get("headline", ""),
+                "newsid": processed_data.get("newsid", "")
+            }
+            
+            # Remove any None values
+            upload_data = {k: v for k, v in upload_data.items() if v is not None}
+            
+            try:
+                # Upload to Supabase
+                response = supabase.table("corporatefilings").insert(upload_data).execute()
+                
+                if hasattr(response, 'error') and response.error:
+                    logger.error(f"Supabase upload error: {response.error}")
+                    return False
+                
+                logger.info(f"✅ Successfully uploaded to Supabase for corp_id: {job.corp_id}")
+                
+                # Upload financial data if available
+                findata = processed_data.get('findata')
+                if findata and findata != '{"period": "", "sales_current": "", "sales_previous_year": "", "pat_current": "", "pat_previous_year": ""}':
+                    try:
+                        financial_data = json.loads(findata) if isinstance(findata, str) else findata
+                        if any(financial_data.values()):  # Only upload if there's actual data
+                            financial_data.update({
+                                'corp_id': job.corp_id,
+                                'symbol': processed_data.get("symbol", ""),
+                                'isin': processed_data.get("isin", "")
+                            })
+                            
+                            fin_response = supabase.table("financial_results").insert(financial_data).execute()
+                            logger.info(f"✅ Uploaded financial data for corp_id: {job.corp_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to upload financial data: {e}")
+                
+                # Upload investor data if available
+                individual_investors = processed_data.get('individual_investor_list', [])
+                company_investors = processed_data.get('company_investor_list', [])
+                
+                if individual_investors or company_investors:
+                    try:
+                        from src.services.investor_analyzer import uploadInvestor
+                        uploadInvestor(individual_investors, company_investors, corp_id=job.corp_id)
+                        logger.info(f"✅ Uploaded investor data for corp_id: {job.corp_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to upload investor data: {e}")
+                
+            except Exception as e:
+                logger.error(f"Error uploading to Supabase: {e}")
+                return False
+                
+            # Create investor analysis job if category suggests it
+            if category not in ['Procedural/Administrative', 'routine', 'minor']:
                 investor_job = InvestorAnalysisJob(
                     job_id=f"{job.job_id}_investor",
                     corp_id=job.corp_id,
-                    category=processed_data.get('category', 'unknown'),
-                    individual_investors=[],  # Would be populated from analysis
-                    company_investors=[]
+                    category=category,
+                    individual_investors=individual_investors,
+                    company_investors=company_investors
                 )
                 
                 # Add to investor processing queue

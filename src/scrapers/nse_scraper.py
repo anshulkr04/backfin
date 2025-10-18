@@ -62,6 +62,15 @@ sys.path.insert(0, str(project_root))
 
 from src.ai.prompts import *
 from src.services.investor_analyzer import uploadInvestor
+
+# Import Redis queue functionality
+try:
+    from src.queue.redis_client import RedisConfig, QueueNames
+    from src.queue.job_types import AIProcessingJob, serialize_job
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+
 import fcntl  
 import contextlib
 
@@ -953,6 +962,40 @@ class NseScraper:
                 "company_id": company_id
             }
             
+            # Check if category is "Error" - if so, skip upload and mark for retry
+            if category == "Error":
+                logger.warning(f"⚠️ Skipping upload for corp_id {corp_id} - category is 'Error', will queue for AI processing")
+                
+                # Queue for AI processing if Redis is available
+                if hasattr(self, 'redis_client') and self.redis_client:
+                    try:
+                        from src.queue.job_types import AIProcessingJob, serialize_job
+                        from src.queue.redis_client import QueueNames
+                        
+                        ai_job = AIProcessingJob(
+                            job_id=f"retry_{corp_id}_{int(time.time())}",
+                            corp_id=corp_id,
+                            announcement_data={
+                                'corp_id': corp_id,
+                                'securityid': securityid,
+                                'COMPNAME': company_name,
+                                'SYMBOL': symbol,
+                                'ISIN': isin,
+                                'DT_TM': date,
+                                'PDFPATH': url,
+                                'summary': summary
+                            }
+                        )
+                        
+                        self.redis_client.lpush(QueueNames.AI_PROCESSING, serialize_job(ai_job))
+                        logger.info(f"🔄 Queued Error category announcement for AI retry: {corp_id}")
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to queue AI job for retry: {e}")
+                
+                # Return without uploading to prevent Error categories in database
+                return False
+
             
 
             # FIXED: Safe JSON parsing for financial data

@@ -1378,6 +1378,48 @@ class BseScraper:
             }
             logger.info(f"Prepared data for corp_id {corp_id}: {data}")
 
+            # Check if category is "Error" - if so, skip upload and mark for retry
+            if category == "Error":
+                logger.warning(f"⚠️ Skipping upload for corp_id {corp_id} - category is 'Error', will queue for AI processing")
+                
+                # Save local copy for potential retry
+                try:
+                    saved_local = save_local_corporatefiling(data)
+                    if saved_local:
+                        logger.info(f"Saved local copy with Error category for corp_id {corp_id}")
+                except Exception as e:
+                    logger.error(f"Exception when saving local corporatefiling: {e}")
+                
+                # Queue for AI processing if Redis is available
+                if hasattr(self, 'redis_client') and self.redis_client:
+                    try:
+                        from src.queue.job_types import AIProcessingJob, serialize_job
+                        from src.queue.redis_client import QueueNames
+                        
+                        ai_job = AIProcessingJob(
+                            job_id=f"retry_{corp_id}_{int(time.time())}",
+                            corp_id=corp_id,
+                            announcement_data={
+                                'corp_id': corp_id,
+                                'SCRIP_CD': scrip_id,
+                                'COMPNAME': company_name,
+                                'SYMBOL': symbol,
+                                'ISIN': isin,
+                                'DT_TM': date,
+                                'PDFPATH': file_url,
+                                'summary': bse_summary
+                            }
+                        )
+                        
+                        self.redis_client.lpush(QueueNames.AI_PROCESSING, serialize_job(ai_job))
+                        logger.info(f"🔄 Queued Error category announcement for AI retry: {corp_id}")
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to queue AI job for retry: {e}")
+                
+                # Return without uploading to prevent Error categories in database
+                return {"corp_id": corp_id, "skipped": True, "reason": "Error category"}
+
             # Save a local copy immediately (so we have local backup even if Supabase fails)
             try:
                 saved_local = save_local_corporatefiling(data)

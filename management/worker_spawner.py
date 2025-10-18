@@ -53,6 +53,12 @@ class WorkerSpawner:
                 'max_runtime': 240,  # 4 minutes max
                 'cooldown': 15,
                 'max_concurrent': 1  # Single investor worker is fine
+            },
+            'delayed_queue_processor': {
+                'script': 'workers/delayed_queue_processor.py',
+                'max_runtime': 3600,  # 1 hour max (long-running service)
+                'cooldown': 60,       # 1 minute between spawns
+                'max_concurrent': 1   # Only one delayed processor needed
             }
         }
         self.last_spawn_time = {}
@@ -266,6 +272,11 @@ class WorkerSpawner:
                                     logger.info(f"📤 {queue_short}: {job_count} jobs -> worker spawned ({current_after}/{max_workers})")
                                 else:
                                     break  # Failed to spawn, likely due to cooldown
+                
+                # Ensure delayed queue processor is always running
+                if self.get_active_worker_count('delayed_queue_processor') == 0:
+                    if self.spawn_worker('delayed_queue_processor'):
+                        logger.info("🕒 Spawned delayed queue processor")
                 
                 # Log current status with detailed worker counts
                 total_workers = sum(len(workers) for workers in self.active_workers.values())
