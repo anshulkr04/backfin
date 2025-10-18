@@ -17,7 +17,7 @@ from datetime import datetime
 import redis
 from google import genai
 from pydantic import BaseModel, Field
-
+from google.genai import types
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -271,10 +271,13 @@ class EphemeralAIWorker:
             logger.info("🤖 Generating AI content...")
             response = genai_client.generate_content(
                 contents=[all_prompt, uploaded_file],
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": list[StrucOutput]
-                },
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=StrucOutput,
+                    thinking_config=types.ThinkingConfig(
+                        thinking_budget = -1
+                    )
+                )
             )
             
             if not hasattr(response, 'text'):
