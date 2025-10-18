@@ -26,8 +26,11 @@ class RedisConfig:
         import logging
         
         logger = logging.getLogger('redis_client')
-        max_retries = 5
-        retry_delay = 1
+        max_retries = 10  # Increased from 5 to 10
+        retry_delay = 2   # Start with 2 seconds instead of 1
+        
+        # Add initial delay for Docker startup timing
+        time.sleep(3)
         
         for attempt in range(max_retries):
             try:
@@ -61,7 +64,7 @@ class RedisConfig:
                 if attempt < max_retries - 1:
                     logger.warning(f"Redis connection attempt {attempt + 1}/{max_retries} failed: {e}. Retrying in {retry_delay}s...")
                     time.sleep(retry_delay)
-                    retry_delay = min(retry_delay * 1.5, 10)  # Exponential backoff with max 10s
+                    retry_delay = min(retry_delay * 1.2, 15)  # Slower exponential backoff with max 15s
                 else:
                     logger.error(f"Failed to connect to Redis after {max_retries} attempts. Host: {self.redis_host}:{self.redis_port}")
                     raise ConnectionError(f"Redis connection failed after {max_retries} attempts. Last error: {e}")

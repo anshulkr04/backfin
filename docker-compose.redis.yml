@@ -9,6 +9,12 @@ services:
     command: redis-server --appendonly yes
     networks:
       - backfin_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   # Worker Spawner - manages ephemeral workers
   worker-spawner:
@@ -17,7 +23,8 @@ services:
       dockerfile: docker/Dockerfile.worker-spawner
     container_name: backfin-worker-spawner
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -38,8 +45,10 @@ services:
       dockerfile: docker/Dockerfile.scraper
     container_name: backfin-bse-scraper
     depends_on:
-      - redis
-      - api
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -63,8 +72,10 @@ services:
       dockerfile: docker/Dockerfile.scraper
     container_name: backfin-nse-scraper
     depends_on:
-      - redis
-      - api
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -88,7 +99,8 @@ services:
       dockerfile: docker/Dockerfile.api
     container_name: backfin-api
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     ports:
       - "8000:8000"
     environment:
@@ -105,6 +117,12 @@ services:
     networks:
       - backfin_network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     command: python api/app.py
 
   # Queue Monitor Dashboard
@@ -114,7 +132,8 @@ services:
       dockerfile: docker/Dockerfile.monitor
     container_name: backfin-monitor
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     ports:
       - "8081:8080"
     environment:
