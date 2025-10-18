@@ -34,7 +34,15 @@ class RedisConfig:
         
         for attempt in range(max_retries):
             try:
-                if self.redis_url:
+                # If REDIS_URL is the default localhost URL but REDIS_HOST is set to something else,
+                # prefer the environment variables for host/port
+                use_individual_params = (
+                    self.redis_url == 'redis://localhost:6379' and 
+                    self.redis_host != 'localhost'
+                )
+                
+                if self.redis_url and not use_individual_params:
+                    logger.info(f"Connecting to Redis using URL: {self.redis_url}")
                     client = redis.from_url(
                         self.redis_url,
                         max_connections=self.max_connections,
@@ -43,6 +51,7 @@ class RedisConfig:
                         decode_responses=True
                     )
                 else:
+                    logger.info(f"Connecting to Redis using host:port: {self.redis_host}:{self.redis_port}")
                     client = redis.Redis(
                         host=self.redis_host,
                         port=self.redis_port,
