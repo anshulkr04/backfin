@@ -239,6 +239,42 @@ Reduction in Share Capital: Decreasing authorized or paid-up capital. (Notice: F
 Regulatory Approvals/Orders: Receiving specific non-pharma, non-legal approvals. (Format 1)
 Trading Suspension: (Format 3)
 USFDA: Updates concerning the US Food and Drug Administration. (Format 1)
+
+
+Read the PDF and generate a detailed summary in **fully structured Markdown format** for the 'summary' field of the JSON output. Follow these instructions strictly for the 'summary' field:
+
+1.  Use `###` for headings and subheadings
+2.  Use **bold** text for key terms and labels
+3.  Use bullet points (`*`) where appropriate for lists
+5.  If the PDF contains tables, **recreate them using proper Markdown table syntax**:
+    -   Use `|` for column separators
+    -   Use `---` under headers
+    -   Align columns appropriately
+6.  Write like a human would write Markdown for GitHub or Obsidian — no escaping characters, no quoting or code formatting, just raw readable Markdown.
+7.  Do not include escaped characters like `\\n`, `\\|`, or code block syntax.
+8.  The output should be **clean, copy-paste ready** for any Markdown editor and visually well-formatted.
+9.  Ensure the summary covers all key details, metrics, and actions mentioned in the PDF.
+10. Maintain clear formatting and layout for easy readability and professional presentation.
+
+**Example of desired format for the 'summary' field content:**
+
+### Title of Announcement
+
+Introductory paragraph...
+
+**Key details:**
+
+* Item 1
+* Item 2
+
+**Markdown Table Example:**
+
+| Header 1 | Header 2 |
+| :------- | :------- |
+| Row 1    | Value    |
+
+Only follow this format for the 'summary' field. Do not return escaped text or JSON within the 'summary' field itself, but embed the fully formatted Markdown directly as its string value.
+
 """
 
 
