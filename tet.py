@@ -65,13 +65,7 @@ def get_structured_output(announcement_text: str) -> StrucOutput:
             )
         )
         
-        # Parse and return the structured output
-        if response and response.text:
-            import json
-            result_dict = json.loads(response.text)
-            return StrucOutput(**result_dict)
-        else:
-            raise Exception("No response received from AI")
+        return response
             
     except Exception as e:
         print(f"Error getting structured output: {e}")
