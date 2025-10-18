@@ -20,17 +20,14 @@ class RedisConfig:
         self.socket_connect_timeout = int(os.getenv('REDIS_CONNECT_TIMEOUT', 5))
         self.socket_timeout = int(os.getenv('REDIS_SOCKET_TIMEOUT', 5))
         
-        # Debug Redis configuration (helpful for Docker troubleshooting)
-        print(f"Redis Config: host={self.redis_host}, port={self.redis_port}, url={self.redis_url}")
-        print(f"Environment REDIS_HOST: {os.getenv('REDIS_HOST', 'NOT_SET')}")
-        print(f"Environment REDIS_PORT: {os.getenv('REDIS_PORT', 'NOT_SET')}")
-        
     def get_connection(self) -> Redis:
         """Get Redis connection with connection pooling and retry logic"""
         import time
+        import logging
         
+        logger = logging.getLogger('redis_client')
         max_retries = 5
-        retry_delay = 2
+        retry_delay = 1
         
         for attempt in range(max_retries):
             try:
@@ -56,15 +53,18 @@ class RedisConfig:
                 
                 # Test the connection
                 client.ping()
+                if attempt > 0:
+                    logger.info(f"Redis connection successful after {attempt + 1} attempts")
                 return client
                 
             except Exception as e:
                 if attempt < max_retries - 1:
-                    print(f"Redis connection attempt {attempt + 1} failed: {e}. Retrying in {retry_delay}s...")
+                    logger.warning(f"Redis connection attempt {attempt + 1}/{max_retries} failed: {e}. Retrying in {retry_delay}s...")
                     time.sleep(retry_delay)
-                    retry_delay *= 1.5  # Exponential backoff
+                    retry_delay = min(retry_delay * 1.5, 10)  # Exponential backoff with max 10s
                 else:
-                    raise ConnectionError(f"Failed to connect to Redis after {max_retries} attempts. Last error: {e}")
+                    logger.error(f"Failed to connect to Redis after {max_retries} attempts. Host: {self.redis_host}:{self.redis_port}")
+                    raise ConnectionError(f"Redis connection failed after {max_retries} attempts. Last error: {e}")
         
         raise ConnectionError("Unexpected error in Redis connection retry loop")
 

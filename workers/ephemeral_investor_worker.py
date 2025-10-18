@@ -39,13 +39,8 @@ class EphemeralInvestorWorker:
     def setup_redis(self):
         """Setup Redis connection"""
         try:
-            self.redis_client = redis.Redis(
-                host=self.redis_config.redis_host,
-                port=self.redis_config.redis_port,
-                db=self.redis_config.redis_db,
-                decode_responses=True
-            )
-            self.redis_client.ping()
+            self.redis_client = self.redis_config.get_connection()
+            logger.info("✅ Redis client initialized successfully")
             return True
         except Exception as e:
             logger.error(f"❌ Redis connection failed: {e}")
