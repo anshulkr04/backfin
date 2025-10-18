@@ -33,6 +33,13 @@ class DelayedQueueProcessor:
         self.running = True
         self.check_interval = 30  # Check every 30 seconds
         
+        # Configure queues to monitor for delayed jobs
+        self.queue_names = [
+            QueueNames.AI_PROCESSING,
+            QueueNames.SUPABASE_UPLOAD,
+            QueueNames.INVESTOR_PROCESSING
+        ]
+        
         # Gap management configuration (can be overridden by environment variables)
         self.min_gap_between_delayed_jobs = int(os.getenv('DELAYED_JOB_GAP_SECONDS', '120'))  # Default 2 minutes
         self.max_delayed_jobs_per_cycle = int(os.getenv('MAX_DELAYED_JOBS_PER_CYCLE', '3'))  # Default 3 jobs
@@ -42,6 +49,8 @@ class DelayedQueueProcessor:
         self.rapid_max_jobs_when_empty = int(os.getenv('RAPID_MAX_JOBS_WHEN_EMPTY', '5'))  # More jobs when queues empty
         
         self.last_delayed_job_release_time = {}  # Track last release time per queue
+        self.start_time = time.time()  # Track processor start time
+        self.total_processed = 0  # Track total jobs processed
         
     def setup_redis(self):
         """Setup Redis connection"""

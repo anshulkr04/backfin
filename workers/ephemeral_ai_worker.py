@@ -503,45 +503,6 @@ class EphemeralAIWorker:
         """Process an AI job (legacy method for compatibility)"""
         return self.process_ai_job_with_retry(job)
     
-    def process_delayed_jobs(self):
-        """Check for and process jobs from the delayed queue that are ready"""
-        try:
-            delayed_queue_name = f"{QueueNames.AI_PROCESSING}:delayed"
-            current_time = time.time()
-            
-            # Get jobs that are ready (score <= current time)
-            ready_jobs = self.redis_client.zrangebyscore(
-                delayed_queue_name, 
-                0, 
-                current_time, 
-                withscores=True, 
-                start=0, 
-                num=5  # Process max 5 delayed jobs at once
-            )
-            
-            if ready_jobs:
-                logger.info(f"🕒 Found {len(ready_jobs)} delayed jobs ready for processing")
-                
-                for job_data, score in ready_jobs:
-                    try:
-                        # Remove from delayed queue first
-                        self.redis_client.zrem(delayed_queue_name, job_data)
-                        
-                        # Add back to immediate processing queue
-                        self.redis_client.lpush(QueueNames.AI_PROCESSING, job_data)
-                        
-                        job = deserialize_job(job_data)
-                        delay_minutes = (current_time - (score - 300)) / 60  # Approximate delay
-                        logger.info(f"🔄 Moved delayed job {job.corp_id} back to processing queue (was delayed {delay_minutes:.1f} minutes)")
-                        
-                    except Exception as e:
-                        logger.error(f"Error processing delayed job: {e}")
-                        # Re-add to delayed queue if processing failed
-                        self.redis_client.zadd(delayed_queue_name, {job_data: score})
-                        
-        except Exception as e:
-            logger.error(f"Error checking delayed jobs: {e}")
-
     def run(self):
         """Main worker loop - process jobs then shutdown"""
         logger.info(f"🚀 {self.worker_id} starting (ephemeral mode with retry logic)")
@@ -562,9 +523,6 @@ class EphemeralAIWorker:
                 if time.time() - last_job_time > self.idle_timeout:
                     logger.info(f"⏰ No jobs for {self.idle_timeout}s, shutting down")
                     break
-                
-                # Check for delayed jobs that are ready for processing
-                self.process_delayed_jobs()
                 
                 try:
                     # Get job with short timeout
