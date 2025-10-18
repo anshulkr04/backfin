@@ -52,7 +52,14 @@ def main():
         job_id=str(uuid.uuid4()),
         corp_id="LIVE_TEST_001",
         company_name="Live Test Company",
-        security_id="LIVETEST"
+        security_id="LIVETEST",
+        announcement_data={
+            "title": "Test Announcement for Live Monitor",
+            "content": "This is a test announcement for monitoring purposes",
+            "date": datetime.now().isoformat(),
+            "source": "LIVE_TEST",
+            "category": "GENERAL"
+        }
     )
     r.lpush(QueueNames.AI_PROCESSING, serialize_job(ai_job))
     
