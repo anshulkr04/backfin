@@ -14,7 +14,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from src.queue.redis_client import redis_client, QueueNames
+from src.queue.redis_client import get_redis_client, QueueNames
 from src.queue.job_types import deserialize_job, serialize_job, AIProcessingJob, FailedJob
 from src.ai.prompts import all_prompt  # Will need to update import after restructure
 
@@ -22,7 +22,7 @@ class AIWorker:
     """Worker for processing AI analysis jobs"""
     
     def __init__(self):
-        self.redis = redis_client
+        self.redis = get_redis_client()
         self.worker_id = f"ai_worker_{os.getpid()}"
         self.running = True
         

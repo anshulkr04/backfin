@@ -94,6 +94,9 @@ class QueueNames:
             cls.RETRY_QUEUE
         ]
 
-# Global Redis instance
+# Global Redis configuration - connection created lazily
 redis_config = RedisConfig()
-redis_client = redis_config.get_connection()
+
+def get_redis_client():
+    """Get a Redis client instance (lazy-loaded)"""
+    return redis_config.get_connection()

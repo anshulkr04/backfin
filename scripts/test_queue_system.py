@@ -16,7 +16,8 @@ sys.path.append(str(project_root))
 def test_redis_connection():
     """Test Redis connection"""
     try:
-        from src.queue.redis_client import redis_client
+        from src.queue.redis_client import get_redis_client
+        redis_client = get_redis_client()
         redis_client.ping()
         print("✅ Redis connection successful")
         return True
@@ -28,8 +29,10 @@ def test_redis_connection():
 def test_queue_operations():
     """Test basic queue operations"""
     try:
-        from src.queue.redis_client import redis_client, QueueNames
+        from src.queue.redis_client import get_redis_client, QueueNames
         from src.queue.job_types import AIProcessingJob, serialize_job
+        
+        redis_client = get_redis_client()
         
         # Create a test job
         test_job = AIProcessingJob(
