@@ -20,28 +20,53 @@ class RedisConfig:
         self.socket_connect_timeout = int(os.getenv('REDIS_CONNECT_TIMEOUT', 5))
         self.socket_timeout = int(os.getenv('REDIS_SOCKET_TIMEOUT', 5))
         
+        # Debug Redis configuration (helpful for Docker troubleshooting)
+        print(f"Redis Config: host={self.redis_host}, port={self.redis_port}, url={self.redis_url}")
+        print(f"Environment REDIS_HOST: {os.getenv('REDIS_HOST', 'NOT_SET')}")
+        print(f"Environment REDIS_PORT: {os.getenv('REDIS_PORT', 'NOT_SET')}")
+        
     def get_connection(self) -> Redis:
-        """Get Redis connection with connection pooling"""
-        try:
-            if self.redis_url:
-                return redis.from_url(
-                    self.redis_url,
-                    max_connections=self.max_connections,
-                    socket_connect_timeout=self.socket_connect_timeout,
-                    socket_timeout=self.socket_timeout
-                )
-            else:
-                return redis.Redis(
-                    host=self.redis_host,
-                    port=self.redis_port,
-                    db=self.redis_db,
-                    password=self.redis_password,
-                    max_connections=self.max_connections,
-                    socket_connect_timeout=self.socket_connect_timeout,
-                    socket_timeout=self.socket_timeout
-                )
-        except Exception as e:
-            raise ConnectionError(f"Failed to connect to Redis: {e}")
+        """Get Redis connection with connection pooling and retry logic"""
+        import time
+        
+        max_retries = 5
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                if self.redis_url:
+                    client = redis.from_url(
+                        self.redis_url,
+                        max_connections=self.max_connections,
+                        socket_connect_timeout=self.socket_connect_timeout,
+                        socket_timeout=self.socket_timeout,
+                        decode_responses=True
+                    )
+                else:
+                    client = redis.Redis(
+                        host=self.redis_host,
+                        port=self.redis_port,
+                        db=self.redis_db,
+                        password=self.redis_password,
+                        max_connections=self.max_connections,
+                        socket_connect_timeout=self.socket_connect_timeout,
+                        socket_timeout=self.socket_timeout,
+                        decode_responses=True
+                    )
+                
+                # Test the connection
+                client.ping()
+                return client
+                
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"Redis connection attempt {attempt + 1} failed: {e}. Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 1.5  # Exponential backoff
+                else:
+                    raise ConnectionError(f"Failed to connect to Redis after {max_retries} attempts. Last error: {e}")
+        
+        raise ConnectionError("Unexpected error in Redis connection retry loop")
 
 # Queue Names
 class QueueNames:
