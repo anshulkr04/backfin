@@ -614,14 +614,17 @@ class EphemeralAIWorker:
             }
             
             # Create Supabase upload job
+            logger.info(f"📤 Creating Supabase upload job for corp_id: {job.corp_id}")
             supabase_job = SupabaseUploadJob(
                 job_id=f"{job.job_id}_upload",
                 corp_id=job.corp_id,
                 processed_data=processed_data
             )
+            logger.info(f"✅ Supabase job created successfully")
             
             # Add to Supabase queue
-            self.redis_client.lpush(QueueNames.SUPABASE_UPLOAD, serialize_job(supabase_job))
+            queue_length = self.redis_client.lpush(QueueNames.SUPABASE_UPLOAD, serialize_job(supabase_job))
+            logger.info(f"📊 Added job to Supabase queue - queue now has {queue_length} jobs")
             
             logger.info(f"✅ AI processing completed for corp_id: {job.corp_id} (retries: {retry_count}, category: {category})")
             self.jobs_processed += 1
