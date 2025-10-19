@@ -404,7 +404,18 @@ class EphemeralAIWorker:
     
     def process_ai_job_with_retry(self, job: AIProcessingJob) -> bool:
         """Process an AI job with retry logic for failures"""
-        logger.info(f"🤖 Processing AI job for corp_id: {job.corp_id}")
+        logger.info(f"🤖 Starting AI processing for corp_id: {job.corp_id}")
+        
+        try:
+            # Basic validation
+            if not job.announcement_data:
+                logger.error(f"❌ No announcement data for corp_id: {job.corp_id}")
+                return False
+                
+            logger.info(f"📝 Announcement data keys: {list(job.announcement_data.keys()) if isinstance(job.announcement_data, dict) else 'Not a dict'}")
+        except Exception as validation_error:
+            logger.error(f"❌ Job validation failed for corp_id: {job.corp_id}: {validation_error}")
+            return False
         
         last_result = None
         retry_count = 0
@@ -524,20 +535,34 @@ class EphemeralAIWorker:
                 
                 try:
                     # Get job with short timeout
+                    logger.info(f"🔍 Checking for jobs in {QueueNames.AI_PROCESSING}")
                     result = self.redis_client.brpop(QueueNames.AI_PROCESSING, timeout=5)
                     
                     if result:
                         queue_name, job_json = result
-                        job = deserialize_job(job_json)
+                        logger.info(f"📦 Got job from {queue_name}: {job_json[:100]}...")
                         
-                        if isinstance(job, AIProcessingJob):
-                            self.process_ai_job_with_retry(job)
-                            last_job_time = time.time()
-                        else:
-                            logger.warning(f"⚠️ Unexpected job type: {type(job)}")
+                        try:
+                            job = deserialize_job(job_json)
+                            logger.info(f"✅ Deserialized job: {type(job)}")
+                            
+                            if isinstance(job, AIProcessingJob):
+                                logger.info(f"🤖 Processing AI job for corp_id: {job.corp_id}")
+                                success = self.process_ai_job_with_retry(job)
+                                logger.info(f"🔄 Job processing result: {success}")
+                                last_job_time = time.time()
+                                self.jobs_processed += 1
+                            else:
+                                logger.warning(f"⚠️ Unexpected job type: {type(job)}")
+                        except Exception as job_error:
+                            logger.error(f"❌ Error processing job: {job_error}")
+                            logger.error(f"Raw job data: {job_json}")
+                    else:
+                        logger.debug(f"💤 No jobs available in queue")
                     
                 except redis.TimeoutError:
                     # No jobs available, continue checking
+                    logger.debug(f"⏰ Queue timeout, continuing...")
                     continue
                 except Exception as e:
                     logger.error(f"❌ Worker error: {e}")
