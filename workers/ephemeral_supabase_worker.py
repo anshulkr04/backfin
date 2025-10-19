@@ -81,21 +81,21 @@ class EphemeralSupabaseWorker:
                 logger.error(f"Failed to initialize Supabase client: {e}")
                 return False
             
-            # Prepare data for upload
+            # Prepare data for upload (matching BSE scraper structure)
             upload_data = {
                 "corp_id": processed_data.get("corp_id"),
                 "securityid": processed_data.get("securityid", ""),
                 "summary": processed_data.get("summary", ""),
                 "fileurl": processed_data.get("fileurl", ""),
                 "date": processed_data.get("date", ""),
-                "ai_summary": processed_data.get("summary", ""),  # Use summary as ai_summary
+                "ai_summary": processed_data.get("ai_summary", ""),
                 "category": category,
                 "isin": processed_data.get("isin", ""),
                 "companyname": processed_data.get("companyname", ""),
                 "symbol": processed_data.get("symbol", ""),
                 "sentiment": processed_data.get("sentiment", "Neutral"),
                 "headline": processed_data.get("headline", ""),
-                "newsid": processed_data.get("newsid", "")
+                "company_id": processed_data.get("company_id", "")
             }
             
             # Remove any None values
