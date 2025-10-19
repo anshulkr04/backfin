@@ -314,6 +314,68 @@ class EphemeralAIWorker:
                     uploaded_file.delete()
             except:
                 pass  # Ignore cleanup errors
+                
+    def ai_process_text(self, headline: str, content: str) -> tuple:
+        """Process text content with AI (for announcements without PDFs)"""
+        if not headline and not content:
+            logger.error("No text content provided for AI processing")
+            return "Error", "No text content provided", "", "", [], [], "Neutral"
+            
+        # Handle case where Gemini client failed to initialize
+        if not genai_client or not genai_client.client:
+            logger.error("Cannot process text: Gemini client not initialized")
+            return "Procedural/Administrative", "AI processing unavailable", "", "", [], [], "Neutral"
+            
+        try:
+            # Combine headline and content
+            full_text = f"Headline: {headline}\n\nContent: {content}" if headline and content else (headline or content)
+            
+            logger.info(f"🤖 Processing text content with AI (length: {len(full_text)} chars)")
+            
+            # Generate content with structured output
+            response = genai_client.generate_content(
+                contents=[f"{all_prompt}\n\nText to analyze:\n{full_text}"],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=StrucOutput,
+                    thinking_config=types.ThinkingConfig(
+                        thinking_budget = -1
+                    )
+                )
+            )
+            
+            if not hasattr(response, 'text'):
+                logger.error("AI response missing text attribute")
+                return "Error", "AI processing failed: invalid response format", "", "", [], [], "Neutral"
+                
+            # Parse JSON response
+            logger.info("📝 Parsing AI text processing response...")
+            summary = json.loads(response.text.strip())
+            
+            # Extract all fields from the summary
+            try:
+                category_text = summary[0]["category"]
+                headline_processed = summary[0]["headline"]
+                summary_text = summary[0]["summary"]
+                financial_data = summary[0]["findata"]
+                individual_investor_list = summary[0]["individual_investor_list"]
+                company_investor_list = summary[0]["company_investor_list"]
+                sentiment = summary[0]["sentiment"]
+                
+                logger.info(f"✅ AI text processing completed successfully")
+                logger.info(f"📊 Category: {category_text}")
+                return category_text, summary_text, headline_processed, financial_data, individual_investor_list, company_investor_list, sentiment
+                
+            except (IndexError, KeyError) as e:
+                logger.error(f"Failed to extract fields from AI text response: {e}")
+                return "Error", "Failed to extract fields from AI text response", "", "", [], [], "Neutral"
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON from AI text response: {e}")
+            return "Error", "Failed to parse AI text response", "", "", [], [], "Neutral"
+        except Exception as e:
+            logger.error(f"Error in AI text processing: {e}")
+            return "Error", f"Error processing text: {str(e)}", "", "", [], [], "Neutral"
     
     def call_ai_processing_function(self, job: AIProcessingJob) -> tuple:
         """
@@ -327,16 +389,50 @@ class EphemeralAIWorker:
             announcement_data = job.announcement_data
             pdf_url = None
             
-            # Try different possible fields for PDF URL
+            # Construct PDF URL from BSE attachment data
+            pdf_url = None
             if isinstance(announcement_data, dict):
-                pdf_url = (announcement_data.get('PDFPATH') or 
-                          announcement_data.get('pdf_url') or 
-                          announcement_data.get('fileurl') or
-                          announcement_data.get('AttchmntFile'))
+                # Get PDF filename from ATTACHMENTNAME field
+                pdf_file = announcement_data.get('ATTACHMENTNAME', '')
+                
+                if pdf_file:
+                    # Construct the full PDF URL using BSE's attachment URL pattern
+                    pdf_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{pdf_file}"
+                    logger.info(f"📄 Constructed PDF URL from ATTACHMENTNAME: {pdf_url}")
+                else:
+                    # Try other possible PDF URL fields as fallback
+                    pdf_url = (announcement_data.get('PDFPATH') or
+                              announcement_data.get('pdf_url') or
+                              announcement_data.get('fileurl') or
+                              announcement_data.get('AttchmntFile'))
+                    
+                    if pdf_url:
+                        logger.info(f"📄 Found PDF URL from fallback fields: {pdf_url}")
+                
+                # Log available fields for debugging
+                logger.info(f"🔍 ATTACHMENTNAME: {announcement_data.get('ATTACHMENTNAME', 'Not found')}")
+                logger.info(f"� PDFFLAG: {announcement_data.get('PDFFLAG', 'Not found')}")
             
+            # If no PDF URL found, process text content instead
             if not pdf_url:
-                logger.error(f"No PDF URL found in announcement data for job {job.job_id}")
-                return "Error", "No PDF URL found in announcement data", "", "", [], [], "Neutral"
+                logger.info(f"📝 No PDF URL found for job {job.job_id}, processing text content instead")
+                
+                # Extract text content from announcement
+                headline = announcement_data.get('HEADLINE', announcement_data.get('NEWSSUB', ''))
+                content = announcement_data.get('MORE', announcement_data.get('HEADLINE', ''))
+                
+                if not headline and not content:
+                    logger.error(f"No content found in announcement data for job {job.job_id}")
+                    return "Error", "No content found in announcement data", "", "", [], [], "Neutral"
+                
+                # Process text content directly
+                try:
+                    logger.info(f"🤖 Processing text content for job {job.job_id}")
+                    result = self.ai_process_text(headline, content)
+                    return result
+                except Exception as e:
+                    logger.error(f"Failed to process text content: {e}")
+                    return "Error", f"Failed to process text content: {str(e)}", "", "", [], [], "Neutral"
             
             # Download PDF file
             try:
@@ -375,15 +471,15 @@ class EphemeralAIWorker:
     def requeue_failed_job(self, job: AIProcessingJob, retry_count: int, reason: str) -> bool:
         """Push failed job back to the queue for later retry with delay"""
         try:
-            # Add metadata to track retry attempts
-            job.retry_count = getattr(job, 'retry_count', 0) + retry_count
-            job.last_failure_reason = reason
-            job.last_retry_timestamp = datetime.now().isoformat()
+            # Create a new job for retry instead of modifying the existing one
+            # to avoid Pydantic model field issues
+            logger.info(f"🔄 Requeuing failed job {job.job_id} with reason: {reason}")
             
-            # Calculate delay based on total retry attempts (exponential backoff)
+            # Calculate delay based on retry attempts (exponential backoff)
             base_delay = 300  # 5 minutes base delay
             max_delay = 3600  # 1 hour max delay
-            delay = min(base_delay * (2 ** min(job.retry_count // 3, 6)), max_delay)
+            total_retries = retry_count + 1
+            delay = min(base_delay * (2 ** min(total_retries // 3, 6)), max_delay)
             
             # Use Redis ZADD with score as timestamp for delayed processing
             future_timestamp = time.time() + delay
