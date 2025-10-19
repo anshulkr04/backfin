@@ -1129,10 +1129,7 @@ class BseScraper:
             corp_id = str(uuid.uuid4())
             newsid = announcement.get('NEWSID')
             
-            # Check if already processed
-            if is_announcement_processed(newsid):
-                logger.info(f"Announcement {newsid} already processed, skipping")
-                return None
+            # Note: Duplicate check already done in main loop, proceeding with processing
             
             # Mark as queued in database
             if not mark_announcement_queued(newsid, corp_id):
@@ -1150,9 +1147,10 @@ class BseScraper:
             
             # Add to AI processing queue
             serialized_job = serialize_job(ai_job)
-            self.redis_client.lpush(QueueNames.AI_PROCESSING, serialized_job)
+            queue_length = self.redis_client.lpush(QueueNames.AI_PROCESSING, serialized_job)
             
             logger.info(f"✅ Queued announcement {newsid} for AI processing (corp_id: {corp_id})")
+            logger.info(f"📊 AI processing queue now has {queue_length} jobs")
             return {"corp_id": corp_id, "queued": True}
             
         except Exception as e:
