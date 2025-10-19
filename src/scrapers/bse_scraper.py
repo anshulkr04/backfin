@@ -1138,7 +1138,7 @@ class BseScraper:
 
             # Idempotency guard: per-announcement queued key with TTL
             queued_key = f"backfin:ann:queued:{newsid}"
-            already_queued = self.redis_client.set(queued_key, 1, nx=True, ex=7*24*3600)  # 7 days
+            already_queued = self.redis_client.set(queued_key, 1, nx=True, ex=3600)  # 1 hour
             if not already_queued:
                 logger.info(f"⏭️  Announcement {newsid} already queued recently — skipping")
                 return {"queued": False, "skipped": True, "reason": "already_queued"}
