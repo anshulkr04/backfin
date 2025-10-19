@@ -23,7 +23,44 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from src.queue.redis_client import RedisConfig, QueueNames
 from src.queue.job_types import deserialize_job, AIProcessingJob, SupabaseUploadJob, serialize_job
-from src.scrapers.bse_scraper import extract_symbol,get_isin
+def extract_symbol(url):
+    """Extract symbol from URL safely"""
+    if not url:
+        return None
+        
+    try:
+        from urllib.parse import urlparse
+        path = urlparse(url).path  # get the path from URL
+        segments = path.strip('/').split('/')  # split path into parts
+        if len(segments) >= 2 and segments[-1].isdigit():
+            return segments[-2]  # return the segment just before the numeric ID
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Error extracting symbol from URL {url}: {e}")
+    
+    return None
+
+def get_isin(scrip_id):
+    """Get ISIN for a given scrip ID"""
+    if not scrip_id:
+        return "N/A"
+        
+    isin_url = f"https://api.bseindia.com/BseIndiaAPI/api/ComHeadernew/w?quotetype=EQ&scripcode={scrip_id}&seriesid="
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    try:
+        response = requests.get(isin_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        isin = data.get("ISIN", "N/A")
+        logging.getLogger(__name__).info(f"ISIN lookup for {scrip_id}: {isin}")
+        return isin
+        
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Error fetching ISIN for {scrip_id}: {e}")
+        return "N/A"
 
 # Import AI processing components
 try:
