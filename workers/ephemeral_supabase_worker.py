@@ -119,6 +119,24 @@ class EphemeralSupabaseWorker:
                 
                 if existing_check.data and len(existing_check.data) > 0:
                     logger.warning(f"⚠️ Corp_id {job.corp_id} already exists in Supabase - skipping upload to prevent duplicate")
+                    # Best-effort local mark-as-sent using newsid to avoid future re-queuing
+                    try:
+                        newsid = processed_data.get('newsid')
+                        if newsid:
+                            import sqlite3
+                            from pathlib import Path
+                            db_path = Path("/app/data") / "bse_raw.db"
+                            conn = sqlite3.connect(str(db_path), timeout=15)
+                            cur = conn.cursor()
+                            cur.execute(
+                                "UPDATE announcements SET sent_to_supabase = 1, sent_to_supabase_at = datetime('now') WHERE newsid = ?",
+                                (str(newsid),)
+                            )
+                            conn.commit()
+                            conn.close()
+                            logger.info(f"🧾 Marked NEWSID {newsid} as sent_to_supabase=1 (pre-existing row)")
+                    except Exception as mark_err:
+                        logger.warning(f"Failed to mark local announcement as sent (pre-existing): {mark_err}")
                     return True  # Return True since the data already exists
                 
                 # Upload to Supabase
@@ -135,6 +153,25 @@ class EphemeralSupabaseWorker:
                         return False
                 
                 logger.info(f"✅ Successfully uploaded to Supabase for corp_id: {job.corp_id}")
+
+                # Mark local announcements table as sent if possible using newsid
+                try:
+                    newsid = processed_data.get('newsid')
+                    if newsid:
+                        import sqlite3
+                        from pathlib import Path
+                        db_path = Path("/app/data") / "bse_raw.db"
+                        conn = sqlite3.connect(str(db_path), timeout=15)
+                        cur = conn.cursor()
+                        cur.execute(
+                            "UPDATE announcements SET sent_to_supabase = 1, sent_to_supabase_at = datetime('now') WHERE newsid = ?",
+                            (str(newsid),)
+                        )
+                        conn.commit()
+                        conn.close()
+                        logger.info(f"🧾 Marked NEWSID {newsid} as sent_to_supabase=1 in local DB")
+                except Exception as mark_err:
+                    logger.warning(f"Failed to mark local announcement as sent: {mark_err}")
                 
                 # Upload financial data if available
                 findata = processed_data.get('findata')

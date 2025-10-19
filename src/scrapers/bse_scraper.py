@@ -207,17 +207,12 @@ def mark_announcement_queued(newsid, corp_id, db_path=None):
         conn = sqlite3.connect(str(db_path), timeout=30)
         cur = conn.cursor()
         
-        # Insert or update announcement record with queued status
+        # Insert or update local mirror record with queued status (do not alter announcements.sent_to_supabase)
         cur.execute("""
             INSERT OR REPLACE INTO corporatefilings (
                 corp_id, sent_to_supabase, sent_to_supabase_at
             ) VALUES (?, 0, ?)
         """, (corp_id, datetime.now(timezone.utc).isoformat()))
-        
-        # Also update announcements table
-        cur.execute("""
-            UPDATE announcements SET sent_to_supabase = 0 WHERE newsid = ?
-        """, (str(newsid),))
         
         conn.commit()
         conn.close()
@@ -1128,6 +1123,19 @@ class BseScraper:
                 logger.warning("Announcement missing NEWSID, skipping queue")
                 return {"queued": False, "skipped": True, "reason": "missing_newsid"}
 
+            # Hard guard: if already sent_to_supabase, skip queuing to avoid repeats
+            try:
+                conn = sqlite3.connect(str(get_data_dir() / "bse_raw.db"), timeout=15)
+                cur = conn.cursor()
+                cur.execute("SELECT sent_to_supabase FROM announcements WHERE newsid = ?", (newsid,))
+                row = cur.fetchone()
+                conn.close()
+                if row is not None and row[0] == 1:
+                    logger.info(f"⏭️  Announcement {newsid} already sent_to_supabase=1 — skipping queue")
+                    return {"queued": False, "skipped": True, "reason": "already_sent"}
+            except Exception as chk_err:
+                logger.warning(f"DB check failed for sent_to_supabase (NEWSID={newsid}): {chk_err}")
+
             # Idempotency guard: per-announcement queued key with TTL
             queued_key = f"backfin:ann:queued:{newsid}"
             already_queued = self.redis_client.set(queued_key, 1, nx=True, ex=7*24*3600)  # 7 days
@@ -1581,52 +1589,80 @@ class BseScraper:
                             self._send_to_api_if_needed(data)
                     return True
                 
-                # Find all new announcements with deduplication
+                # Find all new announcements with comprehensive deduplication
                 new_announcements = []
                 last_newsid = last_latest_announcement.get('NEWSID')
                 logger.info(f"Last processed NEWSID: {last_newsid}")
                 
+                # Track seen NEWSIDs in this batch to prevent within-batch duplicates
+                seen_newsids = set()
+                
                 for announcement in announcements:
                     current_newsid = announcement.get('NEWSID')
-                    logger.info(f"Checking announcement NEWSID: {current_newsid}")
                     
-                    # Skip the last processed announcement
-                    if current_newsid == last_newsid:
-                        logger.info(f"Skipping last processed announcement: {current_newsid}")
+                    # Skip announcements without NEWSID
+                    if not current_newsid:
+                        logger.warning("Skipping announcement without NEWSID")
                         continue
                         
-                    # Check if already processed to prevent duplicates
-                    is_processed = is_announcement_processed(current_newsid)
-                    logger.info(f"Announcement {current_newsid} sent_to_supabase status: {is_processed}")
+                    current_newsid = str(current_newsid).strip()
                     
-                    # Also check if it exists in database but hasn't been processed
+                    # Skip within-batch duplicates
+                    if current_newsid in seen_newsids:
+                        logger.info(f"⚠️ Skipping within-batch duplicate NEWSID: {current_newsid}")
+                        continue
+                    seen_newsids.add(current_newsid)
+                    
+                    logger.info(f"🔍 Checking announcement NEWSID: {current_newsid}")
+                    
+                    # Skip the last processed announcement (baseline check)
+                    if current_newsid == last_newsid:
+                        logger.info(f"⏭️ Skipping last processed announcement (baseline): {current_newsid}")
+                        continue
+                        
+                    # Check Redis queued key first (fastest check)
+                    if self.redis_client:
+                        try:
+                            queued_key = f"backfin:ann:queued:{current_newsid}"
+                            if self.redis_client.exists(queued_key):
+                                logger.info(f"⏭️ Skipping already queued announcement: {current_newsid}")
+                                continue
+                        except Exception as redis_err:
+                            logger.warning(f"Redis queued check failed for {current_newsid}: {redis_err}")
+                    
+                    # Comprehensive database check for processing status
                     try:
                         conn = sqlite3.connect(str(get_data_dir() / "bse_raw.db"), timeout=30)
                         cur = conn.cursor()
-                        cur.execute("SELECT sent_to_supabase, ai_processed FROM announcements WHERE newsid = ?", (str(current_newsid),))
+                        cur.execute("""
+                            SELECT sent_to_supabase, ai_processed, newsid 
+                            FROM announcements 
+                            WHERE newsid = ?
+                        """, (current_newsid,))
                         result = cur.fetchone()
                         conn.close()
                         
                         if result:
-                            sent_to_supabase, ai_processed = result
+                            sent_to_supabase, ai_processed, _ = result
                             logger.info(f"📊 DB Status for {current_newsid}: sent_to_supabase={sent_to_supabase}, ai_processed={ai_processed}")
                             
-                            # Process if not sent to Supabase (even if it exists in DB)
-                            if sent_to_supabase == 0:
-                                new_announcements.append(announcement)
-                                logger.info(f"✅ Added existing unprocessed announcement {current_newsid} to processing queue")
-                            else:
-                                logger.info(f"⚠️ Skipping fully processed announcement: {current_newsid}")
+                            # Skip if already fully processed and sent to Supabase
+                            if sent_to_supabase == 1:
+                                logger.info(f"⏭️ Skipping fully processed announcement: {current_newsid}")
+                                continue
+                            
+                            # Add to processing queue if not sent to Supabase
+                            new_announcements.append(announcement)
+                            logger.info(f"✅ Added existing unprocessed announcement {current_newsid} to processing queue")
                         else:
-                            # New announcement not in database
+                            # New announcement not in database - add to processing queue
                             new_announcements.append(announcement)
                             logger.info(f"✅ Added new announcement {current_newsid} to processing queue")
                             
                     except Exception as db_error:
-                        logger.error(f"Database check error for {current_newsid}: {db_error}")
-                        # Default to processing if database check fails
-                        new_announcements.append(announcement)
-                        logger.info(f"✅ Added announcement {current_newsid} (DB check failed)")
+                        logger.error(f"❌ Database check error for {current_newsid}: {db_error}")
+                        # On DB error, be conservative and skip to prevent duplicates
+                        logger.info(f"⏭️ Skipping announcement {current_newsid} due to DB check failure")
                 
                 if not new_announcements:
                     logger.info("No new announcements to process")
@@ -1634,7 +1670,7 @@ class BseScraper:
 
                 logger.info(f"Found {len(new_announcements)} new announcements to process")
                 
-                # Process announcements using queue system
+                # Process announcements using queue system with strict deduplication
                 queued_count = 0
                 processed_count = 0
                 
@@ -1642,31 +1678,51 @@ class BseScraper:
                 new_announcements.reverse()
                 
                 for i, announcement in enumerate(new_announcements):
-                    logger.info(f"🔄 Processing announcement {i+1}/{len(new_announcements)}: NEWSID {announcement.get('NEWSID')}")
+                    current_newsid = announcement.get('NEWSID')
+                    logger.info(f"🔄 Processing announcement {i+1}/{len(new_announcements)}: NEWSID {current_newsid}")
+                    
+                    # Double-check if announcement is valid for processing
+                    if not current_newsid:
+                        logger.warning(f"⚠️ Skipping announcement without NEWSID in processing loop")
+                        continue
+                    
+                    # Final check against Redis queued key before processing
+                    if self.redis_client:
+                        try:
+                            queued_key = f"backfin:ann:queued:{current_newsid}"
+                            if self.redis_client.exists(queued_key):
+                                logger.info(f"⏭️ Skipping announcement {current_newsid} - already queued")
+                                continue
+                        except Exception as redis_err:
+                            logger.warning(f"Redis final check failed for {current_newsid}: {redis_err}")
                     
                     if self.redis_client:
-                        logger.info(f"📡 Using Redis queue system for {announcement.get('NEWSID')}")
+                        logger.info(f"📡 Using Redis queue system for {current_newsid}")
                         # Use queue system
                         result = self.queue_announcement_for_processing(announcement)
-                        logger.info(f"🔍 Queue result for {announcement.get('NEWSID')}: {result}")
+                        logger.info(f"🔍 Queue result for {current_newsid}: {result}")
                         if result:
                             if result.get("queued"):
                                 queued_count += 1
-                                logger.info(f"✅ Successfully queued {announcement.get('NEWSID')}")
+                                logger.info(f"✅ Successfully queued {current_newsid}")
+                            elif result.get("skipped"):
+                                logger.info(f"⏭️ Skipped {current_newsid}: {result.get('reason', 'unknown')}")
                             else:
                                 processed_count += 1
-                                self._send_to_api_if_needed(result)
-                                logger.info(f"✅ Directly processed {announcement.get('NEWSID')}")
+                                # Only send to API if data is valid and meaningful
+                                if self._should_broadcast_to_api(result):
+                                    self._send_to_api_if_needed(result)
+                                logger.info(f"✅ Directly processed {current_newsid}")
                         else:
-                            logger.error(f"❌ Failed to process {announcement.get('NEWSID')} - result was None")
+                            logger.error(f"❌ Failed to process {current_newsid} - result was None")
                     else:
                         # Direct processing fallback
                         data = self.process_data(announcement)
-                        if data:
+                        if data and self._should_broadcast_to_api(data):
                             processed_count += 1
                             self._send_to_api_if_needed(data)
                         
-                    # Small delay between processing announcements
+                    # Small delay between processing announcements to prevent overwhelming
                     time.sleep(0.5)
                 
                 # ATOMIC BASELINE UPDATE: Only update after all announcements are processed/queued
@@ -1690,10 +1746,71 @@ class BseScraper:
             logger.error(f"Error in processNewAnnouncements: {e}")
             return False
 
+    def _should_broadcast_to_api(self, data):
+        """Validate that announcement data is worthy of broadcasting to API."""
+        try:
+            # Validate that we have meaningful content
+            if not data or not isinstance(data, dict):
+                logger.warning("⚠️ Invalid data structure - not broadcasting")
+                return False
+                
+            # Check for essential fields
+            essential_fields = ['newsid', 'category', 'companyname']
+            missing_fields = [field for field in essential_fields if not data.get(field)]
+            
+            if missing_fields:
+                logger.warning(f"⚠️ Missing essential fields: {missing_fields} - not broadcasting")
+                return False
+                
+            # Check for meaningful content (not just empty strings)
+            if not data.get('companyname', '').strip():
+                logger.warning("⚠️ Empty company name - not broadcasting")
+                return False
+                
+            if not data.get('category', '').strip():
+                logger.warning("⚠️ Empty category - not broadcasting")
+                return False
+            
+            # Additional validation for NEWSID
+            newsid = data.get('newsid')
+            if not newsid or not str(newsid).strip():
+                logger.warning("⚠️ Empty or invalid NEWSID - not broadcasting")
+                return False
+            
+            # Check for valid content in summary or ai_summary
+            summary = data.get("summary", "")
+            ai_summary = data.get("ai_summary", "")
+            
+            if not isinstance(summary, str):
+                summary = str(summary)
+            if not isinstance(ai_summary, str):
+                ai_summary = str(ai_summary)
+                
+            if summary.strip() == "" and ai_summary.strip() == "":
+                logger.warning("⚠️ Empty summary and ai_summary - not broadcasting")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error validating data for broadcast: {str(e)}")
+            return False
+
     def _send_to_api_if_needed(self, data):
         """Helper method to send data to API if needed"""
-        if data.get("category") == "Procedural/Administrative":
-            logger.info("Announcement is Procedural/Administrative, skipping API call")
+        category = data.get("category")
+        if category in (None, "Procedural/Administrative", "Error"):
+            logger.info("Announcement is non-broadcast category, skipping API call")
+            return
+        # Guard against empty content
+        summary = data.get("summary") or ""
+        ai_summary = data.get("ai_summary") or ""
+        if not isinstance(summary, str):
+            summary = str(summary)
+        if not isinstance(ai_summary, str):
+            ai_summary = str(ai_summary)
+        if summary.strip() == "" and ai_summary.strip() == "":
+            logger.info("Skipping API call due to empty summary and ai_summary")
             return
         
         # Send to API endpoint (which will handle websocket communication)

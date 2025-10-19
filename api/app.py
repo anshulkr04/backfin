@@ -2388,14 +2388,39 @@ def insert_new_announcement():
 
         logger.info(f"Received data: {data}")
 
+        # Basic validation to prevent empty announcements being broadcast
+        def _is_nonempty_str(v):
+            return isinstance(v, str) and v.strip() != ''
+
+        corp_id = data.get('corp_id')
+        category = data.get('category')
+        summary = data.get('summary')
+        ai_summary = data.get('ai_summary')
+
+        # Require corp_id and a meaningful message (summary or ai_summary)
+        if not _is_nonempty_str(corp_id):
+            logger.warning("Skipping broadcast: missing corp_id")
+            return jsonify({'message': 'Skipped broadcast: missing corp_id', 'status': 'skipped'}), 200
+
+        # Skip routine or error categories
+        if not _is_nonempty_str(category) or category in ['Procedural/Administrative', 'Error']:
+            logger.info(f"Skipping broadcast for corp_id={corp_id}: category='{category}'")
+            return jsonify({'message': 'Skipped broadcast: non-broadcast category', 'status': 'skipped'}), 200
+
+        # Ensure we have some text to show
+        has_content = _is_nonempty_str(summary) or _is_nonempty_str(ai_summary)
+        if not has_content:
+            logger.warning(f"Skipping broadcast for corp_id={corp_id}: empty summary and ai_summary")
+            return jsonify({'message': 'Skipped broadcast: empty announcement content', 'status': 'skipped'}), 200
+
         new_announcement = {
-            "id": data.get('corp_id'),
+            "id": corp_id,
             "securityid": data.get('securityid'),
-            "summary": data.get('summary'),
+            "summary": summary,
             "fileurl": data.get('fileurl'),
             "date": data.get('date'),
-            "ai_summary": data.get('ai_summary'),
-            "category": data.get('category'),
+            "ai_summary": ai_summary,
+            "category": category,
             "isin": data.get('isin'),
             "companyname": data.get('companyname'),
             "symbol": data.get('symbol'),
