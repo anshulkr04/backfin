@@ -54,7 +54,7 @@ def get_structured_output(announcement_text: str) -> StrucOutput:
         
         # Generate content with structured output
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",  # Use available model
+            model="gemini-2.5-flash",  # Use available model
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -65,7 +65,7 @@ def get_structured_output(announcement_text: str) -> StrucOutput:
             )
         )
         
-        return response
+        return response.text
             
     except Exception as e:
         print(f"Error getting structured output: {e}")

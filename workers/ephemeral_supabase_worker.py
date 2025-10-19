@@ -68,8 +68,8 @@ class EphemeralSupabaseWorker:
                 from supabase import create_client, Client
                 
                 # Get Supabase credentials from environment
-                supabase_url = os.getenv('SUPABASE_URL')
-                supabase_key = os.getenv('SUPABASE_ANON_KEY')
+                supabase_url = os.getenv('SUPABASE_URL2')
+                supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
                 
                 if not supabase_url or not supabase_key:
                     logger.error("Supabase credentials not found in environment")
