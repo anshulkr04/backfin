@@ -1137,21 +1137,37 @@ class BseScraper:
                 return None
             
             # Create AI processing job
-            ai_job = AIProcessingJob(
-                job_id=corp_id,
-                corp_id=corp_id,
-                announcement_data=announcement,
-                priority="normal",
-                created_at=datetime.now(timezone.utc).isoformat()
-            )
+            logger.info(f"Creating AI processing job for announcement {newsid}")
+            try:
+                ai_job = AIProcessingJob(
+                    job_id=corp_id,
+                    corp_id=corp_id,
+                    announcement_data=announcement,
+                    priority="normal",
+                    created_at=datetime.now(timezone.utc).isoformat()
+                )
+                logger.info(f"✅ AI job created successfully for {newsid}")
+            except Exception as job_error:
+                logger.error(f"❌ Failed to create AI job for {newsid}: {job_error}")
+                return None
             
             # Add to AI processing queue
-            serialized_job = serialize_job(ai_job)
-            queue_length = self.redis_client.lpush(QueueNames.AI_PROCESSING, serialized_job)
-            
-            logger.info(f"✅ Queued announcement {newsid} for AI processing (corp_id: {corp_id})")
-            logger.info(f"📊 AI processing queue now has {queue_length} jobs")
-            return {"corp_id": corp_id, "queued": True}
+            try:
+                serialized_job = serialize_job(ai_job)
+                logger.info(f"✅ Job serialized successfully for {newsid}")
+                
+                queue_length = self.redis_client.lpush(QueueNames.AI_PROCESSING, serialized_job)
+                logger.info(f"✅ Queued announcement {newsid} for AI processing (corp_id: {corp_id})")
+                logger.info(f"📊 AI processing queue now has {queue_length} jobs")
+                
+                # Verify the job was actually added
+                current_queue_length = self.redis_client.llen(QueueNames.AI_PROCESSING)
+                logger.info(f"🔍 Verification: Queue length is actually {current_queue_length}")
+                
+                return {"corp_id": corp_id, "queued": True}
+            except Exception as queue_error:
+                logger.error(f"❌ Failed to queue job for {newsid}: {queue_error}")
+                return None
             
         except Exception as e:
             logger.error(f"Error queuing announcement for processing: {e}")
@@ -1596,17 +1612,23 @@ class BseScraper:
                 new_announcements.reverse()
                 
                 for i, announcement in enumerate(new_announcements):
-                    logger.info(f"Processing announcement {i+1}/{len(new_announcements)}: NEWSID {announcement.get('NEWSID')}")
+                    logger.info(f"🔄 Processing announcement {i+1}/{len(new_announcements)}: NEWSID {announcement.get('NEWSID')}")
                     
                     if self.redis_client:
+                        logger.info(f"📡 Using Redis queue system for {announcement.get('NEWSID')}")
                         # Use queue system
                         result = self.queue_announcement_for_processing(announcement)
+                        logger.info(f"🔍 Queue result for {announcement.get('NEWSID')}: {result}")
                         if result:
                             if result.get("queued"):
                                 queued_count += 1
+                                logger.info(f"✅ Successfully queued {announcement.get('NEWSID')}")
                             else:
                                 processed_count += 1
                                 self._send_to_api_if_needed(result)
+                                logger.info(f"✅ Directly processed {announcement.get('NEWSID')}")
+                        else:
+                            logger.error(f"❌ Failed to process {announcement.get('NEWSID')} - result was None")
                     else:
                         # Direct processing fallback
                         data = self.process_data(announcement)
