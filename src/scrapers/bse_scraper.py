@@ -181,13 +181,10 @@ def is_announcement_processed(newsid, db_path=None):
         conn = sqlite3.connect(str(db_path), timeout=30)
         cur = conn.cursor()
         
-        # Check if announcement exists and has been processed
+        # Check if announcement exists and has been sent to Supabase
         cur.execute("""
-            SELECT COUNT(*) FROM corporatefilings 
-            WHERE corp_id IN (
-                SELECT corp_id FROM announcements 
-                WHERE newsid = ? AND sent_to_supabase = 1
-            )
+            SELECT COUNT(*) FROM announcements 
+            WHERE newsid = ? AND sent_to_supabase = 1
         """, (str(newsid),))
         
         count = cur.fetchone()[0]
@@ -1583,20 +1580,43 @@ class BseScraper:
                     current_newsid = announcement.get('NEWSID')
                     logger.info(f"Checking announcement NEWSID: {current_newsid}")
                     
-                    # Stop when we reach the last processed announcement
+                    # Skip the last processed announcement
                     if current_newsid == last_newsid:
-                        logger.info(f"Reached last processed announcement: {current_newsid}, stopping")
-                        break
+                        logger.info(f"Skipping last processed announcement: {current_newsid}")
+                        continue
                         
                     # Check if already processed to prevent duplicates
                     is_processed = is_announcement_processed(current_newsid)
-                    logger.info(f"Announcement {current_newsid} processed status: {is_processed}")
+                    logger.info(f"Announcement {current_newsid} sent_to_supabase status: {is_processed}")
                     
-                    if not is_processed:
+                    # Also check if it exists in database but hasn't been processed
+                    try:
+                        conn = sqlite3.connect(str(get_data_dir() / "bse_raw.db"), timeout=30)
+                        cur = conn.cursor()
+                        cur.execute("SELECT sent_to_supabase, ai_processed FROM announcements WHERE newsid = ?", (str(current_newsid),))
+                        result = cur.fetchone()
+                        conn.close()
+                        
+                        if result:
+                            sent_to_supabase, ai_processed = result
+                            logger.info(f"📊 DB Status for {current_newsid}: sent_to_supabase={sent_to_supabase}, ai_processed={ai_processed}")
+                            
+                            # Process if not sent to Supabase (even if it exists in DB)
+                            if sent_to_supabase == 0:
+                                new_announcements.append(announcement)
+                                logger.info(f"✅ Added existing unprocessed announcement {current_newsid} to processing queue")
+                            else:
+                                logger.info(f"⚠️ Skipping fully processed announcement: {current_newsid}")
+                        else:
+                            # New announcement not in database
+                            new_announcements.append(announcement)
+                            logger.info(f"✅ Added new announcement {current_newsid} to processing queue")
+                            
+                    except Exception as db_error:
+                        logger.error(f"Database check error for {current_newsid}: {db_error}")
+                        # Default to processing if database check fails
                         new_announcements.append(announcement)
-                        logger.info(f"Added announcement {current_newsid} to processing queue")
-                    else:
-                        logger.info(f"Skipping already processed announcement: {current_newsid}")
+                        logger.info(f"✅ Added announcement {current_newsid} (DB check failed)")
                 
                 if not new_announcements:
                     logger.info("No new announcements to process")
