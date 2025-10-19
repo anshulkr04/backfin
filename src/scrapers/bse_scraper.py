@@ -1563,17 +1563,24 @@ class BseScraper:
                 # Find all new announcements with deduplication
                 new_announcements = []
                 last_newsid = last_latest_announcement.get('NEWSID')
+                logger.info(f"Last processed NEWSID: {last_newsid}")
                 
                 for announcement in announcements:
                     current_newsid = announcement.get('NEWSID')
+                    logger.info(f"Checking announcement NEWSID: {current_newsid}")
                     
                     # Stop when we reach the last processed announcement
                     if current_newsid == last_newsid:
+                        logger.info(f"Reached last processed announcement: {current_newsid}, stopping")
                         break
                         
                     # Check if already processed to prevent duplicates
-                    if not is_announcement_processed(current_newsid):
+                    is_processed = is_announcement_processed(current_newsid)
+                    logger.info(f"Announcement {current_newsid} processed status: {is_processed}")
+                    
+                    if not is_processed:
                         new_announcements.append(announcement)
+                        logger.info(f"Added announcement {current_newsid} to processing queue")
                     else:
                         logger.info(f"Skipping already processed announcement: {current_newsid}")
                 
