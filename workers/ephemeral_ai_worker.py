@@ -227,13 +227,21 @@ class EphemeralAIWorker:
         
         try:
             logger.info(f"📥 Downloading PDF: {url}")
-            response = requests.get(url, timeout=30)
+            
+            # Use proper headers for BSE PDF downloads (same as BSE scraper)
+            headers = {
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://www.bseindia.com/",
+                "Origin": "https://www.bseindia.com"
+            }
+            
+            response = requests.get(url, timeout=30, headers=headers)
             response.raise_for_status()
             
             with open(filepath, "wb") as file:
                 file.write(response.content)
             
-            logger.info(f"✅ Downloaded PDF to: {filepath}")
+            logger.info(f"✅ Downloaded PDF to: {filepath} (size: {len(response.content)} bytes)")
             return filepath
             
         except Exception as e:
