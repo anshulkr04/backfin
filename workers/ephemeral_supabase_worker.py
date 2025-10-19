@@ -48,7 +48,15 @@ class EphemeralSupabaseWorker:
             return False
     
     def process_supabase_job(self, job: SupabaseUploadJob) -> bool:
-        """Process a Supabase upload job"""
+        """Process a Supabase upload job with duplicate prevention"""
+        # Create upload lock to prevent duplicate uploads
+        lock_key = f"upload_lock:{job.corp_id}"
+        lock_acquired = self.redis_client.set(lock_key, self.worker_id, nx=True, ex=120)  # 2 minute lock
+        
+        if not lock_acquired:
+            logger.warning(f"⚠️ Corp_id {job.corp_id} is already being uploaded by another worker - skipping")
+            return True  # Consider this successful to avoid requeuing
+        
         try:
             logger.info(f"📤 Uploading data to Supabase for corp_id: {job.corp_id}")
             
@@ -106,12 +114,25 @@ class EphemeralSupabaseWorker:
             logger.info(f"Prepared data for corp_id {job.corp_id}: {upload_data}")
             
             try:
+                # Check if corp_id already exists in Supabase to prevent duplicates
+                existing_check = supabase.table("corporatefilings").select("corp_id").eq("corp_id", job.corp_id).execute()
+                
+                if existing_check.data and len(existing_check.data) > 0:
+                    logger.warning(f"⚠️ Corp_id {job.corp_id} already exists in Supabase - skipping upload to prevent duplicate")
+                    return True  # Return True since the data already exists
+                
                 # Upload to Supabase
                 response = supabase.table("corporatefilings").insert(upload_data).execute()
                 
                 if hasattr(response, 'error') and response.error:
-                    logger.error(f"Supabase upload error: {response.error}")
-                    return False
+                    # Check if it's a duplicate key error (concurrent processing)
+                    error_msg = str(response.error)
+                    if "duplicate key" in error_msg.lower() or "23505" in error_msg:
+                        logger.warning(f"⚠️ Duplicate key detected for corp_id {job.corp_id} - data already exists")
+                        return True  # Consider this successful since data exists
+                    else:
+                        logger.error(f"Supabase upload error: {response.error}")
+                        return False
                 
                 logger.info(f"✅ Successfully uploaded to Supabase for corp_id: {job.corp_id}")
                 
@@ -169,6 +190,9 @@ class EphemeralSupabaseWorker:
         except Exception as e:
             logger.error(f"❌ Supabase upload failed for {job.corp_id}: {e}")
             return False
+        finally:
+            # Always release the upload lock
+            self.redis_client.delete(lock_key)
     
     def run(self):
         """Main worker loop - process jobs then shutdown"""

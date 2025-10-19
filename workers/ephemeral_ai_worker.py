@@ -23,6 +23,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from src.queue.redis_client import RedisConfig, QueueNames
 from src.queue.job_types import deserialize_job, AIProcessingJob, SupabaseUploadJob, serialize_job
+from src.scrapers.bse_scraper import extract_symbol,get_isin
 
 # Import AI processing components
 try:
@@ -527,6 +528,15 @@ class EphemeralAIWorker:
     
     def process_ai_job_with_retry(self, job: AIProcessingJob) -> bool:
         """Process an AI job with retry logic for failures"""
+        # Create processing lock to prevent duplicate processing
+        lock_key = f"processing_lock:{job.corp_id}"
+        lock_acquired = self.redis_client.set(lock_key, self.worker_id, nx=True, ex=300)  # 5 minute lock
+        
+        if not lock_acquired:
+            logger.warning(f"⚠️ Corp_id {job.corp_id} is already being processed by another worker - skipping")
+            return True  # Consider this successful to avoid requeuing
+        
+        
         logger.info(f"🤖 Starting AI processing for corp_id: {job.corp_id}")
         
         try:
@@ -589,7 +599,12 @@ class EphemeralAIWorker:
             
             # Extract additional data from the job for Supabase upload
             announcement_data = job.announcement_data or {}
-            
+            symbol = extract_symbol(announcement_data.get('NSURL'))
+            isin = get_isin(announcement_data.get('SCRIP_CD'))
+            fileurl = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{announcement_data.get('ATTACHMENTNAME')}"
+            companyname = announcement_data.get('SLONGNAME')
+            companyname=companyname.replace('$','')
+            companyname=companyname.replace('-','')
             # Create processed data for Supabase upload
             processed_data = {
                 "corp_id": job.corp_id,
@@ -600,17 +615,18 @@ class EphemeralAIWorker:
                 "individual_investor_list": individual_investor_list,
                 "company_investor_list": company_investor_list,
                 "sentiment": sentiment,
-                "processed_by": self.worker_id,
-                "processed_at": datetime.now().isoformat(),
-                "retry_count": retry_count,
-                # Include original announcement data
-                "securityid": announcement_data.get('SCRIP_CD') or announcement_data.get('securityid', ''),
-                "companyname": announcement_data.get('COMPNAME') or announcement_data.get('companyname', ''),
-                "symbol": announcement_data.get('SYMBOL') or announcement_data.get('symbol', ''),
-                "isin": announcement_data.get('ISIN') or announcement_data.get('isin', ''),
-                "date": announcement_data.get('DT_TM') or announcement_data.get('date', ''),
-                "fileurl": announcement_data.get('PDFPATH') or announcement_data.get('fileurl', ''),
+                # "processed_by": self.worker_id,
+                # "processed_at": datetime.now().isoformat(),
+                # "retry_count": retry_count,
+                # # Include original announcement data
+                "securityid": announcement_data.get('SCRIP_CD'),
+                "companyname": companyname,
+                "symbol": symbol,
+                "isin": isin,
+                "date": announcement_data.get('DT_TM'),
+                "fileurl": fileurl,
                 "newsid": announcement_data.get('NEWSID') or announcement_data.get('newsid', ''),
+                "original_summary": announcement_data.get('HEADLINE') or announcement_data.get('')
             }
             
             # Create Supabase upload job
@@ -633,6 +649,9 @@ class EphemeralAIWorker:
         except Exception as e:
             logger.error(f"❌ Failed to create Supabase job for {job.corp_id}: {e}")
             return False
+        finally:
+            # Always release the processing lock
+            self.redis_client.delete(lock_key)
     
     def process_ai_job(self, job: AIProcessingJob) -> bool:
         """Process an AI job (legacy method for compatibility)"""
