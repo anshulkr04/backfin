@@ -49,14 +49,6 @@ class EphemeralSupabaseWorker:
     
     def process_supabase_job(self, job: SupabaseUploadJob) -> bool:
         """Process a Supabase upload job with duplicate prevention"""
-        # Create upload lock to prevent duplicate uploads
-        lock_key = f"upload_lock:{job.corp_id}"
-        lock_acquired = self.redis_client.set(lock_key, self.worker_id, nx=True, ex=120)  # 2 minute lock
-        
-        if not lock_acquired:
-            logger.warning(f"⚠️ Corp_id {job.corp_id} is already being uploaded by another worker - skipping")
-            return True  # Consider this successful to avoid requeuing
-        
         try:
             logger.info(f"📤 Uploading data to Supabase for corp_id: {job.corp_id}")
             
@@ -64,14 +56,12 @@ class EphemeralSupabaseWorker:
             if not processed_data:
                 logger.error(f"No processed data for corp_id: {job.corp_id}")
                 return False
-            
+
             # Check if category is Error - skip upload if so
             category = processed_data.get('category', '')
             if category == "Error":
                 logger.warning(f"⚠️ Skipping Supabase upload for corp_id {job.corp_id} - category is 'Error'")
-                return False
-                
-            # Initialize Supabase client
+                return False            # Initialize Supabase client
             try:
                 from supabase import create_client, Client
                 
@@ -227,9 +217,6 @@ class EphemeralSupabaseWorker:
         except Exception as e:
             logger.error(f"❌ Supabase upload failed for {job.corp_id}: {e}")
             return False
-        finally:
-            # Always release the upload lock
-            self.redis_client.delete(lock_key)
     
     def run(self):
         """Main worker loop - process jobs then shutdown"""
@@ -261,8 +248,33 @@ class EphemeralSupabaseWorker:
                         job = deserialize_job(job_json)
                         
                         if isinstance(job, SupabaseUploadJob):
-                            self.process_supabase_job(job)
-                            last_job_time = time.time()
+                            # IMMEDIATE lock acquisition to prevent duplicate processing
+                            lock_key = f"worker_processing:{job.corp_id}:{job.job_id}"
+                            lock_acquired = self.redis_client.set(
+                                lock_key, 
+                                self.worker_id, 
+                                nx=True,  # Only set if not exists
+                                ex=300    # 5 minute lock (shorter for uploads)
+                            )
+                            
+                            if not lock_acquired:
+                                logger.warning(f"⚠️ Upload job {job.job_id} is already being processed by another worker - SKIPPING")
+                                continue  # Skip this job, don't count as processed
+                                
+                            try:
+                                success = self.process_supabase_job(job)
+                                if success:
+                                    self.jobs_processed += 1
+                                    logger.info(f"✅ Upload job {job.job_id} completed successfully ({self.jobs_processed}/{self.max_jobs_per_session})")
+                                last_job_time = time.time()
+                                
+                            finally:
+                                # Always release the lock
+                                try:
+                                    self.redis_client.delete(lock_key)
+                                    logger.debug(f"🔓 Released processing lock for {job.job_id}")
+                                except Exception as unlock_err:
+                                    logger.warning(f"Failed to release lock for {job.job_id}: {unlock_err}")
                         else:
                             logger.warning(f"⚠️ Unexpected job type: {type(job)}")
                     

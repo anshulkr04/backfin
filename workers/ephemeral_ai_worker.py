@@ -593,19 +593,13 @@ class EphemeralAIWorker:
     
     def process_ai_job_with_retry(self, job: AIProcessingJob) -> bool:
         """Process an AI job with retry logic for failures"""
-        # Prefer NEWSID-based lock if available to avoid duplicate processing of same announcement
+        # Check if already processed in Supabase to prevent duplicate processing
         ann_newsid = None
         try:
             ann_newsid = (job.announcement_data or {}).get('NEWSID')
         except Exception:
             ann_newsid = None
-        lock_key = f"processing_lock:{ann_newsid or job.corp_id}"
-        lock_acquired = self.redis_client.set(lock_key, self.worker_id, nx=True, ex=300)  # 5 minute lock
-        
-        if not lock_acquired:
-            logger.warning(f"⚠️ Corp_id {job.corp_id} is already being processed by another worker - skipping")
-            return True  # Consider this successful to avoid requeuing
-        
+            
         try:
             # Check if already processed in Supabase to prevent duplicate processing
             try:
@@ -759,9 +753,6 @@ class EphemeralAIWorker:
         except Exception as e:
             logger.error(f"❌ Failed to create Supabase job for {job.corp_id}: {e}")
             return False
-        finally:
-            # Always release the processing lock
-            self.redis_client.delete(lock_key)
     
     def process_ai_job(self, job: AIProcessingJob) -> bool:
         """Process an AI job (legacy method for compatibility)"""
@@ -802,11 +793,33 @@ class EphemeralAIWorker:
                             logger.info(f"✅ Deserialized job: {type(job)}")
                             
                             if isinstance(job, AIProcessingJob):
-                                logger.info(f"🤖 Processing AI job for corp_id: {job.corp_id}")
-                                success = self.process_ai_job_with_retry(job)
-                                logger.info(f"🔄 Job processing result: {success}")
-                                last_job_time = time.time()
-                                self.jobs_processed += 1
+                                # IMMEDIATE lock acquisition to prevent duplicate processing
+                                lock_key = f"worker_processing:{job.corp_id}:{job.job_id}"
+                                lock_acquired = self.redis_client.set(
+                                    lock_key, 
+                                    self.worker_id, 
+                                    nx=True,  # Only set if not exists
+                                    ex=600    # 10 minute lock (longer than processing time)
+                                )
+                                
+                                if not lock_acquired:
+                                    logger.warning(f"⚠️ Job {job.job_id} is already being processed by another worker - SKIPPING")
+                                    continue  # Skip this job, don't count as processed
+                                    
+                                try:
+                                    logger.info(f"🤖 Processing AI job for corp_id: {job.corp_id}")
+                                    success = self.process_ai_job_with_retry(job)
+                                    logger.info(f"🔄 Job processing result: {success}")
+                                    last_job_time = time.time()
+                                    self.jobs_processed += 1
+                                    
+                                finally:
+                                    # Always release the lock
+                                    try:
+                                        self.redis_client.delete(lock_key)
+                                        logger.debug(f"🔓 Released processing lock for {job.job_id}")
+                                    except Exception as unlock_err:
+                                        logger.warning(f"Failed to release lock for {job.job_id}: {unlock_err}")
                             else:
                                 logger.warning(f"⚠️ Unexpected job type: {type(job)}")
                         except Exception as job_error:
