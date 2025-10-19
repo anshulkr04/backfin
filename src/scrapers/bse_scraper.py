@@ -891,56 +891,38 @@ class BseScraper:
                 with requests.Session() as session:
                     session.headers.update(self.headers)
                     
-                    # Debug: Log the request details
-                    logger.info(f"🔍 DEBUG: Making API request to {self.url}")
-                    logger.info(f"🔍 DEBUG: Request params: {self.params}")
-                    
                     response = session.get(
                         self.url, 
                         params=self.params, 
                         timeout=self.request_timeout
                     )
                     
-                    logger.info(f"🔍 DEBUG: Response status code: {response.status_code}")
-                    
                     response.raise_for_status()  # Raises an exception for 4XX/5XX responses
                     
-                    # Debug: Check response content
                     raw_text = response.text
-                    logger.info(f"🔍 DEBUG: Raw response length: {len(raw_text)}")
-                    logger.info(f"🔍 DEBUG: Raw response (first 200 chars): {raw_text[:200]}")
                     
                     if not raw_text.strip():
-                        logger.warning("🔍 DEBUG: Empty response received")
+                        logger.warning("Empty response received")
                         return []
                     
                     try:
                         data = response.json()
                     except json.JSONDecodeError as e:
-                        logger.error(f"🔍 DEBUG: Failed to parse JSON: {e}")
-                        logger.error(f"🔍 DEBUG: Raw response: {raw_text}")
+                        logger.error(f"Failed to parse JSON: {e}")
                         return []
                     
-                    logger.info(f"🔍 DEBUG: JSON response type: {type(data)}")
-                    
                     if isinstance(data, dict):
-                        logger.info(f"🔍 DEBUG: JSON keys: {list(data.keys())}")
                         announcements = data.get("Table", [])
                     elif isinstance(data, list):
-                        logger.info(f"🔍 DEBUG: Response is a list with {len(data)} items")
                         announcements = data
                     else:
-                        logger.warning(f"🔍 DEBUG: Unexpected response type: {type(data)}")
+                        logger.warning(f"Unexpected response type: {type(data)}")
                         return []
                     
                     if not announcements:
-                        logger.warning("🔍 DEBUG: No announcements found in response")
-                        logger.info(f"🔍 DEBUG: Full response data: {data}")
+                        logger.warning("No announcements found in response")
                     else:
-                        logger.info(f"🔍 DEBUG: Found {len(announcements)} announcements")
-                        if announcements:
-                            first_ann = announcements[0]
-                            logger.info(f"🔍 DEBUG: First announcement keys: {list(first_ann.keys()) if isinstance(first_ann, dict) else 'Not a dict'}")
+                        logger.info(f"Found {len(announcements)} announcements")
                     
                     return announcements
             except requests.exceptions.Timeout:
