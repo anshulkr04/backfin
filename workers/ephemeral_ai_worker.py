@@ -75,7 +75,7 @@ class RateLimitedGeminiClient:
         """Return files interface with rate limiting"""
         return RateLimitedFiles(self.client.files if self.client else None, self.rate_limit_delay)
     
-    def generate_content(self, contents, config=None , model="gemini-2.5-flash"):
+    def generate_content(self, contents, config=None, model="gemini-2.0-flash-exp"):
         """Generate content with rate limiting"""
         if not self.client:
             raise Exception("Gemini client not initialized")
@@ -90,7 +90,12 @@ class RateLimitedGeminiClient:
             time.sleep(sleep_time)
         
         try:
-            response = self.client.generate_content(model=model,contents=contents, config=config)
+            # Use the correct method to generate content with the client
+            response = self.client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config
+            )
             self.last_request_time = time.time()
             return response
         except Exception as e:
