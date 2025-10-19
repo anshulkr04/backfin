@@ -294,17 +294,30 @@ class EphemeralAIWorker:
                 
             # Parse JSON response
             logger.info("📝 Parsing AI response...")
+            logger.info(f"🔍 Raw response text: {response.text[:500]}...")  # Log first 500 chars
+            
             summary = json.loads(response.text.strip())
+            logger.info(f"🔍 Parsed JSON type: {type(summary)}")
+            logger.info(f"🔍 Parsed JSON content: {summary}")
             
             # Extract all fields from the summary
             try:
-                category_text = summary[0]["category"]
-                headline = summary[0]["headline"]
-                summary_text = summary[0]["summary"]
-                financial_data = summary[0]["findata"]
-                individual_investor_list = summary[0]["individual_investor_list"]
-                company_investor_list = summary[0]["company_investor_list"]
-                sentiment = summary[0]["sentiment"]
+                # Handle both array and direct object responses
+                if isinstance(summary, list) and len(summary) > 0:
+                    data = summary[0]
+                elif isinstance(summary, dict):
+                    data = summary
+                else:
+                    logger.error(f"Unexpected response format: {type(summary)}")
+                    return "Error", "Unexpected response format", "", "", [], [], "Neutral"
+                
+                category_text = data["category"]
+                headline = data["headline"]
+                summary_text = data["summary"]
+                financial_data = data["findata"]
+                individual_investor_list = data["individual_investor_list"]
+                company_investor_list = data["company_investor_list"]
+                sentiment = data["sentiment"]
                 
                 logger.info(f"✅ AI processing completed successfully")
                 logger.info(f"📊 Category: {category_text}")
@@ -312,6 +325,7 @@ class EphemeralAIWorker:
                 
             except (IndexError, KeyError) as e:
                 logger.error(f"Failed to extract fields from AI response: {e}")
+                logger.error(f"Available keys in response: {list(data.keys()) if 'data' in locals() and isinstance(data, dict) else 'Not a dict'}")
                 return "Error", "Failed to extract fields from AI response", "", "", [], [], "Neutral"
                 
         except json.JSONDecodeError as e:
