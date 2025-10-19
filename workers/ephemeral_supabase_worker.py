@@ -82,13 +82,18 @@ class EphemeralSupabaseWorker:
                 return False
             
             # Prepare data for upload (exactly matching BSE scraper structure)
+            # Construct file URL if we have PDF path info
+            fileurl = processed_data.get("fileurl")
+            if not fileurl and processed_data.get("pdf_file"):
+                fileurl = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{processed_data.get('pdf_file')}"
+            
             upload_data = {
                 "corp_id": processed_data.get("corp_id"),
                 "securityid": processed_data.get("securityid"),
-                "summary": processed_data.get("summary"),
-                "fileurl": processed_data.get("fileurl"),
+                "summary": processed_data.get("original_summary", ""),  # Original BSE summary (if available)
+                "fileurl": fileurl,
                 "date": processed_data.get("date"),
-                "ai_summary": processed_data.get("ai_summary"),
+                "ai_summary": processed_data.get("summary"),  # AI-generated analysis goes to ai_summary
                 "category": category,
                 "isin": processed_data.get("isin"),
                 "companyname": processed_data.get("companyname"),
