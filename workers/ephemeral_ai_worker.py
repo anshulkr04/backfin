@@ -39,28 +39,46 @@ def extract_symbol(url):
     
     return None
 
-def get_isin(scrip_id):
-    """Get ISIN for a given scrip ID"""
+def get_isin(scrip_id: str, max_retries: int = 3, request_timeout: int = 10) -> str:
+    """Lookup ISIN for a given BSE scrip code with retries and proper headers."""
     if not scrip_id:
+        logger.error("Invalid scrip ID for ISIN lookup")
         return "N/A"
-        
-    isin_url = f"https://api.bseindia.com/BseIndiaAPI/api/ComHeadernew/w?quotetype=EQ&scripcode={scrip_id}&seriesid="
+
+    isin_url = (
+        "https://api.bseindia.com/BseIndiaAPI/api/ComHeadernew/w"
+        f"?quotetype=EQ&scripcode={scrip_id}&seriesid="
+    )
+
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://www.bseindia.com/",
+        "Origin": "https://www.bseindia.com",
+        "Accept": "application/json",
     }
-    
-    try:
-        response = requests.get(isin_url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        data = response.json()
-        isin = data.get("ISIN", "N/A")
-        logging.getLogger(__name__).info(f"ISIN lookup for {scrip_id}: {isin}")
-        return isin
-        
-    except Exception as e:
-        logging.getLogger(__name__).error(f"Error fetching ISIN for {scrip_id}: {e}")
-        return "N/A"
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.get(isin_url, headers=headers, timeout=request_timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("ISIN") or data.get("isin") or "N/A"
+        except requests.exceptions.Timeout:
+            logger.warning(f"ISIN request timed out (attempt {attempt}/{max_retries})")
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error getting ISIN: {e}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request error getting ISIN: {e}")
+        except ValueError as e:
+            logger.error(f"Error parsing ISIN JSON: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error getting ISIN: {e}")
+
+        if attempt < max_retries:
+            time.sleep(5)
+
+    logger.error(f"Failed to get ISIN for {scrip_id} after {max_retries} attempts")
+    return "N/A"
 
 # Import AI processing components
 try:
@@ -474,9 +492,19 @@ class EphemeralAIWorker:
                     if pdf_url:
                         logger.info(f"📄 Found PDF URL from fallback fields: {pdf_url}")
                 
-                # Log available fields for debugging
-                logger.info(f"🔍 ATTACHMENTNAME: {announcement_data.get('ATTACHMENTNAME', 'Not found')}")
-                logger.info(f"� PDFFLAG: {announcement_data.get('PDFFLAG', 'Not found')}")
+                att_name = announcement_data.get('ATTACHMENTNAME')
+                fileurl = (
+                    f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{att_name}" if att_name else
+                    announcement_data.get('PDFPATH') or announcement_data.get('fileurl') or announcement_data.get('AttchmntFile')
+                )
+                companyname = (
+                    announcement_data.get('SLONGNAME')
+                    or announcement_data.get('SC_FULLNAME')
+                    or announcement_data.get('SC_NAME')
+                    or ""
+                )
+                if isinstance(companyname, str):
+                    companyname = companyname.replace('$','').replace('-','')
             
             # If no PDF URL found, process text content instead
             if not pdf_url:
@@ -565,31 +593,61 @@ class EphemeralAIWorker:
     
     def process_ai_job_with_retry(self, job: AIProcessingJob) -> bool:
         """Process an AI job with retry logic for failures"""
-        # Create processing lock to prevent duplicate processing
-        lock_key = f"processing_lock:{job.corp_id}"
+        # Prefer NEWSID-based lock if available to avoid duplicate processing of same announcement
+        ann_newsid = None
+        try:
+            ann_newsid = (job.announcement_data or {}).get('NEWSID')
+        except Exception:
+            ann_newsid = None
+        lock_key = f"processing_lock:{ann_newsid or job.corp_id}"
         lock_acquired = self.redis_client.set(lock_key, self.worker_id, nx=True, ex=300)  # 5 minute lock
         
         if not lock_acquired:
             logger.warning(f"⚠️ Corp_id {job.corp_id} is already being processed by another worker - skipping")
             return True  # Consider this successful to avoid requeuing
         
-        
-        logger.info(f"🤖 Starting AI processing for corp_id: {job.corp_id}")
-        
         try:
+            # Check if already processed in Supabase to prevent duplicate processing
+            try:
+                from supabase import create_client
+                supabase_url = os.getenv('SUPABASE_URL2')
+                supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+                
+                if supabase_url and supabase_key:
+                    supabase = create_client(supabase_url, supabase_key)
+                    # Prefer deterministic corp_id derived from NEWSID if present
+                    expected_corp_id = job.corp_id
+                    if ann_newsid:
+                        try:
+                            import uuid
+                            expected_corp_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"bse:{ann_newsid}"))
+                        except Exception:
+                            pass
+                    existing = supabase.table("corporatefilings").select("corp_id").eq("corp_id", expected_corp_id).execute()
+                    
+                    if existing.data and len(existing.data) > 0:
+                        logger.warning(f"⚠️ Corp_id {expected_corp_id} already exists in Supabase - skipping duplicate processing")
+                        return True  # Already processed, skip
+            except Exception as db_check_error:
+                logger.warning(f"⚠️ Could not check Supabase for duplicates: {db_check_error}")
+                # Continue processing even if check fails
+            
+            logger.info(f"🤖 Starting AI processing for corp_id: {job.corp_id}")
+            
             # Basic validation
             if not job.announcement_data:
                 logger.error(f"❌ No announcement data for corp_id: {job.corp_id}")
                 return False
                 
             logger.info(f"📝 Announcement data keys: {list(job.announcement_data.keys()) if isinstance(job.announcement_data, dict) else 'Not a dict'}")
-        except Exception as validation_error:
-            logger.error(f"❌ Job validation failed for corp_id: {job.corp_id}: {validation_error}")
+        
+            last_result = None
+            retry_count = 0
+
+        except Exception as pre_err:
+            logger.error(f"❌ Pre-processing error for corp_id {job.corp_id}: {pre_err}")
             return False
-        
-        last_result = None
-        retry_count = 0
-        
+
         while retry_count < self.max_retries_per_job:
             try:
                 # Call AI processing function
@@ -638,10 +696,19 @@ class EphemeralAIWorker:
             announcement_data = job.announcement_data or {}
             symbol = extract_symbol(announcement_data.get('NSURL'))
             isin = get_isin(announcement_data.get('SCRIP_CD'))
-            fileurl = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{announcement_data.get('ATTACHMENTNAME')}"
-            companyname = announcement_data.get('SLONGNAME')
-            companyname=companyname.replace('$','')
-            companyname=companyname.replace('-','')
+            att_name = announcement_data.get('ATTACHMENTNAME')
+            fileurl = (
+                f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{att_name}" if att_name else
+                announcement_data.get('PDFPATH') or announcement_data.get('fileurl') or announcement_data.get('AttchmntFile')
+            )
+            companyname = (
+                announcement_data.get('SLONGNAME')
+                or announcement_data.get('SC_FULLNAME')
+                or announcement_data.get('SC_NAME')
+                or ""
+            )
+            if isinstance(companyname, str):
+                companyname = companyname.replace('$','').replace('-','')
             # Create processed data for Supabase upload
             processed_data = {
                 "corp_id": job.corp_id,
@@ -663,7 +730,13 @@ class EphemeralAIWorker:
                 "date": announcement_data.get('DT_TM'),
                 "fileurl": fileurl,
                 "newsid": announcement_data.get('NEWSID') or announcement_data.get('newsid', ''),
-                "original_summary": announcement_data.get('HEADLINE') or announcement_data.get('')
+                    "original_summary": (
+                        announcement_data.get('HEADLINE')
+                        or announcement_data.get('NEWSSUB')
+                        or announcement_data.get('SUB')
+                        or announcement_data.get('MORE')
+                        or ""
+                    )
             }
             
             # Create Supabase upload job

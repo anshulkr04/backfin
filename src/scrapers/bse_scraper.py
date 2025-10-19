@@ -1116,19 +1116,29 @@ class BseScraper:
         return "N/A"
     
     def queue_announcement_for_processing(self, announcement):
-        """Queue announcement for processing via Redis queue system"""
+        """Queue announcement for processing via Redis queue system (idempotent)"""
         if not self.redis_client:
             logger.warning("Redis not available, processing directly")
             return self.process_data(announcement)
         
         try:
-            # Generate corp_id for tracking
-            corp_id = str(uuid.uuid4())
-            newsid = announcement.get('NEWSID')
+            # Stable identifier
+            newsid = str(announcement.get('NEWSID') or "").strip()
+            if not newsid:
+                logger.warning("Announcement missing NEWSID, skipping queue")
+                return {"queued": False, "skipped": True, "reason": "missing_newsid"}
+
+            # Idempotency guard: per-announcement queued key with TTL
+            queued_key = f"backfin:ann:queued:{newsid}"
+            already_queued = self.redis_client.set(queued_key, 1, nx=True, ex=7*24*3600)  # 7 days
+            if not already_queued:
+                logger.info(f"⏭️  Announcement {newsid} already queued recently — skipping")
+                return {"queued": False, "skipped": True, "reason": "already_queued"}
+
+            # Deterministic corp_id from NEWSID to keep idempotency across runs
+            corp_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"bse:{newsid}"))
             
-            # Note: Duplicate check already done in main loop, proceeding with processing
-            
-            # Mark as queued in database
+            # Mark as queued in database (local mirror) for visibility
             if not mark_announcement_queued(newsid, corp_id):
                 logger.warning(f"Failed to mark announcement {newsid} as queued")
                 return None
