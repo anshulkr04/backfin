@@ -45,7 +45,8 @@ def cleanup_stuck_locks():
                 if ttl == -1 or ttl <= 0:  # No TTL or expired
                     redis_client.delete(lock_key)
                     cleaned_processing += 1
-                    logger.info(f"🔓 Removed stuck processing lock: {lock_key.decode()}")
+                    key_str = lock_key.decode() if isinstance(lock_key, bytes) else lock_key
+                    logger.info(f"🔓 Removed stuck processing lock: {key_str}")
             except Exception as e:
                 logger.error(f"Error processing lock {lock_key}: {e}")
     
@@ -57,7 +58,8 @@ def cleanup_stuck_locks():
                 # Remove all queued locks as they can be regenerated
                 redis_client.delete(lock_key)
                 cleaned_queued += 1
-                logger.info(f"🔓 Removed queued lock: {lock_key.decode()}")
+                key_str = lock_key.decode() if isinstance(lock_key, bytes) else lock_key
+                logger.info(f"🔓 Removed queued lock: {key_str}")
             except Exception as e:
                 logger.error(f"Error processing queued lock {lock_key}: {e}")
     
