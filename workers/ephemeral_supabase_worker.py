@@ -277,7 +277,7 @@ class EphemeralSupabaseWorker:
                                 lock_key, 
                                 self.worker_id, 
                                 nx=True,  # Only set if not exists
-                                ex=300    # 5 minute lock (shorter for uploads)
+                                ex=90     # 90 second lock (shorter for quick uploads)
                             )
                             
                             if not lock_acquired:

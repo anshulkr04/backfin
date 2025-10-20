@@ -219,12 +219,12 @@ class RateLimitedGeminiClient:
             )
         
         try:
-            # Apply timeout wrapper (5 minutes max for AI calls)
-            response = with_timeout(_generate, timeout_seconds=300)()
+            # Apply timeout wrapper (3 minutes max for AI calls to fit within 5-minute worker limit)
+            response = with_timeout(_generate, timeout_seconds=180)()
             self.last_request_time = time.time()
             return response
         except TimeoutError:
-            logger.error("Gemini API call timed out after 5 minutes")
+            logger.error("Gemini API call timed out after 3 minutes")
             raise Exception("AI processing timed out")
         except Exception as e:
             logger.error(f"Error in generate_content: {e}")
@@ -256,12 +256,12 @@ class RateLimitedFiles:
             return self.files_client.upload(file=file)
         
         try:
-            # Apply timeout wrapper (2 minutes max for file uploads)
-            result = with_timeout(_upload, timeout_seconds=120)()
+            # Apply timeout wrapper (90 seconds max for file uploads)
+            result = with_timeout(_upload, timeout_seconds=90)()
             self.last_request_time = time.time()
             return result
         except TimeoutError:
-            logger.error("File upload timed out after 2 minutes")
+            logger.error("File upload timed out after 90 seconds")
             raise Exception("File upload timed out")
         except Exception as e:
             logger.error(f"Error uploading file: {e}")
@@ -589,26 +589,30 @@ class EphemeralAIWorker:
                 if isinstance(companyname, str):
                     companyname = companyname.replace('$','').replace('-','')
             
-            # If no PDF URL found, process text content instead
+            # If no PDF URL found, treat as procedural/administrative
             if not pdf_url:
-                logger.info(f"📝 No PDF URL found for job {job.job_id}, processing text content instead")
+                logger.info(f"📝 No PDF URL found for job {job.job_id}, treating as Procedural/Administrative")
                 
-                # Extract text content from announcement
+                # Extract original content from announcement
                 headline = announcement_data.get('HEADLINE', announcement_data.get('NEWSSUB', ''))
-                content = announcement_data.get('MORE', announcement_data.get('HEADLINE', ''))
+                summary = announcement_data.get('MORE', announcement_data.get('HEADLINE', ''))
                 
-                if not headline and not content:
+                if not headline and not summary:
                     logger.error(f"No content found in announcement data for job {job.job_id}")
                     return "Error", "No content found in announcement data", "", "", [], [], "Neutral"
                 
-                # Process text content directly
-                try:
-                    logger.info(f"🤖 Processing text content for job {job.job_id}")
-                    result = self.ai_process_text(headline, content)
-                    return result
-                except Exception as e:
-                    logger.error(f"Failed to process text content: {e}")
-                    return "Error", f"Failed to process text content: {str(e)}", "", "", [], [], "Neutral"
+                # For announcements without PDF, set category as Procedural/Administrative
+                # and use original content as AI summary
+                logger.info(f"✅ Processing no-PDF announcement as Procedural/Administrative")
+                return (
+                    "Procedural/Administrative",  # category
+                    summary or headline,          # AI summary (same as original)
+                    headline,                     # headline
+                    "",                          # financial_data (empty)
+                    [],                          # individual_investor_list (empty)
+                    [],                          # company_investor_list (empty)
+                    "Neutral"                    # sentiment
+                )
             
             # Download PDF file
             try:
@@ -884,7 +888,7 @@ class EphemeralAIWorker:
                                     lock_key, 
                                     self.worker_id, 
                                     nx=True,  # Only set if not exists
-                                    ex=600    # 10 minute lock (longer than processing time)
+                                    ex=360    # 6 minute lock (slightly longer than 5-minute worker limit)
                                 )
                                 
                                 if not lock_acquired:

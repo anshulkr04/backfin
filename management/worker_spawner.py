@@ -38,13 +38,13 @@ class WorkerSpawner:
         self.worker_configs = {
             QueueNames.AI_PROCESSING: {
                 'script': 'workers/ephemeral_ai_worker.py',
-                'max_runtime': 900,  # 15 minutes max (increased for complex AI processing)
+                'max_runtime': 300,  # 5 minutes max
                 'cooldown': 10,      # 10 seconds between spawns
                 'max_concurrent': 3  # Allow up to 3 AI workers simultaneously
             },
             QueueNames.SUPABASE_UPLOAD: {
                 'script': 'workers/ephemeral_supabase_worker.py', 
-                'max_runtime': 600,  # 10 minutes max (increased for large uploads)
+                'max_runtime': 60,   # 1 minute max
                 'cooldown': 5,
                 'max_concurrent': 2  # Allow up to 2 upload workers
             },
