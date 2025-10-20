@@ -12,6 +12,8 @@ import json
 import requests
 import tempfile
 import uuid
+import signal
+import threading
 from pathlib import Path
 from datetime import datetime
 import redis
@@ -23,6 +25,70 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from src.queue.redis_client import RedisConfig, QueueNames
 from src.queue.job_types import deserialize_job, AIProcessingJob, SupabaseUploadJob, serialize_job
+
+class TimeoutError(Exception):
+    """Custom timeout exception"""
+    pass
+
+def timeout_handler(signum, frame):
+    """Signal handler for timeout"""
+    raise TimeoutError("Operation timed out")
+
+def with_timeout(func, timeout_seconds=300):
+    """Execute function with timeout using signals"""
+    def wrapper(*args, **kwargs):
+        # Set up signal handler
+        old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout_seconds)
+        
+        try:
+            result = func(*args, **kwargs)
+            signal.alarm(0)  # Cancel alarm
+            return result
+        except TimeoutError:
+            logger.error(f"Operation timed out after {timeout_seconds} seconds")
+            raise
+        finally:
+            signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+    
+    return wrapper
+
+class EphemeralAIWorker:
+    """Ephemeral worker that processes AI jobs and exits"""
+    
+    def __init__(self):
+        self.worker_id = f"ai_worker_{int(time.time())}"
+        self.redis_config = RedisConfig()
+        self.redis_client = None
+        self.jobs_processed = 0
+        self.idle_timeout = 30  # Shutdown after 30 seconds of no jobs
+        self.current_lock_key = None  # Track current processing lock for cleanup
+        
+        # Setup signal handlers for graceful shutdown
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
+        
+        # Setup logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format=f'%(asctime)s - {self.worker_id} - %(levelname)s - %(message)s'
+        )
+        
+    def _signal_handler(self, signum, frame):
+        """Handle termination signals and cleanup locks"""
+        logger.warning(f"🛑 Received signal {signum}, cleaning up...")
+        
+        # Cleanup current processing lock if exists
+        if self.current_lock_key and self.redis_client:
+            try:
+                self.redis_client.delete(self.current_lock_key)
+                logger.info(f"🔓 Cleaned up processing lock: {self.current_lock_key}")
+            except Exception as e:
+                logger.error(f"❌ Failed to cleanup lock {self.current_lock_key}: {e}")
+        
+        logger.info(f"🏁 {self.worker_id} shutting down gracefully")
+        sys.exit(0)
+
 def extract_symbol(url):
     """Extract symbol from URL safely"""
     if not url:
@@ -132,7 +198,7 @@ class RateLimitedGeminiClient:
         return RateLimitedFiles(self.client.files if self.client else None, self.rate_limit_delay)
     
     def generate_content(self, contents, config=None, model="gemini-2.5-flash"):
-        """Generate content with rate limiting"""
+        """Generate content with rate limiting and timeout"""
         if not self.client:
             raise Exception("Gemini client not initialized")
         
@@ -145,15 +211,21 @@ class RateLimitedGeminiClient:
             logger.debug(f"Rate limiting: sleeping for {sleep_time:.2f}s")
             time.sleep(sleep_time)
         
-        try:
-            # Use the correct method to generate content with the client
-            response = self.client.models.generate_content(
+        def _generate():
+            return self.client.models.generate_content(
                 model=model,
                 contents=contents,
                 config=config
             )
+        
+        try:
+            # Apply timeout wrapper (5 minutes max for AI calls)
+            response = with_timeout(_generate, timeout_seconds=300)()
             self.last_request_time = time.time()
             return response
+        except TimeoutError:
+            logger.error("Gemini API call timed out after 5 minutes")
+            raise Exception("AI processing timed out")
         except Exception as e:
             logger.error(f"Error in generate_content: {e}")
             raise
@@ -167,7 +239,7 @@ class RateLimitedFiles:
         self.last_request_time = 0
     
     def upload(self, file):
-        """Upload file with rate limiting"""
+        """Upload file with rate limiting and timeout"""
         if not self.files_client:
             raise Exception("Files client not available")
         
@@ -180,9 +252,20 @@ class RateLimitedFiles:
             logger.debug(f"Rate limiting file upload: sleeping for {sleep_time:.2f}s")
             time.sleep(sleep_time)
         
+        def _upload():
+            return self.files_client.upload(file=file)
+        
         try:
-            result = self.files_client.upload(file=file)
+            # Apply timeout wrapper (2 minutes max for file uploads)
+            result = with_timeout(_upload, timeout_seconds=120)()
             self.last_request_time = time.time()
+            return result
+        except TimeoutError:
+            logger.error("File upload timed out after 2 minutes")
+            raise Exception("File upload timed out")
+        except Exception as e:
+            logger.error(f"Error uploading file: {e}")
+            raise
             return result
         except Exception as e:
             logger.error(f"Error uploading file: {e}")
@@ -795,6 +878,8 @@ class EphemeralAIWorker:
                             if isinstance(job, AIProcessingJob):
                                 # IMMEDIATE lock acquisition to prevent duplicate processing
                                 lock_key = f"worker_processing:{job.corp_id}:{job.job_id}"
+                                self.current_lock_key = lock_key  # Track for cleanup
+                                
                                 lock_acquired = self.redis_client.set(
                                     lock_key, 
                                     self.worker_id, 
@@ -804,6 +889,7 @@ class EphemeralAIWorker:
                                 
                                 if not lock_acquired:
                                     logger.warning(f"⚠️ Job {job.job_id} is already being processed by another worker - SKIPPING")
+                                    self.current_lock_key = None  # Clear tracking
                                     continue  # Skip this job, don't count as processed
                                     
                                 try:
@@ -817,9 +903,11 @@ class EphemeralAIWorker:
                                     # Always release the lock
                                     try:
                                         self.redis_client.delete(lock_key)
+                                        self.current_lock_key = None  # Clear tracking
                                         logger.debug(f"🔓 Released processing lock for {job.job_id}")
                                     except Exception as unlock_err:
                                         logger.warning(f"Failed to release lock for {job.job_id}: {unlock_err}")
+                                        self.current_lock_key = None  # Clear tracking anyway
                             else:
                                 logger.warning(f"⚠️ Unexpected job type: {type(job)}")
                         except Exception as job_error:

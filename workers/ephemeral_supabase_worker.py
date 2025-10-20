@@ -8,6 +8,7 @@ import sys
 import logging
 import os
 import json
+import signal
 from pathlib import Path
 from datetime import datetime
 import redis
@@ -36,6 +37,26 @@ class EphemeralSupabaseWorker:
         self.jobs_processed = 0
         self.max_jobs_per_session = 15  # Process max 15 jobs then shutdown
         self.idle_timeout = 25  # Shutdown after 25 seconds of no jobs
+        self.current_lock_key = None  # Track current processing lock for cleanup
+        
+        # Setup signal handlers for graceful shutdown
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
+        
+    def _signal_handler(self, signum, frame):
+        """Handle termination signals and cleanup locks"""
+        logger.warning(f"🛑 Received signal {signum}, cleaning up...")
+        
+        # Cleanup current processing lock if exists
+        if self.current_lock_key and self.redis_client:
+            try:
+                self.redis_client.delete(self.current_lock_key)
+                logger.info(f"🔓 Cleaned up processing lock: {self.current_lock_key}")
+            except Exception as e:
+                logger.error(f"❌ Failed to cleanup lock {self.current_lock_key}: {e}")
+        
+        logger.info(f"🏁 {self.worker_id} shutting down gracefully")
+        sys.exit(0)
         
     def setup_redis(self):
         """Setup Redis connection"""
@@ -250,6 +271,8 @@ class EphemeralSupabaseWorker:
                         if isinstance(job, SupabaseUploadJob):
                             # IMMEDIATE lock acquisition to prevent duplicate processing
                             lock_key = f"worker_processing:{job.corp_id}:{job.job_id}"
+                            self.current_lock_key = lock_key  # Track for cleanup
+                            
                             lock_acquired = self.redis_client.set(
                                 lock_key, 
                                 self.worker_id, 
@@ -259,6 +282,7 @@ class EphemeralSupabaseWorker:
                             
                             if not lock_acquired:
                                 logger.warning(f"⚠️ Upload job {job.job_id} is already being processed by another worker - SKIPPING")
+                                self.current_lock_key = None  # Clear tracking
                                 continue  # Skip this job, don't count as processed
                                 
                             try:
@@ -272,9 +296,11 @@ class EphemeralSupabaseWorker:
                                 # Always release the lock
                                 try:
                                     self.redis_client.delete(lock_key)
+                                    self.current_lock_key = None  # Clear tracking
                                     logger.debug(f"🔓 Released processing lock for {job.job_id}")
                                 except Exception as unlock_err:
                                     logger.warning(f"Failed to release lock for {job.job_id}: {unlock_err}")
+                                    self.current_lock_key = None  # Clear tracking anyway
                         else:
                             logger.warning(f"⚠️ Unexpected job type: {type(job)}")
                     
