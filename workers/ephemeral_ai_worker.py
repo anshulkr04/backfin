@@ -147,7 +147,7 @@ class RateLimitedGeminiClient:
     def files(self):
         return RateLimitedFiles(self.client.files if self.client else None, self.rate_limit_delay)
 
-    def generate_content(self, contents, config=None, model="gemini-2.5-flash"):
+    def generate_content(self, contents, config=None, model="gemini-2.5-flash-lite"):
         if not self.client:
             raise Exception("Gemini client not initialized")
         current_time = time.time()
