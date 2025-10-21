@@ -103,6 +103,39 @@ def get_isin(scrip_id: str, max_retries: int = 3, request_timeout: int = 10) -> 
     logger.error(f"Failed to get ISIN for {scrip_id} after {max_retries} attempts")
     return "N/A"
 
+def check_for_negative_keywords(summary):
+    """Check for negative keywords in the announcements"""
+    if not isinstance(summary, str):
+        logger.warning(f"Expected string for keyword check, got {type(summary)}")
+        return True  # Treat non-string values as containing negative keywords
+        
+    negative_keywords = [
+        "Trading Window", "Compliance Report", "Advertisement(s)", "Advertisement", "Public Announcement",
+        "Share Certificate(s)", "Share Certificate", "Depositories and Participants", "Depository and Participant",
+        "Depository and Participant", "Depository and Participants", "74(5)", "XBRL", "Newspaper Publication",
+        "Published in the Newspapers", "Clippings", "Book Closure", "Change in Company Secretary/Compliance Officer",
+        "Record Date","Code of Conduct","Cessation","Deviation","Declared Interim Dividend","IEPF","Investor Education","Registrar & Share Transfer Agent",
+        "Registrar and Share Transfer Agent","Scrutinizers report","Utilisation of Funds","Postal Ballot","Defaults on Payment of Interest",
+        "Newspaper Publication","Sustainability Report","Sustainability Reporting","Trading Plan","Letter of Confirmation","Forfeiture/Cancellation","Price movement",
+        "Spurt","Grievance Redressal","Monitoring Agency","Regulation 57",
+    ]
+
+    special_keywords = [
+        "Board", "Outcome", "General Updates",
+    ]
+
+    for keyword in special_keywords:
+        if keyword.lower() in summary.lower():
+            logger.info(f"Special keyword '{keyword}' found in announcement: {summary}")
+            return False
+            
+    for keyword in negative_keywords:
+        if keyword.lower() in summary.lower():
+            logger.info(f"Negative keyword '{keyword}' found in announcement: {summary}")
+            return True
+            
+    return False
+
 # --- AI prompts import (may fail) ---
 try:
     from src.ai.prompts import *
@@ -473,6 +506,18 @@ class EphemeralAIWorker:
         try:
             announcement_data = job.announcement_data
             pdf_url = None
+            original_summary = announcement_data.get('HEADLINE', '')
+            if (check_for_negative_keywords(original_summary)):
+                logger.info(f"🛑 Negative keywords found in announcement for job {job.job_id}, treating as Procedural/Administrative")
+                return (
+                    "Procedural/Administrative",
+                    "Refer to the original document for details",
+                    original_summary,
+                    "",
+                    [],
+                    [],
+                    "Neutral"
+                )
 
             if isinstance(announcement_data, dict):
                 pdf_file = announcement_data.get('ATTACHMENTNAME', '')
