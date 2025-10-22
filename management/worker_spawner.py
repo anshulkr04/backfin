@@ -46,7 +46,7 @@ class WorkerSpawner:
             },
             QueueNames.SUPABASE_UPLOAD: {
                 # point to hardened worker file
-                'script': 'workers/ephemeral_supabase_worker_v2.py',
+                'script': 'workers/ephemeral_supabase_worker.py',
                 # increased max_runtime to allow JOB_TIMEOUT + cleanup margin
                 'max_runtime': 120,
                 'cooldown': 5,
