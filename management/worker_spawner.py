@@ -40,7 +40,7 @@ class WorkerSpawner:
         self.worker_configs = {
             QueueNames.AI_PROCESSING: {
                 'script': 'workers/ephemeral_ai_worker.py',
-                'max_runtime': 300,
+                'max_runtime': 3600,
                 'cooldown': 10,
                 'max_concurrent': 3
             },
