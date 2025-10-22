@@ -301,31 +301,31 @@ class EphemeralSupabaseWorkerV2:
                 except Exception as e:
                     logger.warning(f"Child: Failed to upload investor data: {e}")
 
-            # Create investor analysis job if needed
-            if category not in ['Procedural/Administrative', 'routine', 'minor']:
-                investor_job = InvestorAnalysisJob(
-                    job_id=f"{job.job_id}_investor",
-                    corp_id=job.corp_id,
-                    category=category,
-                    individual_investors=individual_investors,
-                    company_investors=company_investors
-                )
-                try:
-                    r = redis.Redis(
-                        host=os.getenv("REDIS_HOST", "localhost"),
-                        port=int(os.getenv("REDIS_PORT", 6379)),
-                        db=int(os.getenv("REDIS_DB", 0)),
-                        socket_connect_timeout=REDIS_SOCKET_CONNECT_TIMEOUT,
-                        socket_timeout=REDIS_SOCKET_TIMEOUT,
-                        decode_responses=True,
-                    )
-                    r.lpush(INVESTOR_QUEUE, serialize_job(investor_job))
-                    logger.info("Child: Created investor analysis job")
-                except Exception as e:
-                    logger.warning(f"Child: Failed to push investor job: {e}")
+            # # Create investor analysis job if needed
+            # if category not in ['Procedural/Administrative', 'routine', 'minor']:
+            #     investor_job = InvestorAnalysisJob(
+            #         job_id=f"{job.job_id}_investor",
+            #         corp_id=job.corp_id,
+            #         category=category,
+            #         individual_investors=individual_investors,
+            #         company_investors=company_investors
+            #     )
+            #     try:
+            #         r = redis.Redis(
+            #             host=os.getenv("REDIS_HOST", "localhost"),
+            #             port=int(os.getenv("REDIS_PORT", 6379)),
+            #             db=int(os.getenv("REDIS_DB", 0)),
+            #             socket_connect_timeout=REDIS_SOCKET_CONNECT_TIMEOUT,
+            #             socket_timeout=REDIS_SOCKET_TIMEOUT,
+            #             decode_responses=True,
+            #         )
+            #         r.lpush(INVESTOR_QUEUE, serialize_job(investor_job))
+            #         logger.info("Child: Created investor analysis job")
+            #     except Exception as e:
+            #         logger.warning(f"Child: Failed to push investor job: {e}")
 
-            logger.info(f"Child: Completed job corp_id={job.corp_id}")
-            sys.exit(0)
+            # logger.info(f"Child: Completed job corp_id={job.corp_id}")
+            # sys.exit(0)
 
         except SystemExit:
             raise
