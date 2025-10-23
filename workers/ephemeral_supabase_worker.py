@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from multiprocessing import Process
 from typing import Optional
+import requests
 
 import redis
 
@@ -55,6 +56,38 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(worker_id)
+
+def _send_to_api_if_needed(data):
+        """Helper method to send data to API if needed"""
+        category = data.get("category")
+        if category in (None, "Procedural/Administrative", "Error"):
+            logger.info("Announcement is non-broadcast category, skipping API call")
+            return
+        # Guard against empty content
+        summary = data.get("summary") or ""
+        ai_summary = data.get("ai_summary") or ""
+        if not isinstance(summary, str):
+            summary = str(summary)
+        if not isinstance(ai_summary, str):
+            ai_summary = str(ai_summary)
+        if summary.strip() == "" and ai_summary.strip() == "":
+            logger.info("Skipping API call due to empty summary and ai_summary")
+            return
+        
+        # Send to API endpoint (which will handle websocket communication)
+        try:
+            # Use Docker service name for container communication
+            api_host = os.getenv("API_HOST", "api")  # Docker service name
+            api_port = os.getenv("API_PORT", "8000")
+            post_url = f"http://{api_host}:{api_port}/api/insert_new_announcement"  # BSE
+            data["is_fresh"] = True  # Mark as fresh for broadcasting
+            res = requests.post(url=post_url, json=data)
+            if res.status_code >= 200 and res.status_code < 300:
+                logger.info(f"Sent to API for websocket: Status code {res.status_code}")
+            else:
+                logger.error(f"API returned error: {res.status_code}, {res.text}")
+        except Exception as e:
+            logger.error(f"Error sending to API: {e}")
 
 
 class EphemeralSupabaseWorkerV2:
@@ -248,6 +281,10 @@ class EphemeralSupabaseWorkerV2:
                     if not ok:
                         logger.error("Child: Failed to insert corporatefilings after retries")
                         sys.exit(6)
+                    if ok:
+                        logger.info(f"Child: Inserted corp_id {job.corp_id} into corporatefilings")
+                        # Send to API for websocket broadcast if needed
+                        _send_to_api_if_needed(upload_data)
             except Exception as e:
                 logger.exception(f"Child: Error during existence check/insert: {e}")
                 sys.exit(7)
