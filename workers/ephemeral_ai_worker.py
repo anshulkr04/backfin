@@ -22,6 +22,7 @@ import redis
 from google import genai
 from pydantic import BaseModel, Field
 from google.genai import types
+from google.genai.errors import ClientError
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -164,6 +165,9 @@ class StrucOutput(BaseModel):
     company_investor_list: list[str] = Field(..., description="List of company investors mentioned in the announcement. It should be in a form of an array of strings.")
     sentiment: str = Field(..., description = "Analyze the sentiment of the announcement and give appropriate output. The output should be only: Postive, Negative and Netural. Nothing other than these." )
 
+class CategoryResponse(BaseModel):
+    category: str = Field(... , description = category_prompt)
+
 # --- Gemini wrappers with proper TimeoutError propagation ---
 class RateLimitedGeminiClient:
     def __init__(self, api_key, rate_limit_delay=2):
@@ -179,6 +183,7 @@ class RateLimitedGeminiClient:
 
     def files(self):
         return RateLimitedFiles(self.client.files if self.client else None, self.rate_limit_delay)
+    
 
     def generate_content(self, contents, config=None, model="gemini-2.5-flash-lite"):
         if not self.client:
@@ -366,7 +371,7 @@ class EphemeralAIWorker:
             logger.error(f"❌ Failed to download PDF {url}: {e}")
             raise
 
-    def ai_process_pdf(self, filepath: str) -> tuple:
+    def ai_process_pdf(self, filepath: str, original_summary: str) -> tuple:
         if not filepath:
             logger.error("No valid filename provided for AI processing")
             return "Error", "No valid filename provided", "", "", [], [], "Neutral"
@@ -434,6 +439,32 @@ class EphemeralAIWorker:
         except Exception as e:
             logger.error(f"Error in AI processing: {e}")
             return "Error", f"Error processing file: {str(e)}", "", "", [], [], "Neutral"
+        
+        except ClientError as e:
+            # Check if it's the token limit error
+            if e.status_code == 400 and "exceeds the maximum number of tokens" in str(e):
+                response = genai_client.generate_content(
+                    contents=[original_summary],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=CategoryResponse,
+                    )
+                )
+                category_prompt = json.loads(response.text.strip())
+                category_text = category_prompt.get("category", "Procedural/Administrative")
+                headline = original_summary
+                summary_text = original_summary + " Refer to the original document for details."
+                financial_data = ""
+                individual_investor_list = []
+                company_investor_list = []
+                sentiment = "Neutral"
+                logger.info(f"✅ AI processing (fallback) completed successfully with category: {category_text}")
+                return category_text, summary_text, headline, financial_data, individual_investor_list, company_investor_list, sentiment
+            else:
+                logger.error(f"ClientError in AI processing: {e}")
+                return "Error", f"ClientError processing file: {str(e)}", "", "", [], [], "Neutral"
+
+
         finally:
             try:
                 if uploaded_file and hasattr(uploaded_file, 'delete'):
@@ -570,7 +601,7 @@ class EphemeralAIWorker:
                 return "Error", f"Failed to download PDF: {str(e)}", "", "", [], [], "Neutral"
 
             try:
-                result = self.ai_process_pdf(filepath)
+                result = self.ai_process_pdf(filepath,original_summary)
                 logger.info(f"🎯 AI processing result for {job.job_id}: {result[0] if result else 'None'}")
                 return result
             finally:
