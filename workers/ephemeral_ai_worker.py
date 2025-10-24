@@ -438,44 +438,87 @@ class EphemeralAIWorker:
             raise
 
         except ClientError as e:
-            # Example token-limit detection
-            msg = str(e)
-            logger.error(f"ClientError in AI processing: {e}")
+            # Robust handling for token-limit ClientError
+            # 1) Inspect exception for debugging (class, attrs)
+            try:
+                exc_cls = e.__class__.__name__
+                exc_dir = ", ".join([k for k in dir(e) if not k.startswith("_")][:50])
+                logger.debug(f"ClientError class={exc_cls} attrs_sample={exc_dir}")
+            except Exception:
+                pass
 
-            if getattr(e, "status_code", None) == 400 and "exceeds the maximum number of tokens" in msg:
-                # Specific fallback when token limit is exceeded
-                logger.warning("⚠️ Token limit exceeded — falling back to headline-only classification")
+            # 2) Normalize message text from different possible fields
+            msg_parts = []
+            try:
+                # some SDK errors may have .message or .args or .response attributes
+                if hasattr(e, "message"):
+                    msg_parts.append(str(getattr(e, "message")))
+                if hasattr(e, "status_code"):
+                    msg_parts.append(str(getattr(e, "status_code")))
+                if getattr(e, "args", None):
+                    msg_parts.append(" ".join([str(a) for a in e.args if a]))
+                # If the SDK attaches a response payload
+                if hasattr(e, "response") and e.response is not None:
+                    msg_parts.append(str(getattr(e, "response")))
+            except Exception:
+                pass
 
-                # Fallback: only classify original summary/headline (cheap)
+            msg = " ".join([p for p in msg_parts if p]).strip() or str(e)
+            logger.error(f"ClientError in AI processing: {msg}")
+
+            # 3) Robust token-limit detection using multiple substring checks
+            token_substrings = [
+                "input token count exceeds",
+                "exceeds the maximum number of tokens",
+                "maximum number of tokens allowed",
+                "exceeds the maximum number of tokens allowed",
+                "token limit"
+            ]
+            lower_msg = msg.lower()
+
+            if any(s in lower_msg for s in token_substrings):
+                # Token limit hit — print user-facing message & perform cheap fallback
+                print("sorry token limit is reached")
+                logger.warning("⚠️ Token limit exceeded — returning headline-only fallback")
+
+                # Fallback: classify only the original summary/headline (cheap)
+                category_text = "Procedural/Administrative"
                 try:
-                    response = genai_client.generate_content(
-                        contents=[original_summary],
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            response_schema=CategoryResponse,
+                    if original_summary:
+                        response = genai_client.generate_content(
+                            contents=[original_summary],
+                            config=types.GenerateContentConfig(
+                                response_mime_type="application/json",
+                                response_schema=CategoryResponse,
+                            )
                         )
-                    )
-                    category_prompt = json.loads(response.text.strip())
-                    category_text = category_prompt.get("category", "Procedural/Administrative")
+                        # allow for parse failures
+                        try:
+                            parsed = json.loads(response.text.strip())
+                            if isinstance(parsed, dict):
+                                category_text = parsed.get("category", category_text)
+                            elif isinstance(parsed, list) and parsed:
+                                category_text = parsed[0].get("category", category_text)
+                        except Exception:
+                            logger.debug("Could not parse fallback classification response")
                 except Exception as fallback_e:
                     logger.error(f"Fallback classification failed: {fallback_e}")
-                    category_text = "Procedural/Administrative"
+                    # keep default category_text
 
                 headline = original_summary
-                summary_text = original_summary + "\n Refer to the original document for details."
+                summary_text = (original_summary or "") + "\n Refer to the original document for details."
                 financial_data = ""
                 individual_investor_list = []
                 company_investor_list = []
                 sentiment = "Neutral"
 
-                # Print user-facing message (or use logger.info)
-                print("sorry token limit is reached")
                 logger.info("Returned fallback summary due to token limit")
                 return category_text, summary_text, headline, financial_data, individual_investor_list, company_investor_list, sentiment
             else:
-                # Non-token-limit ClientError
-                logger.error(f"ClientError in AI processing: {e}")
-                return "Error", f"ClientError processing file: {str(e)}", "", "", [], [], "Neutral"
+                # Non-token-limit ClientError: return generic error so retry logic can handle it
+                logger.error(f"Non-token ClientError in AI processing: {msg}")
+                return "Error", f"ClientError processing file: {msg}", "", "", [], [], "Neutral"
+
             
         except Exception as e:
             logger.error(f"Error in AI processing: {e}")
