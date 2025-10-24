@@ -436,10 +436,7 @@ class EphemeralAIWorker:
             logger.error("AI file processing timed out")
             # bubble up timeout so caller can count it as a retry attempt
             raise
-        except Exception as e:
-            logger.error(f"Error in AI processing: {e}")
-            return "Error", f"Error processing file: {str(e)}", "", "", [], [], "Neutral"
-        
+
         except ClientError as e:
             # Check if it's the token limit error
             if e.status_code == 400 and "exceeds the maximum number of tokens" in str(e):
@@ -463,7 +460,10 @@ class EphemeralAIWorker:
             else:
                 logger.error(f"ClientError in AI processing: {e}")
                 return "Error", f"ClientError processing file: {str(e)}", "", "", [], [], "Neutral"
-
+            
+        except Exception as e:
+            logger.error(f"Error in AI processing: {e}")
+            return "Error", f"Error processing file: {str(e)}", "", "", [], [], "Neutral"
 
         finally:
             try:
