@@ -1,4 +1,4 @@
-# ces.py
+
 import os
 import time
 import glob
@@ -11,6 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException, JavascriptException
 from webdriver_manager.chrome import ChromeDriverManager
+
 
 # Set to True to run with visible Chrome (helpful for debugging)
 DEBUG_NON_HEADLESS = False

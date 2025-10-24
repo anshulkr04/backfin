@@ -44,35 +44,35 @@ def main():
         print(f"❌ Redis connection failed: {e}")
         return
     
-    # Add some test jobs for demonstration
-    print("📤 Adding test jobs...")
+    # # Add some test jobs for demonstration
+    # print("📤 Adding test jobs...")
     
-    # Add AI processing job
-    ai_job = AIProcessingJob(
-        job_id=str(uuid.uuid4()),
-        corp_id="LIVE_TEST_001",
-        company_name="Live Test Company",
-        security_id="LIVETEST",
-        announcement_data={
-            "title": "Test Announcement for Live Monitor",
-            "content": "This is a test announcement for monitoring purposes",
-            "date": datetime.now().isoformat(),
-            "source": "LIVE_TEST",
-            "category": "GENERAL"
-        }
-    )
-    r.lpush(QueueNames.AI_PROCESSING, serialize_job(ai_job))
+    # # Add AI processing job
+    # ai_job = AIProcessingJob(
+    #     job_id=str(uuid.uuid4()),
+    #     corp_id="LIVE_TEST_001",
+    #     company_name="Live Test Company",
+    #     security_id="LIVETEST",
+    #     announcement_data={
+    #         "title": "Test Announcement for Live Monitor",
+    #         "content": "This is a test announcement for monitoring purposes",
+    #         "date": datetime.now().isoformat(),
+    #         "source": "LIVE_TEST",
+    #         "category": "GENERAL"
+    #     }
+    # )
+    # r.lpush(QueueNames.AI_PROCESSING, serialize_job(ai_job))
     
-    # Add Supabase upload job
-    supabase_job = SupabaseUploadJob(
-        job_id=str(uuid.uuid4()),
-        corp_id="LIVE_TEST_002",
-        processed_data={"test": "live_data", "timestamp": datetime.now().isoformat()}
-    )
-    r.lpush(QueueNames.SUPABASE_UPLOAD, serialize_job(supabase_job))
+    # # Add Supabase upload job
+    # supabase_job = SupabaseUploadJob(
+    #     job_id=str(uuid.uuid4()),
+    #     corp_id="LIVE_TEST_002",
+    #     processed_data={"test": "live_data", "timestamp": datetime.now().isoformat()}
+    # )
+    # r.lpush(QueueNames.SUPABASE_UPLOAD, serialize_job(supabase_job))
     
-    print("✅ Test jobs added")
-    time.sleep(1)
+    # print("✅ Test jobs added")
+    # time.sleep(1)
     
     try:
         while True:
