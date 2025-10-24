@@ -438,26 +438,42 @@ class EphemeralAIWorker:
             raise
 
         except ClientError as e:
-            # Check if it's the token limit error
-            if e.status_code == 400 and "exceeds the maximum number of tokens" in str(e):
-                response = genai_client.generate_content(
-                    contents=[original_summary],
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=CategoryResponse,
+            # Example token-limit detection
+            msg = str(e)
+            logger.error(f"ClientError in AI processing: {e}")
+
+            if getattr(e, "status_code", None) == 400 and "exceeds the maximum number of tokens" in msg:
+                # Specific fallback when token limit is exceeded
+                logger.warning("⚠️ Token limit exceeded — falling back to headline-only classification")
+
+                # Fallback: only classify original summary/headline (cheap)
+                try:
+                    response = genai_client.generate_content(
+                        contents=[original_summary],
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=CategoryResponse,
+                        )
                     )
-                )
-                category_prompt = json.loads(response.text.strip())
-                category_text = category_prompt.get("category", "Procedural/Administrative")
+                    category_prompt = json.loads(response.text.strip())
+                    category_text = category_prompt.get("category", "Procedural/Administrative")
+                except Exception as fallback_e:
+                    logger.error(f"Fallback classification failed: {fallback_e}")
+                    category_text = "Procedural/Administrative"
+
                 headline = original_summary
                 summary_text = original_summary + "\n Refer to the original document for details."
                 financial_data = ""
                 individual_investor_list = []
                 company_investor_list = []
                 sentiment = "Neutral"
-                logger.info(f"✅ AI processing (fallback) completed successfully with category: {category_text}")
+
+                # Print user-facing message (or use logger.info)
+                print("sorry token limit is reached")
+                logger.info("Returned fallback summary due to token limit")
                 return category_text, summary_text, headline, financial_data, individual_investor_list, company_investor_list, sentiment
             else:
+                # Non-token-limit ClientError
                 logger.error(f"ClientError in AI processing: {e}")
                 return "Error", f"ClientError processing file: {str(e)}", "", "", [], [], "Neutral"
             
