@@ -453,7 +453,7 @@ class EphemeralAIWorker:
                 category_prompt = json.loads(response.text.strip())
                 category_text = category_prompt.get("category", "Procedural/Administrative")
                 headline = original_summary
-                summary_text = original_summary + " Refer to the original document for details."
+                summary_text = original_summary + "\n Refer to the original document for details."
                 financial_data = ""
                 individual_investor_list = []
                 company_investor_list = []
