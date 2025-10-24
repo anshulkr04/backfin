@@ -76,7 +76,7 @@ class WorkerSpawner:
                     # add more delayed sets if required
                 ],
                 'redis_type': 'zset',
-                'always_run': True,    # keep a long-running delayed processor
+                # 'always_run': True,    # keep a long-running delayed processor
                 'max_runtime': 3600,
                 'cooldown': 60,
                 'max_concurrent': 1
