@@ -29,6 +29,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from src.queue.redis_client import RedisConfig, QueueNames
 from src.queue.job_types import deserialize_job, AIProcessingJob, SupabaseUploadJob, serialize_job
+from src.ai.prompts import invalid_value
 
 # --- Timeout utility ---
 class TimeoutError(Exception):
@@ -766,6 +767,21 @@ class EphemeralAIWorker:
                             # If requeue fails, push nothing extra — we do not create new queues.
                             logger.error(f"❌ Could not move job {job.job_id} to delayed queue after retries")
                         return False
+                elif self.invalid_output(result[1]):
+                    retry_count += 1
+                    last_result = result
+                    if retry_count < self.max_retries_per_job:
+                        logger.warning(f"⚠️ AI processing returned retryable category='{category}', attempt {retry_count}/{self.max_retries_per_job} for corp_id: {job.corp_id}")
+                        time.sleep(2 * retry_count)
+                        continue
+                    else:
+                        logger.error(f"❌ AI processing failed after {self.max_retries_per_job} attempts for corp_id: {job.corp_id}")
+                        # Move to delayed queue
+                        requeued = self.requeue_failed_job(job, retry_count, "Max retries exceeded")
+                        if not requeued:
+                            # If requeue fails, push nothing extra — we do not create new queues.
+                            logger.error(f"❌ Could not move job {job.job_id} to delayed queue after retries")
+                        return False
                 else:
                     logger.info(f"✅ AI processing successful for corp_id: {job.corp_id}, category: {category}")
                     break
@@ -867,6 +883,10 @@ class EphemeralAIWorker:
 
     def process_ai_job(self, job: AIProcessingJob) -> bool:
         return self.process_ai_job_with_retry(job)
+
+    def invalid_output(self,summary: str) -> bool:
+        invalid_summary = invalid_value
+        return any(invalid in summary for invalid in invalid_summary)
 
     def run(self):
         import traceback
