@@ -783,21 +783,21 @@ class EphemeralAIWorker:
                             # If requeue fails, push nothing extra — we do not create new queues.
                             logger.error(f"❌ Could not move job {job.job_id} to delayed queue after retries")
                         return False
-                elif not self.valid_table(result[1]):
-                    retry_count += 1
-                    last_result = result
-                    if retry_count < self.max_retries_per_job:
-                        logger.warning(f"⚠️ AI processing returned retryable category='{category}', attempt {retry_count}/{self.max_retries_per_job} for corp_id: {job.corp_id}")
-                        time.sleep(2 * retry_count)
-                        continue
-                    else:
-                        logger.error(f"❌ AI processing failed after {self.max_retries_per_job} attempts for corp_id: {job.corp_id}")
-                        # Move to delayed queue
-                        requeued = self.requeue_failed_job(job, retry_count, "Max retries exceeded")
-                        if not requeued:
-                            # If requeue fails, push nothing extra — we do not create new queues.
-                            logger.error(f"❌ Could not move job {job.job_id} to delayed queue after retries")
-                        return False
+                # elif not self.valid_table(result[1]):
+                #     retry_count += 1
+                #     last_result = result
+                #     if retry_count < self.max_retries_per_job:
+                #         logger.warning(f"⚠️ AI processing returned retryable category='{category}', attempt {retry_count}/{self.max_retries_per_job} for corp_id: {job.corp_id}")
+                #         time.sleep(2 * retry_count)
+                #         continue
+                #     else:
+                #         logger.error(f"❌ AI processing failed after {self.max_retries_per_job} attempts for corp_id: {job.corp_id}")
+                #         # Move to delayed queue
+                #         requeued = self.requeue_failed_job(job, retry_count, "Max retries exceeded")
+                #         if not requeued:
+                #             # If requeue fails, push nothing extra — we do not create new queues.
+                #             logger.error(f"❌ Could not move job {job.job_id} to delayed queue after retries")
+                #         return False
                 else:
                     logger.info(f"✅ AI processing successful for corp_id: {job.corp_id}, category: {category}")
                     break
