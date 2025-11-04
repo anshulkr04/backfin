@@ -598,7 +598,7 @@ class EphemeralAIWorker:
         try:
             announcement_data = job.announcement_data
             pdf_url = None
-            original_summary = announcement_data.get('HEADLINE', '')
+            original_summary = announcement_data.get('NEWSSUB', '')
             if (check_for_negative_keywords(original_summary)):
                 logger.info(f"🛑 Negative keywords found in announcement for job {job.job_id}, treating as Procedural/Administrative")
                 return (
