@@ -120,7 +120,7 @@ def check_for_negative_keywords(summary):
         "Record Date","Code of Conduct","Cessation","Deviation","Declared Interim Dividend","IEPF","Investor Education","Registrar & Share Transfer Agent",
         "Registrar and Share Transfer Agent","Scrutinizers report","Utilisation of Funds","Postal Ballot","Defaults on Payment of Interest",
         "Newspaper Publication","Sustainability Report","Sustainability Reporting","Trading Plan","Letter of Confirmation","Forfeiture/Cancellation","Price movement",
-        "Spurt","Grievance Redressal","Monitoring Agency","Regulation 57",
+        "Spurt","Grievance Redressal","Monitoring Agency","Regulation 57" , "News Paper Publication",
     ]
 
     special_keywords = [

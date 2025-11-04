@@ -1,75 +1,38 @@
-import re
+def check_for_negative_keywords(summary):
+    """Check for negative keywords in the announcements"""
+    if not isinstance(summary, str):
+        return True  # Treat non-string values as containing negative keywords
+        
+    negative_keywords = [
+        "Trading Window", "Compliance Report", "Advertisement(s)", "Advertisement", "Public Announcement",
+        "Share Certificate(s)", "Share Certificate", "Depositories and Participants", "Depository and Participant",
+        "Depository and Participant", "Depository and Participants", "74(5)", "XBRL", "Newspaper Publication",
+        "Published in the Newspapers", "Clippings", "Book Closure", "Change in Company Secretary/Compliance Officer",
+        "Record Date","Code of Conduct","Cessation","Deviation","Declared Interim Dividend","IEPF","Investor Education","Registrar & Share Transfer Agent",
+        "Registrar and Share Transfer Agent","Scrutinizers report","Utilisation of Funds","Postal Ballot","Defaults on Payment of Interest",
+        "Newspaper Publication","Sustainability Report","Sustainability Reporting","Trading Plan","Letter of Confirmation","Forfeiture/Cancellation","Price movement",
+        "Spurt","Grievance Redressal","Monitoring Agency","Regulation 57",
+    ]
 
-SEP_CELL_RE = re.compile(r'^\s*:?-{1,}\s*:?\s*$')
+    special_keywords = [
+        "Board", "Outcome", "General Updates",
+    ]
 
-def split_pipe_row(line):
-    if '|' not in line:
-        return []
-    return [p.strip() for p in line.split('|')]
+    for keyword in special_keywords:
+        if keyword.lower() in summary.lower():
+            print(f"Found special keyword '{keyword}' in summary.")
+            return False
+            
+    for keyword in negative_keywords:
+        if keyword.lower() in summary.lower():
+            print(f"Found negative keyword '{keyword}' in summary.")
+            return True
+            
+    return False
 
-def normalize_cell_count(cells):
-    parts = list(cells)
-    while parts and parts[0] == '':
-        parts.pop(0)
-    while parts and parts[-1] == '':
-        parts.pop(-1)
-    return len(parts)
+sum1 = "Announcement under Regulation 30 (LODR)-Newspaper Publication"
 
-def is_separator_row(line):
-    parts = split_pipe_row(line)
-    while parts and parts[0] == '':
-        parts.pop(0)
-    while parts and parts[-1] == '':
-        parts.pop(-1)
-    return bool(parts) and all(SEP_CELL_RE.match(p) for p in parts)
+sum2 = "News Paper Publication of Unaudited Financial Result for the Second Quarter and Half Year ended on 30rh September, 2025.News Paper Publication of Unaudited Financial Result for the Second Quarter and Half Year ended on 30rh September, 2025."
 
-def check_markdown_tables(md):
-    lines = md.splitlines()
-    results = []
-    i = 0
-    n = len(lines)
-
-    while i < n:
-        if '|' not in lines[i]:
-            i += 1
-            continue
-
-        start = i
-        block = []
-        while i < n and lines[i].strip() and '|' in lines[i]:
-            block.append(lines[i])
-            i += 1
-
-        if len(block) < 2:
-            continue
-
-        header, separator = block[0], block[1]
-        header_cols = normalize_cell_count(split_pipe_row(header))
-        sep_cols = normalize_cell_count(split_pipe_row(separator))
-
-        ok = True
-        if not is_separator_row(separator):
-            ok = False
-        if header_cols == 0 or header_cols != sep_cols:
-            ok = False
-
-        for row in block[2:]:
-            data_cols = normalize_cell_count(split_pipe_row(row))
-            if data_cols != header_cols:
-                ok = False
-
-        results.append({"ok": ok})
-
-    return all(r['ok'] for r in results)
-
-
-# Example usage:
-markdown_text = """
-| SI. No. | Particulars | Remarks |
-| :------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | |
-| 1. | Name of the entity awarding the Order/Contract | Integral Coach Factory (ICF) situated in Chennai |
-"""
-
-results = check_markdown_tables(markdown_text)
-# print(all(r['ok'] for r in results))       # → e.g. False
-print(results)
+print(check_for_negative_keywords(sum1))  # Expected: True
+print(check_for_negative_keywords(sum2))  # Expected: FalseS
