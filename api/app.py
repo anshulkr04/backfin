@@ -1308,10 +1308,11 @@ def get_corporate_filings():
 
         # ---- Date filtering (index-friendly) ----
         # Accept YYYY-MM-DD and build UTC half-open range
+       # ---- Date filtering (index-friendly, uses index_date) ----
         if start_date:
             try:
-                sd = dt.strptime(start_date, '%Y-%m-%d').date()
-                start_utc = dt.combine(sd, time.min, tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
+                sd = dt.datetime.strptime(start_date, '%Y-%m-%d').date()
+                start_utc = dt.datetime.combine(sd, dt.time.min, tzinfo=dt.timezone.utc).isoformat().replace('+00:00','Z')
                 query = query.gte('index_date', start_utc)
                 logger.debug(f"Filtering index_date >= {start_utc}")
             except ValueError as e:
@@ -1320,14 +1321,14 @@ def get_corporate_filings():
 
         if end_date:
             try:
-                ed = dt.strptime(end_date, '%Y-%m-%d').date()
-                next_day_utc = dt.combine(ed + timedelta(days=1), time.min, tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
-                # Use < next_day to include the entire end_date day
+                ed = dt.datetime.strptime(end_date, '%Y-%m-%d').date()
+                next_day_utc = dt.datetime.combine(ed + dt.timedelta(days=1), dt.time.min, tzinfo=dt.timezone.utc).isoformat().replace('+00:00','Z')
                 query = query.lt('index_date', next_day_utc)
                 logger.debug(f"Filtering index_date < {next_day_utc}")
             except ValueError as e:
                 logger.error(f"Invalid end_date format: {end_date} - {e}")
                 return jsonify({'message': 'Invalid end_date format. Use YYYY-MM-DD', 'status': 'error'}), 400
+
 
         # ---- Other filters (unchanged) ----
         if category_list:
