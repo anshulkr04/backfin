@@ -886,6 +886,28 @@ class EphemeralAIWorker:
 
             queue_length = self.redis_client.lpush(QueueNames.SUPABASE_UPLOAD, serialize_job(supabase_job))
             logger.info(f"📊 Added job to Supabase queue - queue now has {queue_length} jobs")
+            
+            # Also add to admin verification queue
+            try:
+                verification_task = {
+                    "task_id": f"verify_{job.corp_id}_{int(time.time() * 1000)}",
+                    "announcement_id": job.corp_id,
+                    "original_data": processed_data,
+                    "created_at": int(time.time() * 1000),
+                    "priority": "normal"
+                }
+                
+                # Add to Redis Stream for admin verification
+                stream_id = self.redis_client.xadd(
+                    "verification_tasks",
+                    verification_task
+                )
+                logger.info(f"📋 Added verification task to admin queue - stream_id: {stream_id}")
+                
+            except Exception as verification_error:
+                # Don't fail the whole job if verification queue fails
+                logger.warning(f"⚠️ Failed to add verification task for {job.corp_id}: {verification_error}")
+            
             self.jobs_processed += 1
             return True
 
