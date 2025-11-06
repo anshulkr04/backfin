@@ -7,8 +7,8 @@ import sys
 from functools import wraps
 from flask_cors import CORS
 from dotenv import load_dotenv
-from datetime import datetime, date, time, timedelta, timezone
-
+from datetime import  time, timedelta, timezone
+import datetime as dt
 import uuid
 import logging
 import hashlib
@@ -316,7 +316,7 @@ def health_check():
     
     response = {
         "status": "ok",
-        "timestamp": datetime.datetime.now().isoformat(),
+        "timestamp": dt.datetime.now().isoformat(),
         "server": "Financial Backend API (Custom Auth)",
         "supabase_connected": supabase_connected,
         "debug_mode": DEBUG_MODE,
@@ -430,7 +430,7 @@ def register():
             'Phone_Number': data.get('phone', None),
             'Paid': 'false',
             'AccountType': data.get('account_type', 'free'),
-            'created_at': datetime.datetime.now().isoformat(),
+            'created_at': dt.datetime.now().isoformat(),
             'AccessToken': access_token,
             'WatchListID': watchlist
         }
@@ -601,7 +601,7 @@ def upgrade_account(current_user):
         update_data = {
             'Paid': 'true',
             'AccountType': account_type,
-            'PaidTime': datetime.datetime.now().isoformat()
+            'PaidTime': dt.datetime.now().isoformat()
         }
         
         supabase.table('UserData').update(update_data).eq('UserID', user_id).execute()
@@ -1310,8 +1310,8 @@ def get_corporate_filings():
         # Accept YYYY-MM-DD and build UTC half-open range
         if start_date:
             try:
-                sd = datetime.strptime(start_date, '%Y-%m-%d').date()
-                start_utc = datetime.combine(sd, time.min, tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
+                sd = dt.strptime(start_date, '%Y-%m-%d').date()
+                start_utc = dt.combine(sd, time.min, tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
                 query = query.gte('index_date', start_utc)
                 logger.debug(f"Filtering index_date >= {start_utc}")
             except ValueError as e:
@@ -1320,8 +1320,8 @@ def get_corporate_filings():
 
         if end_date:
             try:
-                ed = datetime.strptime(end_date, '%Y-%m-%d').date()
-                next_day_utc = datetime.combine(ed + timedelta(days=1), time.min, tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
+                ed = dt.strptime(end_date, '%Y-%m-%d').date()
+                next_day_utc = dt.combine(ed + timedelta(days=1), time.min, tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
                 # Use < next_day to include the entire end_date day
                 query = query.lt('index_date', next_day_utc)
                 logger.debug(f"Filtering index_date < {next_day_utc}")
@@ -1383,7 +1383,7 @@ def get_filing_by_id(corp_id):
 # Helper function to generate test filings
 def generate_test_filings():
     """Generate test filing data for when database is unavailable"""
-    current_time = datetime.datetime.now()
+    current_time = dt.datetime.now()
     
     return [
         {
@@ -1410,7 +1410,7 @@ def generate_test_filings():
             "category": "Dividend",
             "summary": "Test Company 2 announces dividend for shareholders",
             "ai_summary": "**Category:** Dividend\n**Headline:** Dividend Announcement\n\nTest Company 2 announces a dividend of ₹5 per share for shareholders, payable on June 15, 2025.",
-            "date": (current_time - datetime.timedelta(days=1)).isoformat(),
+            "date": (current_time -dt.timedelta(days=1)).isoformat(),
             "companyname": "Test Company 2",
             "corp_id": f"test-corp-2-{current_time.timestamp()}"
         },
@@ -1424,7 +1424,7 @@ def generate_test_filings():
             "category": "Mergers & Acquisitions",
             "summary": "Test Company 3 announces merger with another company",
             "ai_summary": "**Category:** Mergers & Acquisitions\n**Headline:** Company Merger\n\nTest Company 3 announces a strategic merger with XYZ Corp valued at $500 million, expected to close in Q3 2025.",
-            "date": (current_time - datetime.timedelta(days=2)).isoformat(),
+            "date": (current_time -dt.timedelta(days=2)).isoformat(),
             "companyname": "Test Company 3",
             "corp_id": f"test-corp-3-{current_time.timestamp()}"
         }
@@ -1484,19 +1484,19 @@ def get_stock_price(current_user):
             }), 400
 
         # Determine date filter - fix the datetime issue
-        today = datetime.datetime.now().date()
+        today = dt.datetime.now().date()
         date_filter = None
 
         if date_range == '1w':
-            date_filter = today - datetime.timedelta(weeks=1)
+            date_filter = today - dt.timedelta(weeks=1)
         elif date_range == '1m':
-            date_filter = today - datetime.timedelta(days=30)
+            date_filter = today - dt.timedelta(days=30)
         elif date_range == '3m':
-            date_filter = today - datetime.timedelta(days=90)
+            date_filter = today - dt.timedelta(days=90)
         elif date_range == '6m':
-            date_filter = today - datetime.timedelta(days=180)
+            date_filter = today - dt.timedelta(days=180)
         elif date_range == '1y':
-            date_filter = today - datetime.timedelta(days=365)
+            date_filter = today - dt.timedelta(days=365)
         elif date_range == 'max':
             date_filter = None
 
@@ -1621,7 +1621,7 @@ def save_announcement(current_user):
             item_cell: item_id,
             "note": note,
             "saved_price": stock_price,  # This might be None, which is OK
-            "saved_at": datetime.datetime.now().isoformat()  # Add timestamp
+            "saved_at": dt.datetime.now().isoformat()  # Add timestamp
         }
         
         # Insert into database with error handling
@@ -1775,7 +1775,7 @@ def fetch_saved_announcements(current_user):
                                     enhanced_announcement['current_price'] = latest_price
                                     enhanced_announcement['percentage_change'] = price_diff
                                     enhanced_announcement['absolute_change'] = absolute_change
-                                    enhanced_announcement['price_calculation_time'] = datetime.datetime.now().isoformat()
+                                    enhanced_announcement['price_calculation_time'] = dt.datetime.now().isoformat()
                                 else:
                                     logger.warning(f"Invalid prices for ISIN {isin}: saved={saved_price}, current={latest_price}")
                                     
@@ -1889,7 +1889,7 @@ def update_saved_announcement(current_user, saved_item_id):
                 "saved_item_id": saved_item_id,
                 "old_note": saved_item['note'],
                 "new_note": new_note,
-                "updated_at": datetime.datetime.now().isoformat()
+                "updated_at": dt.datetime.now().isoformat()
             }
         }), 200
         
@@ -1972,7 +1972,7 @@ def delete_saved_announcement(current_user, saved_item_id):
                 "deleted_item_id": saved_item_id,
                 "deleted_item_type": saved_item['item_type'],
                 "deleted_note": saved_item['note'],
-                "deleted_at": datetime.datetime.now().isoformat()
+                "deleted_at": dt.datetime.now().isoformat()
             }
         }), 200
         
@@ -2064,7 +2064,7 @@ def delete_saved_announcement_post(current_user):
                 "deleted_item_id": saved_item_id,
                 "deleted_item_type": saved_item['item_type'],
                 "deleted_note": saved_item['note'],
-                "deleted_at": datetime.datetime.now().isoformat()
+                "deleted_at": dt.datetime.now().isoformat()
             }
         }), 200
         
@@ -2182,7 +2182,7 @@ def calc_price_diff(current_user):
                     "saved_price": saved_price,
                     "current_price": latest_price,
                     "isin": isin,
-                    "calculation_time": datetime.datetime.now().isoformat()
+                    "calculation_time": dt.datetime.now().isoformat()
                 }
             }), 200
             
@@ -2290,13 +2290,13 @@ class AnnouncementCache:
         announcement_id = data.get('id') or data.get('corp_id')
         if not announcement_id:
             # Generate an ID if none exists
-            announcement_id = f"generated-{datetime.datetime.now().timestamp()}"
+            announcement_id = f"generated-{dt.datetime.now().timestamp()}"
         
         # Generate content hash
         content_hash = self._generate_content_hash(data)
         
         # Store metadata
-        timestamp = datetime.datetime.now().isoformat()
+        timestamp = dt.datetime.now().isoformat()
         
         # Store in primary cache
         self.cache[announcement_id] = {
@@ -2410,14 +2410,14 @@ def test_announcement():
     try:
         # Create test announcement data
         test_announcement = {
-            'id': f"test-{datetime.datetime.now().timestamp()}",
+            'id': f"test-{dt.datetime.now().timestamp()}",
             'companyname': 'Anshul',
             'symbol': 'ANSHUL',
             'category': 'ABC',
             'summary': 'Just Checking in',
             'ai_summary': '**Category:** Test Announcement\n**Headline:** Test WebSocket Functionality\n\nThis is a test announcement to verify WebSocket functionality.',
             'isin': 'TEST12345678',
-            'timestamp': datetime.datetime.now().isoformat()
+            'timestamp': dt.datetime.now().isoformat()
         }
         
         # Broadcast to all clients
@@ -2550,7 +2550,7 @@ def start_scraper_bse():
         spec.loader.exec_module(scraper_module)
         
         # Create and run the scraper
-        today = datetime.datetime.today().strftime('%Y%m%d')
+        today = dt.datetime.today().strftime('%Y%m%d')
         
         try:
             # Create a flag file to signal that this is the first run
@@ -2559,7 +2559,7 @@ def start_scraper_bse():
             
             # Mark as first run by creating the flag file
             with open(first_run_flag_path, 'w') as f:
-                f.write(f"First run on {datetime.datetime.now().isoformat()}")
+                f.write(f"First run on {dt.datetime.now().isoformat()}")
             
             logger.info("Created first run flag file")
                 
@@ -2587,7 +2587,7 @@ def start_scraper_bse():
                     time.sleep(check_interval)
                     
                     # Update date to current date
-                    current_day = datetime.datetime.today().strftime('%Y%m%d')
+                    current_day = dt.datetime.today().strftime('%Y%m%d')
                     logger.debug(f"Running scheduled scraper check for date: {current_day}")
                     
                     # Create a new scraper instance each time to avoid state issues
@@ -2628,7 +2628,7 @@ def start_scraper_nse():
         spec.loader.exec_module(scraper_module)
         
         # Create and run the scraper
-        today = datetime.datetime.today().strftime('%d-%m-%Y')
+        today = dt.datetime.today().strftime('%d-%m-%Y')
         
         try:
             # Create a flag file to signal that this is the first run
@@ -2637,7 +2637,7 @@ def start_scraper_nse():
             
             # Mark as first run by creating the flag file
             with open(first_run_flag_path, 'w') as f:
-                f.write(f"First run on {datetime.datetime.now().isoformat()}")
+                f.write(f"First run on {dt.datetime.now().isoformat()}")
             
             logger.info("Created first run flag file")
                 
@@ -2665,7 +2665,7 @@ def start_scraper_nse():
                     time.sleep(check_interval)
                     
                     # Update date to current date
-                    current_day = datetime.datetime.today().strftime('%d-%m-%Y')
+                    current_day = dt.datetime.today().strftime('%d-%m-%Y')
                     logger.debug(f"Running scheduled scraper check for date: {current_day}")
                     
                     # Create a new scraper instance each time to avoid state issues
