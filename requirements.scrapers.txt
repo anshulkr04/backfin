@@ -1,0 +1,37 @@
+# Scraper-specific requirements (includes Google AI)
+
+# Core processing
+fastapi==0.115.0
+pydantic==2.11.4
+
+# Redis
+redis==5.0.1
+
+# HTTP Client (compatible with google-genai)
+httpx==0.28.1
+requests==2.32.3
+
+# Environment
+python-dotenv==1.1.0
+
+# System monitoring
+psutil==5.9.6
+
+# Data processing
+pandas==2.2.3
+
+# Supabase
+supabase==2.15.1
+
+# Google AI (for PDF processing)
+google-genai==1.15.0
+
+# Web scraping
+beautifulsoup4==4.12.3
+
+# Utilities
+python-dateutil==2.9.0.post0
+schedule==1.2.2
+
+# PDF processing
+PyPDF2==3.0.1

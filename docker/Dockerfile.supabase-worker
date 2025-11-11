@@ -1,0 +1,13 @@
+# Supabase Worker Dockerfile
+FROM backfin/base:latest
+
+# Set specific environment variables  
+ENV WORKER_TYPE=supabase_upload
+ENV SERVICE_NAME=supabase-worker
+
+# Health check specific to Supabase worker
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "from workers.start_supabase_worker import health_check; health_check()" || exit 1
+
+# Run Supabase worker
+CMD ["python", "workers/start_supabase_worker.py"]

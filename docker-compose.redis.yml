@@ -1,0 +1,173 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: backfin-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - backfin_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # Worker Spawner - manages ephemeral workers
+  worker-spawner:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker-spawner
+    container_name: backfin-worker-spawner
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - backfin_network
+    restart: unless-stopped
+    command: python management/worker_spawner.py
+
+  # BSE Scraper (scheduled)
+  bse-scraper:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.scraper
+    container_name: backfin-bse-scraper
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SCRAPER_TYPE=bse
+      - API_HOST=api
+      - API_PORT=8000
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - backfin_network
+    restart: unless-stopped
+    command: python src/scrapers/bse_scraper.py
+
+  # NSE Scraper (scheduled)
+  nse-scraper:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.scraper
+    container_name: backfin-nse-scraper
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SCRAPER_TYPE=nse
+      - API_HOST=api
+      - API_PORT=8000
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - backfin_network
+    restart: unless-stopped
+    command: python src/scrapers/nse_scraper.py
+
+  # API Service
+  api:
+    build: 
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: backfin-api
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - PORT=8000
+      - PROD=FALSE
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    networks:
+      - backfin_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: python api/app.py
+
+  # Queue Monitor Dashboard
+  monitor:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.monitor
+    container_name: backfin-monitor
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - TERM=xterm-256color
+    networks:
+      - backfin_network
+    restart: unless-stopped
+    command: python scripts/live_monitor.py --web --port 8080
+
+  # Database Cleaner Service (DISABLED - dependency issues)
+  # db-cleaner:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/Dockerfile.db-cleaner
+  #   container_name: backfin-db-cleaner
+  #   depends_on:
+  #     - redis
+  #   environment:
+  #     - DB_PATH=/app/data/bse_raw.db
+  #     - CLEANUP_TIME=00:30  # 12:30 AM daily
+  #   volumes:
+  #     - ./data:/app/data
+  #     - ./logs:/app/logs
+  #   networks:
+  #     - backfin_network
+  #   restart: unless-stopped
+  #   command: python services/database_cleaner.py
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  backfin_network:
+    driver: bridge

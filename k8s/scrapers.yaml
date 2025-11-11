@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bse-scraper
+  namespace: backfin
+  labels:
+    app: bse-scraper
+    component: scraper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bse-scraper
+  template:
+    metadata:
+      labels:
+        app: bse-scraper
+    spec:
+      containers:
+      - name: bse-scraper
+        image: backfin/scraper:latest
+        imagePullPolicy: Never
+        command: ["python", "src/scrapers/bse_scraper.py"]
+        envFrom:
+        - configMapRef:
+            name: backfin-config
+        - secretRef:
+            name: backfin-secrets
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      restartPolicy: Always
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nse-scraper
+  namespace: backfin
+  labels:
+    app: nse-scraper
+    component: scraper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nse-scraper
+  template:
+    metadata:
+      labels:
+        app: nse-scraper
+    spec:
+      containers:
+      - name: nse-scraper
+        image: backfin/scraper:latest
+        imagePullPolicy: Never
+        command: ["python", "src/scrapers/nse_scraper.py"]
+        envFrom:
+        - configMapRef:
+            name: backfin-config
+        - secretRef:
+            name: backfin-secrets
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      restartPolicy: Always

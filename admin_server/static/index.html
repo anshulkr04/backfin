@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Verification Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .header {
+            background: #2563eb;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .auth-section {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .dashboard {
+            display: none;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #2563eb;
+        }
+
+        .task-section {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .task-header {
+            background: #f8fafc;
+            padding: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .task-content {
+            padding: 1rem;
+        }
+
+        .task-item {
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+
+        .task-summary {
+            padding: 1rem;
+            background: #f8fafc;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .task-details {
+            padding: 1rem;
+            border-top: 1px solid #e2e8f0;
+            display: none;
+        }
+
+        .task-item.expanded .task-details {
+            display: block;
+        }
+
+        .field-group {
+            margin-bottom: 1rem;
+        }
+
+        .field-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .field-group input,
+        .field-group textarea,
+        .field-group select {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .field-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-success {
+            background: #16a34a;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+        }
+
+        .status-indicator {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-assigned {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .no-tasks {
+            text-align: center;
+            color: #6b7280;
+            padding: 2rem;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .connected {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .disconnected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Admin Verification Dashboard</h1>
+    </div>
+
+    <div class="connection-status" id="connectionStatus">
+        Disconnected
+    </div>
+
+    <div class="container">
+        <!-- Authentication Section -->
+        <div class="auth-section" id="authSection">
+            <h2>Login</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="email">Email:</label>
+                    <input type="email" id="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password:</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Login</button>
+            </form>
+        </div>
+
+        <!-- Dashboard Section -->
+        <div class="dashboard" id="dashboard">
+            <!-- Stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Queue Length</h3>
+                    <div class="value" id="queueLength">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Active Tasks</h3>
+                    <div class="value" id="activeTasks">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Completed Today</h3>
+                    <div class="value" id="completedToday">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>My Tasks</h3>
+                    <div class="value" id="myTasks">0</div>
+                </div>
+            </div>
+
+            <!-- Current Task Section -->
+            <div class="task-section">
+                <div class="task-header">
+                    <h2>Current Task</h2>
+                    <button class="btn btn-primary" id="claimTaskBtn">Claim Next Task</button>
+                </div>
+                <div class="task-content" id="currentTaskContent">
+                    <div class="no-tasks">No active task. Click "Claim Next Task" to get started.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let currentTask = null;
+        let ws = null;
+
+        // API Base URL
+        const API_BASE = 'http://localhost:9000';
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+        });
+
+        function initializeApp() {
+            // Check for existing session
+            const token = localStorage.getItem('admin_token');
+            if (token) {
+                currentUser = JSON.parse(localStorage.getItem('admin_user') || '{}');
+                showDashboard();
+                connectWebSocket();
+            }
+
+            // Setup event listeners
+            document.getElementById('loginForm').addEventListener('submit', handleLogin);
+            document.getElementById('claimTaskBtn').addEventListener('click', claimTask);
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentUser = data.user;
+                    localStorage.setItem('admin_token', data.access_token);
+                    localStorage.setItem('admin_user', JSON.stringify(data.user));
+                    showDashboard();
+                    connectWebSocket();
+                } else {
+                    alert(data.detail || 'Login failed');
+                }
+            } catch (error) {
+                alert('Login failed: ' + error.message);
+            }
+        }
+
+        function showDashboard() {
+            document.getElementById('authSection').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+            loadStats();
+        }
+
+        function connectWebSocket() {
+            const token = localStorage.getItem('admin_token');
+            ws = new WebSocket(`ws://localhost:9000/ws?token=${token}`);
+
+            ws.onopen = function() {
+                updateConnectionStatus(true);
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+            };
+
+            ws.onclose = function() {
+                updateConnectionStatus(false);
+                // Reconnect after 5 seconds
+                setTimeout(connectWebSocket, 5000);
+            };
+
+            ws.onerror = function() {
+                updateConnectionStatus(false);
+            };
+        }
+
+        function updateConnectionStatus(connected) {
+            const statusEl = document.getElementById('connectionStatus');
+            if (connected) {
+                statusEl.textContent = 'Connected';
+                statusEl.className = 'connection-status connected';
+            } else {
+                statusEl.textContent = 'Disconnected';
+                statusEl.className = 'connection-status disconnected';
+            }
+        }
+
+        function handleWebSocketMessage(data) {
+            if (data.type === 'stats_update') {
+                updateStats(data.data);
+            } else if (data.type === 'task_update') {
+                handleTaskUpdate(data.data);
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_BASE}/admin/stats`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
+                    },
+                });
+
+                if (response.ok) {
+                    const stats = await response.json();
+                    updateStats(stats);
+                }
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        function updateStats(stats) {
+            document.getElementById('queueLength').textContent = stats.queue_length || 0;
+            document.getElementById('activeTasks').textContent = stats.active_tasks || 0;
+            document.getElementById('completedToday').textContent = stats.completed_today || 0;
+            document.getElementById('myTasks').textContent = stats.user_active_tasks || 0;
+        }
+
+        async function claimTask() {
+            try {
+                const response = await fetch(`${API_BASE}/tasks/claim`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
+                    },
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentTask = data;
+                    displayCurrentTask(data);
+                } else {
+                    alert(data.detail || 'Failed to claim task');
+                }
+            } catch (error) {
+                alert('Failed to claim task: ' + error.message);
+            }
+        }
+
+        function displayCurrentTask(task) {
+            const content = document.getElementById('currentTaskContent');
+            const data = task.original_data;
+
+            content.innerHTML = `
+                <div class="task-item expanded">
+                    <div class="task-summary">
+                        <div>
+                            <strong>Task ID:</strong> ${task.task_id}<br>
+                            <strong>Company:</strong> ${data.companyname || 'N/A'}<br>
+                            <strong>Symbol:</strong> ${data.symbol || 'N/A'}
+                        </div>
+                        <div class="status-indicator status-assigned">Assigned</div>
+                    </div>
+                    <div class="task-details">
+                        <form id="taskForm">
+                            <div class="field-group">
+                                <label>Summary:</label>
+                                <textarea id="summary" name="summary">${data.summary || ''}</textarea>
+                            </div>
+                            <div class="field-group">
+                                <label>Category:</label>
+                                <input type="text" id="category" name="category" value="${data.category || ''}">
+                            </div>
+                            <div class="field-group">
+                                <label>Headline:</label>
+                                <input type="text" id="headline" name="headline" value="${data.headline || ''}">
+                            </div>
+                            <div class="field-group">
+                                <label>Sentiment:</label>
+                                <select id="sentiment" name="sentiment">
+                                    <option value="positive" ${data.sentiment === 'positive' ? 'selected' : ''}>Positive</option>
+                                    <option value="negative" ${data.sentiment === 'negative' ? 'selected' : ''}>Negative</option>
+                                    <option value="neutral" ${data.sentiment === 'neutral' ? 'selected' : ''}>Neutral</option>
+                                </select>
+                            </div>
+                            <div class="field-group">
+                                <label>Financial Data:</label>
+                                <textarea id="findata" name="findata">${data.findata || ''}</textarea>
+                            </div>
+                            <div class="button-group">
+                                <button type="button" class="btn btn-success" onclick="submitVerification('approved')">Approve</button>
+                                <button type="button" class="btn btn-primary" onclick="submitVerification('approved_with_changes')">Approve with Changes</button>
+                                <button type="button" class="btn btn-secondary" onclick="submitVerification('needs_revision')">Needs Revision</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function submitVerification(action) {
+            if (!currentTask) return;
+
+            try {
+                const formData = new FormData(document.getElementById('taskForm'));
+                const changes = {};
+                
+                // Collect changed fields
+                for (let [key, value] of formData.entries()) {
+                    if (currentTask.original_data[key] !== value) {
+                        changes[key] = value;
+                    }
+                }
+
+                const response = await fetch(`${API_BASE}/tasks/${currentTask.task_id}/verify`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: action,
+                        changes: changes,
+                        notes: ''
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert('Task verified successfully!');
+                    currentTask = null;
+                    document.getElementById('currentTaskContent').innerHTML = 
+                        '<div class="no-tasks">Task completed! Click "Claim Next Task" to continue.</div>';
+                    loadStats();
+                } else {
+                    alert(data.detail || 'Failed to verify task');
+                }
+            } catch (error) {
+                alert('Failed to verify task: ' + error.message);
+            }
+        }
+
+        function handleTaskUpdate(data) {
+            // Handle real-time task updates
+            loadStats();
+        }
+
+        // Logout function
+        function logout() {
+            localStorage.removeItem('admin_token');
+            localStorage.removeItem('admin_user');
+            currentUser = null;
+            currentTask = null;
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            document.getElementById('authSection').style.display = 'block';
+            document.getElementById('dashboard').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

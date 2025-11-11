@@ -1,0 +1,164 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-worker
+  namespace: backfin
+  labels:
+    app: ai-worker
+    component: worker
+spec:
+  replicas: 2  # Scale based on load
+  selector:
+    matchLabels:
+      app: ai-worker
+  template:
+    metadata:
+      labels:
+        app: ai-worker
+    spec:
+      containers:
+      - name: ai-worker
+        image: backfin/worker-spawner:latest
+        imagePullPolicy: Never
+        envFrom:
+        - configMapRef:
+            name: backfin-config
+        - secretRef:
+            name: backfin-secrets
+        env:
+        - name: WORKER_TYPE
+          value: "ai_processing"
+        - name: WORKER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      restartPolicy: Always
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: supabase-worker
+  namespace: backfin
+  labels:
+    app: supabase-worker
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: supabase-worker
+  template:
+    metadata:
+      labels:
+        app: supabase-worker
+    spec:
+      containers:
+      - name: supabase-worker
+        image: backfin/worker-spawner:latest
+        imagePullPolicy: Never
+        envFrom:
+        - configMapRef:
+            name: backfin-config
+        - secretRef:
+            name: backfin-secrets
+        env:
+        - name: WORKER_TYPE
+          value: "supabase_upload"
+        - name: WORKER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      restartPolicy: Always
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: investor-worker
+  namespace: backfin
+  labels:
+    app: investor-worker
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: investor-worker
+  template:
+    metadata:
+      labels:
+        app: investor-worker
+    spec:
+      containers:
+      - name: investor-worker
+        image: backfin/worker-spawner:latest
+        imagePullPolicy: Never
+        envFrom:
+        - configMapRef:
+            name: backfin-config
+        - secretRef:
+            name: backfin-secrets
+        env:
+        - name: WORKER_TYPE
+          value: "investor_analysis"
+        - name: WORKER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      restartPolicy: Always

@@ -1,0 +1,13 @@
+# NSE Scraper Dockerfile  
+FROM backfin/base:latest
+
+# Set specific environment variables
+ENV WORKER_TYPE=nse_scraper
+ENV SERVICE_NAME=nse-scraper
+
+# Health check specific to NSE scraper
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "from src.scrapers.nse_scraper import health_check; health_check()" || exit 1
+
+# Run NSE scraper
+CMD ["python", "src/scrapers/nse_scraper.py"]

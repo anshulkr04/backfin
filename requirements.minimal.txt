@@ -1,0 +1,50 @@
+# Minimal requirements for containerized deployment
+# This avoids dependency conflicts by using compatible versions
+
+# Core API Framework
+fastapi==0.115.0
+pydantic==2.11.4
+
+# Flask Framework (for legacy API)
+flask==3.0.3
+flask-cors==4.0.1
+flask-socketio==5.3.6
+gevent==24.2.1
+eventlet==0.36.1
+
+# Error tracking
+sentry-sdk==2.34.1
+
+# Redis
+redis==5.0.1
+
+# HTTP Client (compatible with supabase and google-genai requirements)
+httpx==0.28.1
+requests==2.32.3
+
+# Environment
+python-dotenv==1.1.0
+
+# System monitoring
+psutil==5.9.6
+
+# Basic data processing
+pandas==2.2.3
+
+# Supabase (minimal)
+supabase==2.15.1
+
+# Google AI (using google-genai which matches the imports)
+google-genai==1.15.0
+
+# Web scraping basics
+
+# Web scraping basics
+beautifulsoup4==4.12.3
+
+# Utilities
+python-dateutil==2.9.0.post0
+schedule==1.2.2
+
+# PDF processing
+PyPDF2==3.0.1
