@@ -1436,66 +1436,74 @@ def parse_date(s: str):
 
 @app.route('/api/get_count', methods=['GET', 'OPTIONS'])
 def get_count():
-    # --- CORS preflight ---
-    if request.method == "OPTIONS":
-        return _handle_options()
-
-    # --- Parse & validate inputs ---
-    start_date = request.args.get("start_date")
-    end_date = request.args.get("end_date")
-
-    if not start_date or not end_date:
-        resp = jsonify({"error": "Missing 'start_date' or 'end_date' (YYYY-MM-DD)."})
-        return  400
-
+    """Get announcement counts by category for a date range"""
     try:
-        sd = parse_date(start_date)
-        ed = parse_date(end_date)
-    except ValueError:
-        resp = jsonify({"error": "Invalid date format. Use YYYY-MM-DD."})
-        return 400
+        # --- CORS preflight ---
+        if request.method == "OPTIONS":
+            return _handle_options()
 
-    if sd > ed:
-        resp = jsonify({"error": "'start_date' must be <= 'end_date'."})
-        return 400
+        # --- Parse & validate inputs ---
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
 
-    # --- Query Supabase ---
-    try:
-        # Fetch all rows for the date range
-        # NOTE: If your table is large, consider pagination or a server-side SQL RPC to aggregate.
-        res = (
-            supabase
-            .table("announcement_categories")
-            .select("*")
-            .gte("date", sd.isoformat())
-            .lte("date", ed.isoformat())
-            .execute()
-        )
-        rows = res.data or []
+        if not start_date or not end_date:
+            return jsonify({"error": "Missing 'start_date' or 'end_date' (YYYY-MM-DD)."}), 400
+
+        try:
+            sd = parse_date(start_date)
+            ed = parse_date(end_date)
+        except ValueError as e:
+            logger.error(f"Date parsing error: {str(e)}")
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+        if sd > ed:
+            return jsonify({"error": "'start_date' must be <= 'end_date'."}), 400
+
+        # Check Supabase connection
+        if not supabase_connected:
+            logger.error("Supabase not connected in get_count")
+            return jsonify({"error": "Database service unavailable"}), 503
+
+        # --- Query Supabase ---
+        try:
+            # Fetch all rows for the date range
+            res = (
+                supabase
+                .table("announcement_categories")
+                .select("*")
+                .gte("date", sd.isoformat())
+                .lte("date", ed.isoformat())
+                .execute()
+            )
+            rows = res.data or []
+            logger.info(f"Retrieved {len(rows)} rows for date range {sd} to {ed}")
+        except Exception as e:
+            logger.error(f"Supabase query failed in get_count: {str(e)}")
+            return jsonify({"error": f"Database query failed: {str(e)}"}), 500
+
+        # --- Aggregate counts across the range ---
+        totals = {col: 0 for col in CATEGORY_COLUMNS}
+        grand_total = 0
+
+        for row in rows:
+            for col in CATEGORY_COLUMNS:
+                val = row.get(col, 0) or 0
+                if isinstance(val, (int, float)):
+                    totals[col] += int(val)
+                    grand_total += int(val)
+
+        payload = {
+            "start_date": sd.isoformat(),
+            "end_date": ed.isoformat(),
+            "total_counts": totals,
+            "grand_total": grand_total
+        }
+        
+        return jsonify(payload), 200
+        
     except Exception as e:
-        resp = jsonify({"error": f"Supabase query failed: {str(e)}"})
-        return 500
-
-    # --- Aggregate counts across the range ---
-    totals = {col: 0 for col in CATEGORY_COLUMNS}
-    grand_total = 0
-
-    for row in rows:
-        for col in CATEGORY_COLUMNS:
-            val = row.get(col, 0) or 0
-            if isinstance(val, (int, float)):
-                totals[col] += int(val)
-                grand_total += int(val)
-
-
-    payload = {
-        "start_date": sd.isoformat(),
-        "end_date": ed.isoformat(),
-        "total_counts": totals,
-        "grand_total": grand_total
-    }
-    resp = jsonify(payload)
-    return resp, 200
+        logger.error(f"Unexpected error in get_count: {str(e)}", exc_info=True)
+        return jsonify({"error": "Internal server error", "message": str(e)}), 500
 
 
 
