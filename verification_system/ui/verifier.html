@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcement Verifier</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #e74c3c;
+        }
+        
+        .status-dot.connected {
+            background: #27ae60;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .auth-form {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        
+        button {
+            background: #3498db;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #2980b9;
+        }
+        
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+        
+        .task-queue {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .queue-header {
+            background: #34495e;
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .queue-stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.9rem;
+        }
+        
+        .task-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .task-item {
+            padding: 1.5rem;
+            border-bottom: 1px solid #ecf0f1;
+        }
+        
+        .task-item:last-child {
+            border-bottom: none;
+        }
+        
+        .task-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .task-id {
+            font-family: 'Courier New', monospace;
+            background: #ecf0f1;
+            padding: 0.25rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.9rem;
+        }
+        
+        .task-timestamp {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+        
+        .task-content {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .task-actions {
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .btn-approve {
+            background: #27ae60;
+        }
+        
+        .btn-approve:hover {
+            background: #219a52;
+        }
+        
+        .btn-reject {
+            background: #e74c3c;
+        }
+        
+        .btn-reject:hover {
+            background: #c0392b;
+        }
+        
+        .no-tasks {
+            text-align: center;
+            padding: 3rem;
+            color: #7f8c8d;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 0.75rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+        
+        .success {
+            background: #d1edff;
+            color: #0c5460;
+            padding: 0.75rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">📋 Announcement Verifier</div>
+        <div class="connection-status">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Disconnected</span>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- Authentication Form -->
+        <div class="auth-form" id="authForm">
+            <h2>Connect to Verification System</h2>
+            <div id="errorMessage" class="error hidden"></div>
+            
+            <div class="form-group">
+                <label for="tokenInput">JWT Token</label>
+                <input 
+                    type="password" 
+                    id="tokenInput" 
+                    placeholder="Enter your verification JWT token"
+                    value=""
+                />
+            </div>
+            
+            <div class="form-group">
+                <label for="serverInput">WebSocket Server</label>
+                <input 
+                    type="text" 
+                    id="serverInput" 
+                    placeholder="ws://localhost:8001"
+                    value="ws://localhost:8001"
+                />
+            </div>
+            
+            <button onclick="connect()" id="connectBtn">Connect</button>
+        </div>
+        
+        <!-- Task Queue -->
+        <div class="task-queue hidden" id="taskQueue">
+            <div class="queue-header">
+                <h2>📝 Verification Queue</h2>
+                <div class="queue-stats">
+                    <span>Pending: <span id="pendingCount">0</span></span>
+                    <span>Completed: <span id="completedCount">0</span></span>
+                </div>
+            </div>
+            
+            <div class="task-list" id="taskList">
+                <div class="no-tasks">
+                    <h3>⏳ Waiting for tasks...</h3>
+                    <p>You'll receive announcements to verify as they arrive.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket connection and state
+        let ws = null;
+        let isConnected = false;
+        let pendingTasks = new Map();
+        let completedCount = 0;
+        
+        // UI elements
+        const authForm = document.getElementById('authForm');
+        const taskQueue = document.getElementById('taskQueue');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const errorMessage = document.getElementById('errorMessage');
+        const tokenInput = document.getElementById('tokenInput');
+        const serverInput = document.getElementById('serverInput');
+        const connectBtn = document.getElementById('connectBtn');
+        const taskList = document.getElementById('taskList');
+        const pendingCountEl = document.getElementById('pendingCount');
+        const completedCountEl = document.getElementById('completedCount');
+        
+        // Load saved settings
+        function loadSettings() {
+            const saved = localStorage.getItem('verifier-settings');
+            if (saved) {
+                const settings = JSON.parse(saved);
+                tokenInput.value = settings.token || '';
+                serverInput.value = settings.server || 'ws://localhost:8001';
+            }
+        }
+        
+        // Save settings
+        function saveSettings() {
+            const settings = {
+                token: tokenInput.value,
+                server: serverInput.value
+            };
+            localStorage.setItem('verifier-settings', JSON.stringify(settings));
+        }
+        
+        // Show error message
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+            setTimeout(() => {
+                errorMessage.classList.add('hidden');
+            }, 5000);
+        }
+        
+        // Update connection status
+        function updateStatus(connected) {
+            isConnected = connected;
+            statusDot.classList.toggle('connected', connected);
+            statusText.textContent = connected ? 'Connected' : 'Disconnected';
+            
+            if (connected) {
+                authForm.classList.add('hidden');
+                taskQueue.classList.remove('hidden');
+            } else {
+                authForm.classList.remove('hidden');
+                taskQueue.classList.add('hidden');
+            }
+        }
+        
+        // Connect to WebSocket
+        function connect() {
+            const token = tokenInput.value.trim();
+            const server = serverInput.value.trim();
+            
+            if (!token) {
+                showError('Please enter a JWT token');
+                return;
+            }
+            
+            if (!server) {
+                showError('Please enter a server URL');
+                return;
+            }
+            
+            connectBtn.disabled = true;
+            connectBtn.textContent = 'Connecting...';
+            
+            try {
+                // Create WebSocket connection with token in URL
+                const wsUrl = `${server}?token=${encodeURIComponent(token)}`;
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    console.log('✅ Connected to verification system');
+                    updateStatus(true);
+                    saveSettings();
+                    connectBtn.disabled = false;
+                    connectBtn.textContent = 'Connect';
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        handleMessage(message);
+                    } catch (e) {
+                        console.error('❌ Error parsing message:', e);
+                    }
+                };
+                
+                ws.onclose = (event) => {
+                    console.log('🔌 WebSocket closed:', event.code, event.reason);
+                    updateStatus(false);
+                    connectBtn.disabled = false;
+                    connectBtn.textContent = 'Connect';
+                    
+                    if (event.code !== 1000) {
+                        showError(`Connection lost: ${event.reason || 'Unknown error'}`);
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('❌ WebSocket error:', error);
+                    showError('Failed to connect to server');
+                    connectBtn.disabled = false;
+                    connectBtn.textContent = 'Connect';
+                };
+                
+            } catch (error) {
+                console.error('❌ Error creating WebSocket:', error);
+                showError('Invalid server URL');
+                connectBtn.disabled = false;
+                connectBtn.textContent = 'Connect';
+            }
+        }
+        
+        // Handle incoming WebSocket messages
+        function handleMessage(message) {
+            console.log('📨 Received message:', message);
+            
+            switch (message.type) {
+                case 'task_assignment':
+                    addTask(message.data);
+                    break;
+                    
+                case 'heartbeat':
+                    // Respond to heartbeat
+                    sendMessage({
+                        type: 'heartbeat_ack',
+                        timestamp: Date.now()
+                    });
+                    break;
+                    
+                case 'ack':
+                    console.log('✅ Server acknowledged:', message.data);
+                    break;
+                    
+                case 'error':
+                    console.error('❌ Server error:', message.data);
+                    showError(message.data.message || 'Server error');
+                    break;
+                    
+                default:
+                    console.log('❓ Unknown message type:', message.type);
+            }
+        }
+        
+        // Send message to server
+        function sendMessage(message) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+            }
+        }
+        
+        // Add a new task to the UI
+        function addTask(task) {
+            const { id, payload, assigned_at } = task;
+            
+            // Parse announcement data
+            let announcement;
+            try {
+                announcement = JSON.parse(payload);
+            } catch (e) {
+                announcement = { content: payload };
+            }
+            
+            // Create task element
+            const taskElement = document.createElement('div');
+            taskElement.className = 'task-item';
+            taskElement.innerHTML = `
+                <div class="task-header">
+                    <div class="task-id">${id}</div>
+                    <div class="task-timestamp">${new Date(assigned_at).toLocaleString()}</div>
+                </div>
+                <div class="task-content">${JSON.stringify(announcement, null, 2)}</div>
+                <div class="task-actions">
+                    <button class="btn-approve" onclick="approveTask('${id}')">
+                        ✅ Approve
+                    </button>
+                    <button class="btn-reject" onclick="rejectTask('${id}')">
+                        ❌ Reject
+                    </button>
+                </div>
+            `;
+            
+            // Store task data
+            pendingTasks.set(id, { element: taskElement, data: task });
+            
+            // Add to UI
+            const noTasksMsg = taskList.querySelector('.no-tasks');
+            if (noTasksMsg) {
+                noTasksMsg.remove();
+            }
+            
+            taskList.appendChild(taskElement);
+            updateStats();
+        }
+        
+        // Approve a task
+        function approveTask(taskId) {
+            const task = pendingTasks.get(taskId);
+            if (!task) return;
+            
+            sendMessage({
+                type: 'task_response',
+                data: {
+                    id: taskId,
+                    action: 'approve',
+                    timestamp: Date.now()
+                }
+            });
+            
+            removeTask(taskId);
+        }
+        
+        // Reject a task
+        function rejectTask(taskId) {
+            const reason = prompt('Reason for rejection (optional):') || 'Manual rejection';
+            
+            const task = pendingTasks.get(taskId);
+            if (!task) return;
+            
+            sendMessage({
+                type: 'task_response',
+                data: {
+                    id: taskId,
+                    action: 'reject',
+                    reason: reason,
+                    timestamp: Date.now()
+                }
+            });
+            
+            removeTask(taskId);
+        }
+        
+        // Remove task from UI
+        function removeTask(taskId) {
+            const task = pendingTasks.get(taskId);
+            if (task) {
+                task.element.remove();
+                pendingTasks.delete(taskId);
+                completedCount++;
+                updateStats();
+                
+                // Show "no tasks" message if empty
+                if (pendingTasks.size === 0) {
+                    taskList.innerHTML = `
+                        <div class="no-tasks">
+                            <h3>✅ All caught up!</h3>
+                            <p>No pending tasks. Great work!</p>
+                        </div>
+                    `;
+                }
+            }
+        }
+        
+        // Update task statistics
+        function updateStats() {
+            pendingCountEl.textContent = pendingTasks.size;
+            completedCountEl.textContent = completedCount;
+        }
+        
+        // Handle page visibility change (for heartbeat optimization)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && isConnected) {
+                // Page is hidden, reduce heartbeat frequency
+                console.log('📱 Page hidden, reducing activity');
+            } else if (!document.hidden && isConnected) {
+                // Page is visible again
+                console.log('👀 Page visible, resuming normal activity');
+            }
+        });
+        
+        // Handle page unload
+        window.addEventListener('beforeunload', () => {
+            if (ws) {
+                ws.close(1000, 'Page unload');
+            }
+        });
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+Enter to connect
+            if (e.ctrlKey && e.key === 'Enter' && !isConnected) {
+                connect();
+            }
+        });
+        
+        // Initialize
+        loadSettings();
+    </script>
+</body>
+</html>

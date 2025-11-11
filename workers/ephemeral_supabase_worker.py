@@ -16,7 +16,7 @@ import json
 import logging
 import signal
 import threading
-from datetime import datetime
+from datetime import datetime,date
 from pathlib import Path
 from multiprocessing import Process
 from typing import Optional
@@ -270,6 +270,45 @@ class EphemeralSupabaseWorkerV2:
                         logger.exception(f"Child: Supabase insert exception (attempt {attempts}): {e}")
                         time.sleep(0.3 * attempts)
                 return False
+            
+            def update_count(announcement):
+                raw = announcement.get("date")
+                today = datetime.fromisoformat(raw).date()
+                category = announcement.get("category")
+
+                # category is the column name, e.g. "Financial Results"
+                # Increment logic: if row exists, increment; else start at 1
+
+                # Step 1: Fetch today's row
+                existing = (
+                    supabase
+                    .table("announcement_categories")
+                    .select("*")
+                    .eq("date", today)
+                    .maybe_single()
+                    .execute()
+                )
+
+                if existing.data is None:
+                    # No row for today, create a new one
+                    data = {"date": today, category: 1}
+                    response = supabase.table("announcement_categories").insert(data).execute()
+                else:
+                    # Row exists; increment the category count
+                    current_value = existing.data.get(category, 0) or 0
+                    new_value = current_value + 1
+
+                    response = (
+                        supabase
+                        .table("announcement_categories")
+                        .update({category: new_value})
+                        .eq("date", today)
+                        .execute()
+                    )
+                    print(f"Updated {category} count to {new_value} for date {today}")
+
+                return response
+
 
             # Existence check & insert
             try:
@@ -283,8 +322,14 @@ class EphemeralSupabaseWorkerV2:
                         sys.exit(6)
                     if ok:
                         logger.info(f"Child: Inserted corp_id {job.corp_id} into corporatefilings")
+                        try:
+                            update_count(upload_data)
+                            logger.info("Child: Updated announcement count")
+                        except Exception as e:
+                            logger.warning(f"Child: Failed to update announcement count: {e}")
                         # Send to API for websocket broadcast if needed
                         _send_to_api_if_needed(upload_data)
+
             except Exception as e:
                 logger.exception(f"Child: Error during existence check/insert: {e}")
                 sys.exit(7)

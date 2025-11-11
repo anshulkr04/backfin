@@ -1380,6 +1380,125 @@ def get_filing_by_id(corp_id):
         return jsonify({'message': 'No filing found'}), 404
     return jsonify(response.data[0]), 200
 
+CATEGORY_COLUMNS = [
+    "Financial Results",
+    "Investor Presentation",
+    "Procedural/Administrative",
+    "Agreements/MoUs",
+    "Annual Report",
+    "Anti-dumping Duty",
+    "Bonus/Stock Split",
+    "Buyback",
+    "Change in Address",
+    "Change in KMP",
+    "Change in MOA",
+    "Clarifications/Confirmations",
+    "Closure of Factory",
+    "Concall Transcript",
+    "Consolidation of Shares",
+    "Credit Rating",
+    "Debt & Financing",
+    "Debt Reduction",
+    "Delisting",
+    "Demerger",
+    "Demise of KMP",
+    "Disruption of Operations",
+    "Divestitures",
+    "DRHP",
+    "Expansion",
+    "Fundraise - Preferential Issue",
+    "Fundraise - QIP",
+    "Fundraise - Rights Issue",
+    "Global Pharma Regulation",
+    "Incorporation/Cessation of Subsidiary",
+    "Increase in Share Capital",
+    "Insolvency and Bankruptcy",
+    "Interest Rates Updates",
+    "Investor/Analyst Meet",
+    "Joint Ventures",
+    "Litigation & Notices",
+    "Mergers/Acquisitions",
+    "Name Change",
+    "New Order",
+    "New Product",
+    "One Time Settlement (OTS)",
+    "Open Offer",
+    "Operational Update",
+    "PLI Scheme",
+    "Reduction in Share Capital",
+    "Regulatory Approvals/Orders",
+    "Trading Suspension",
+    "USFDA"
+]
+
+def parse_date(s: str):
+    return dt.strptime(s, "%Y-%m-%d").date()
+
+@app.route('/api/get_count', methods=['GET', 'OPTIONS'])
+def get_count():
+    # --- CORS preflight ---
+    if request.method == "OPTIONS":
+        return _handle_options()
+
+    # --- Parse & validate inputs ---
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+
+    if not start_date or not end_date:
+        resp = jsonify({"error": "Missing 'start_date' or 'end_date' (YYYY-MM-DD)."})
+        return  400
+
+    try:
+        sd = parse_date(start_date)
+        ed = parse_date(end_date)
+    except ValueError:
+        resp = jsonify({"error": "Invalid date format. Use YYYY-MM-DD."})
+        return 400
+
+    if sd > ed:
+        resp = jsonify({"error": "'start_date' must be <= 'end_date'."})
+        return 400
+
+    # --- Query Supabase ---
+    try:
+        # Fetch all rows for the date range
+        # NOTE: If your table is large, consider pagination or a server-side SQL RPC to aggregate.
+        res = (
+            supabase
+            .table("announcement_categories")
+            .select("*")
+            .gte("date", sd.isoformat())
+            .lte("date", ed.isoformat())
+            .execute()
+        )
+        rows = res.data or []
+    except Exception as e:
+        resp = jsonify({"error": f"Supabase query failed: {str(e)}"})
+        return 500
+
+    # --- Aggregate counts across the range ---
+    totals = {col: 0 for col in CATEGORY_COLUMNS}
+    grand_total = 0
+
+    for row in rows:
+        for col in CATEGORY_COLUMNS:
+            val = row.get(col, 0) or 0
+            if isinstance(val, (int, float)):
+                totals[col] += int(val)
+                grand_total += int(val)
+
+
+    payload = {
+        "start_date": sd.isoformat(),
+        "end_date": ed.isoformat(),
+        "total_counts": totals,
+        "grand_total": grand_total
+    }
+    resp = jsonify(payload)
+    return resp, 200
+
+
+
 # Helper function to generate test filings
 # def generate_test_filings():
 #     """Generate test filing data for when database is unavailable"""

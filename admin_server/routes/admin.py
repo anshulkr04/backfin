@@ -1,8 +1,15 @@
 from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.responses import HTMLResponse
 from typing import List, Dict, Any
 
 from auth.jwt_handler import get_current_user
-from services.supabase_client import supabase_service
+
+# Try to import Supabase service, fall back to mock if not available
+try:
+    from services.supabase_client import supabase_service
+except ImportError:
+    from services.mock_supabase import supabase_service
+
 from services.task_manager import TaskManager
 from services.reclaim_service import ReclaimService
 from services.websocket_manager import WebSocketManager
@@ -31,6 +38,352 @@ def get_websocket_manager():
     if not websocket_manager:
         raise HTTPException(status_code=500, detail="WebSocket manager not initialized")
     return websocket_manager
+
+@router.get("/dashboard", response_class=HTMLResponse)
+async def admin_dashboard():
+    """Serve admin dashboard HTML"""
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Admin Verification Dashboard</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+            .header { background: #007bff; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+            .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+            .stat-card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            .stat-number { font-size: 2em; font-weight: bold; color: #007bff; }
+            .task { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 8px; background: white; }
+            .pending { border-left: 4px solid #ffc107; }
+            .in_progress { border-left: 4px solid #17a2b8; }
+            .verified { border-left: 4px solid #28a745; }
+            .rejected { border-left: 4px solid #dc3545; }
+            button { padding: 8px 15px; margin: 5px; border: none; border-radius: 4px; cursor: pointer; }
+            .claim-btn { background-color: #007bff; color: white; }
+            .approve-btn { background-color: #28a745; color: white; }
+            .reject-btn { background-color: #dc3545; color: white; }
+            .release-btn { background-color: #6c757d; color: white; }
+            textarea { width: 100%; height: 80px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; padding: 8px; }
+            .task-content { margin: 10px 0; }
+            .task-meta { font-size: 0.9em; color: #666; }
+            .nav { display: flex; gap: 10px; margin-bottom: 20px; }
+            .nav button { background: #6c757d; color: white; }
+            .nav button.active { background: #007bff; }
+            .loading { text-align: center; padding: 20px; color: #666; }
+            .error { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin: 10px 0; }
+            .success { background: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin: 10px 0; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🛡️ Admin Verification Dashboard</h1>
+            <p>Manage and verify AI-processed announcements</p>
+        </div>
+        
+        <div class="nav">
+            <button onclick="showSection('overview')" class="active" id="overview-btn">Overview</button>
+            <button onclick="showSection('tasks')" id="tasks-btn">Tasks</button>
+            <button onclick="showSection('my-task')" id="my-task-btn">My Current Task</button>
+            <button onclick="logout()">Logout</button>
+        </div>
+        
+        <div id="message"></div>
+        
+        <div id="overview-section">
+            <div class="stats" id="stats"></div>
+        </div>
+        
+        <div id="tasks-section" style="display:none;">
+            <div class="loading">Loading tasks...</div>
+            <div id="tasks-list"></div>
+        </div>
+        
+        <div id="my-task-section" style="display:none;">
+            <div id="current-task"></div>
+        </div>
+        
+        <script>
+            let token = localStorage.getItem('adminToken');
+            let ws = null;
+            let currentSection = 'overview';
+            
+            if (!token) {
+                window.location.href = '/auth/login';
+            }
+            
+            // WebSocket connection
+            function connectWebSocket() {
+                ws = new WebSocket(`ws://localhost:9000/ws?token=${token}`);
+                
+                ws.onopen = function() {
+                    console.log('WebSocket connected');
+                };
+                
+                ws.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    console.log('WebSocket message:', data);
+                    
+                    if (data.type === 'stats_update') {
+                        updateStats(data.data);
+                    } else if (data.type === 'task_update') {
+                        loadCurrentData();
+                    }
+                };
+                
+                ws.onclose = function() {
+                    console.log('WebSocket disconnected');
+                    setTimeout(connectWebSocket, 5000); // Reconnect after 5 seconds
+                };
+            }
+            
+            async function apiCall(endpoint, options = {}) {
+                const response = await fetch(`http://localhost:9000${endpoint}`, {
+                    ...options,
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API call failed: ${response.statusText}`);
+                }
+                
+                return response.json();
+            }
+            
+            function showMessage(text, type = 'info') {
+                const messageDiv = document.getElementById('message');
+                messageDiv.innerHTML = `<div class="${type}">${text}</div>`;
+                setTimeout(() => messageDiv.innerHTML = '', 5000);
+            }
+            
+            function showSection(section) {
+                // Hide all sections
+                document.querySelectorAll('[id$="-section"]').forEach(el => el.style.display = 'none');
+                document.querySelectorAll('.nav button').forEach(btn => btn.classList.remove('active'));
+                
+                // Show selected section
+                document.getElementById(`${section}-section`).style.display = 'block';
+                document.getElementById(`${section}-btn`).classList.add('active');
+                
+                currentSection = section;
+                loadCurrentData();
+            }
+            
+            function updateStats(stats) {
+                const container = document.getElementById('stats');
+                container.innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.pending_count || 0}</div>
+                        <div>Pending Tasks</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.in_progress_count || 0}</div>
+                        <div>In Progress</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.verified_today || 0}</div>
+                        <div>Verified Today</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.my_assigned_count || 0}</div>
+                        <div>My Current Tasks</div>
+                    </div>
+                `;
+            }
+            
+            async function loadStats() {
+                try {
+                    const stats = await apiCall('/tasks/stats');
+                    updateStats(stats);
+                } catch (error) {
+                    console.error('Error loading stats:', error);
+                }
+            }
+            
+            async function loadTasks() {
+                try {
+                    const response = await apiCall('/admin/tasks?limit=50');
+                    const tasks = response.tasks;
+                    
+                    const container = document.getElementById('tasks-list');
+                    if (tasks.length === 0) {
+                        container.innerHTML = '<div class="loading">No tasks available</div>';
+                        return;
+                    }
+                    
+                    container.innerHTML = tasks.map(task => `
+                        <div class="task ${task.status}" id="task-${task.id}">
+                            <div class="task-meta">
+                                <strong>ID:</strong> ${task.id} | 
+                                <strong>Status:</strong> ${task.status} | 
+                                <strong>Created:</strong> ${new Date(task.created_at).toLocaleString()}
+                                ${task.assigned_to_user ? ` | <strong>Assigned to:</strong> ${task.admin_users?.name || 'Unknown'}` : ''}
+                            </div>
+                            <div class="task-content">
+                                <strong>Original Data:</strong>
+                                <textarea readonly>${JSON.stringify(task.original_data, null, 2)}</textarea>
+                                ${task.current_data && JSON.stringify(task.current_data) !== JSON.stringify(task.original_data) ? `
+                                    <strong>Current Data:</strong>
+                                    <textarea readonly>${JSON.stringify(task.current_data, null, 2)}</textarea>
+                                ` : ''}
+                            </div>
+                            <div>
+                                ${task.status === 'pending' && !task.assigned_to_user ? 
+                                    `<button class="claim-btn" onclick="claimTask('${task.id}')">Claim Task</button>` : ''
+                                }
+                                ${task.status === 'in_progress' && task.assigned_to_user ? 
+                                    `<button class="release-btn" onclick="releaseTask('${task.id}')">Release Task</button>` : ''
+                                }
+                            </div>
+                        </div>
+                    `).join('');
+                } catch (error) {
+                    console.error('Error loading tasks:', error);
+                    document.getElementById('tasks-list').innerHTML = '<div class="error">Error loading tasks</div>';
+                }
+            }
+            
+            async function loadMyTask() {
+                try {
+                    const task = await apiCall('/tasks/my-current');
+                    const container = document.getElementById('current-task');
+                    
+                    if (!task) {
+                        container.innerHTML = `
+                            <div class="loading">No task currently assigned</div>
+                            <button class="claim-btn" onclick="claimNextTask()">Claim Next Task</button>
+                        `;
+                        return;
+                    }
+                    
+                    container.innerHTML = `
+                        <div class="task ${task.status}">
+                            <div class="task-meta">
+                                <strong>Task ID:</strong> ${task.id} | 
+                                <strong>Status:</strong> ${task.status} | 
+                                <strong>Assigned:</strong> ${new Date(task.assigned_at).toLocaleString()}
+                            </div>
+                            <div class="task-content">
+                                <strong>Original Data:</strong>
+                                <textarea id="original-data" readonly>${JSON.stringify(task.original_data, null, 2)}</textarea>
+                                
+                                <strong>Current Data (editable):</strong>
+                                <textarea id="current-data">${JSON.stringify(task.current_data, null, 2)}</textarea>
+                                
+                                <strong>Verification Notes:</strong>
+                                <textarea id="notes" placeholder="Add your verification notes here..."></textarea>
+                            </div>
+                            <div>
+                                <button class="approve-btn" onclick="verifyTask('${task.id}', 'approved')">Approve</button>
+                                <button class="approve-btn" onclick="verifyTask('${task.id}', 'approved_with_changes')">Approve with Changes</button>
+                                <button class="reject-btn" onclick="verifyTask('${task.id}', 'rejected')">Reject</button>
+                                <button class="release-btn" onclick="releaseTask('${task.id}')">Release</button>
+                            </div>
+                        </div>
+                    `;
+                } catch (error) {
+                    console.error('Error loading my task:', error);
+                    document.getElementById('current-task').innerHTML = '<div class="error">Error loading current task</div>';
+                }
+            }
+            
+            async function claimNextTask() {
+                try {
+                    const task = await apiCall('/tasks/claim', { method: 'POST' });
+                    if (task) {
+                        showMessage('Task claimed successfully!', 'success');
+                        loadCurrentData();
+                    } else {
+                        showMessage('No tasks available to claim', 'info');
+                    }
+                } catch (error) {
+                    console.error('Error claiming task:', error);
+                    showMessage('Error claiming task: ' + error.message, 'error');
+                }
+            }
+            
+            async function claimTask(taskId) {
+                try {
+                    await claimNextTask(); // Use the existing claim logic
+                } catch (error) {
+                    console.error('Error claiming task:', error);
+                    showMessage('Error claiming task', 'error');
+                }
+            }
+            
+            async function releaseTask(taskId) {
+                try {
+                    await apiCall(`/tasks/${taskId}/release`, { method: 'POST' });
+                    showMessage('Task released successfully!', 'success');
+                    loadCurrentData();
+                } catch (error) {
+                    console.error('Error releasing task:', error);
+                    showMessage('Error releasing task', 'error');
+                }
+            }
+            
+            async function verifyTask(taskId, action) {
+                try {
+                    const currentDataText = document.getElementById('current-data').value;
+                    const notes = document.getElementById('notes').value;
+                    
+                    let currentData = {};
+                    try {
+                        currentData = JSON.parse(currentDataText);
+                    } catch (e) {
+                        showMessage('Invalid JSON in current data field', 'error');
+                        return;
+                    }
+                    
+                    const payload = {
+                        action: action,
+                        notes: notes,
+                        changes: currentData // This should be a diff, but for simplicity we're sending the full object
+                    };
+                    
+                    await apiCall(`/tasks/${taskId}/verify`, {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    showMessage(`Task ${action} successfully!`, 'success');
+                    loadCurrentData();
+                } catch (error) {
+                    console.error('Error verifying task:', error);
+                    showMessage('Error verifying task', 'error');
+                }
+            }
+            
+            function loadCurrentData() {
+                if (currentSection === 'overview') {
+                    loadStats();
+                } else if (currentSection === 'tasks') {
+                    loadTasks();
+                } else if (currentSection === 'my-task') {
+                    loadMyTask();
+                }
+            }
+            
+            function logout() {
+                localStorage.removeItem('adminToken');
+                if (ws) ws.close();
+                window.location.href = '/auth/login';
+            }
+            
+            // Initialize
+            connectWebSocket();
+            loadCurrentData();
+            
+            // Auto-refresh every 30 seconds
+            setInterval(loadCurrentData, 30000);
+        </script>
+    </body>
+    </html>
+    """
+    return html
 
 @router.get("/stats")
 async def get_admin_stats(current_user: dict = Depends(get_current_user)):

@@ -5,7 +5,12 @@ import uuid
 
 from models.auth import UserRegister, UserLogin, TokenResponse, UserResponse
 from auth.jwt_handler import AuthService, get_current_user, get_current_user_optional
-from services.supabase_client import supabase_service
+
+# Try to import Supabase service, fall back to mock if not available
+try:
+    from services.supabase_client import supabase_service
+except ImportError:
+    from services.mock_supabase import supabase_service
 
 router = APIRouter()
 

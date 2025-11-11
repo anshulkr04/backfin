@@ -1,38 +1,49 @@
-def check_for_negative_keywords(summary):
-    """Check for negative keywords in the announcements"""
-    if not isinstance(summary, str):
-        return True  # Treat non-string values as containing negative keywords
-        
-    negative_keywords = [
-        "Trading Window", "Compliance Report", "Advertisement(s)", "Advertisement", "Public Announcement",
-        "Share Certificate(s)", "Share Certificate", "Depositories and Participants", "Depository and Participant",
-        "Depository and Participant", "Depository and Participants", "74(5)", "XBRL", "Newspaper Publication",
-        "Published in the Newspapers", "Clippings", "Book Closure", "Change in Company Secretary/Compliance Officer",
-        "Record Date","Code of Conduct","Cessation","Deviation","Declared Interim Dividend","IEPF","Investor Education","Registrar & Share Transfer Agent",
-        "Registrar and Share Transfer Agent","Scrutinizers report","Utilisation of Funds","Postal Ballot","Defaults on Payment of Interest",
-        "Newspaper Publication","Sustainability Report","Sustainability Reporting","Trading Plan","Letter of Confirmation","Forfeiture/Cancellation","Price movement",
-        "Spurt","Grievance Redressal","Monitoring Agency","Regulation 57",
-    ]
+import os
+from dotenv import load_dotenv
+from supabase import create_client, Client
+from datetime import datetime,date
 
-    special_keywords = [
-        "Board", "Outcome", "General Updates",
-    ]
+# Load environment variables from .env file
+load_dotenv()
+SUPABASE_URL = os.getenv('SUPABASE_URL2')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY2')
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    for keyword in special_keywords:
-        if keyword.lower() in summary.lower():
-            print(f"Found special keyword '{keyword}' in summary.")
-            return False
-            
-    for keyword in negative_keywords:
-        if keyword.lower() in summary.lower():
-            print(f"Found negative keyword '{keyword}' in summary.")
-            return True
-            
-    return False
 
-sum1 = "Announcement under Regulation 30 (LODR)-Newspaper Publication"
+def update_count(announcement):
+    raw = announcement.get("date")
+    today = datetime.fromisoformat(raw).date()
+    category = announcement.get("category")
 
-sum2 = "News Paper Publication of Unaudited Financial Result for the Second Quarter and Half Year ended on 30rh September, 2025.News Paper Publication of Unaudited Financial Result for the Second Quarter and Half Year ended on 30rh September, 2025."
+    # category is the column name, e.g. "Financial Results"
+    # Increment logic: if row exists, increment; else start at 1
 
-print(check_for_negative_keywords(sum1))  # Expected: True
-print(check_for_negative_keywords(sum2))  # Expected: FalseS
+    # Step 1: Fetch today's row
+    existing = (
+        supabase
+        .table("announcement_categories")
+        .select("*")
+        .eq("date", today)
+        .maybe_single()
+        .execute()
+    )
+
+    if existing.data is None:
+        # No row for today, create a new one
+        data = {"date": today, category: 1}
+        response = supabase.table("announcement_categories").insert(data).execute()
+    else:
+        # Row exists; increment the category count
+        current_value = existing.data.get(category, 0) or 0
+        new_value = current_value + 1
+
+        response = (
+            supabase
+            .table("announcement_categories")
+            .update({category: new_value})
+            .eq("date", today)
+            .execute()
+        )
+        print(f"Updated {category} count to {new_value} for date {today}")
+
+    return response

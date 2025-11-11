@@ -17,50 +17,63 @@ from routes.admin import router as admin_router
 from services.task_manager import TaskManager
 from services.reclaim_service import ReclaimService
 from services.websocket_manager import WebSocketManager
+from services.queue_processor import QueueProcessor
 
 # Global instances
 task_manager = None
 reclaim_service = None
 websocket_manager = None
+queue_processor = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    global task_manager, reclaim_service, websocket_manager
+    global task_manager, reclaim_service, websocket_manager, queue_processor
     
     print("🚀 Starting Admin Server...")
     
-    # Initialize services
+    # Initialize task manager
     task_manager = TaskManager()
     await task_manager.initialize()
     
-    reclaim_service = ReclaimService(task_manager)
+    # Initialize WebSocket manager (needs task_manager)
     websocket_manager = WebSocketManager(task_manager)
     
-    # Inject services into route modules
-    from routes import tasks, admin
-    tasks.task_manager = task_manager
-    tasks.websocket_manager = websocket_manager
-    admin.task_manager = task_manager
-    admin.reclaim_service = reclaim_service
-    admin.websocket_manager = websocket_manager
+    # Initialize reclaim service
+    reclaim_service = ReclaimService(task_manager)
+    await reclaim_service.start()
     
-    # Start background tasks
-    asyncio.create_task(reclaim_service.start())
-    asyncio.create_task(websocket_manager.broadcast_stats_loop())
+    # Initialize queue processor (listens to main Flask app)
+    queue_processor = QueueProcessor(task_manager)
+    await queue_processor.start()
     
-    print("✅ Admin Server started successfully on port 9000")
+    # Inject dependencies into route modules
+    from routes.tasks import router as tasks_router
+    from routes.admin import router as admin_router
     
+    tasks_router.task_manager = task_manager
+    tasks_router.websocket_manager = websocket_manager
+    
+    admin_router.task_manager = task_manager
+    admin_router.reclaim_service = reclaim_service
+    admin_router.websocket_manager = websocket_manager
+    
+    print("✅ All services started successfully!")
     yield
     
-    # Shutdown
+    # Cleanup
     print("🛑 Shutting down Admin Server...")
+    
+    if queue_processor:
+        await queue_processor.stop()
+    
     if reclaim_service:
         await reclaim_service.stop()
-    if websocket_manager:
-        await websocket_manager.stop_broadcast_loop()
+    
     if task_manager:
         await task_manager.cleanup()
+    
+    print("✅ Cleanup completed!")
 
 # Create FastAPI app
 app = FastAPI(

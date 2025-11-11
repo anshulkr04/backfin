@@ -3,7 +3,13 @@ from typing import Optional
 
 from models.verification import TaskResponse, TaskStatsResponse, FieldEditRequest, TaskVerifyRequest, TaskVerifyWithChangesRequest
 from auth.jwt_handler import get_current_user
-from services.supabase_client import supabase_service
+
+# Try to import Supabase service, fall back to mock if not available
+try:
+    from services.supabase_client import supabase_service
+except ImportError:
+    from services.mock_supabase import supabase_service
+
 from services.task_manager import TaskManager
 from services.websocket_manager import WebSocketManager
 

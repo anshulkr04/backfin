@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # Redis - Message broker and state store
+  redis:
+    image: redis:7-alpine
+    container_name: verif-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - verification-net
+
+  # Admin API Server - Main REST API for verification tasks
+  admin-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin-api
+    container_name: verif-admin-api
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET}
+      - ADMIN_API_PORT=8002
+      - PROD=${PROD:-false}
+      - TEST_DATA_INTERVAL=${TEST_DATA_INTERVAL:-5}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "8002:8002"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - verification-net
+    restart: unless-stopped
+
+  # Test Data Simulator - Feeds test announcements when PROD=false
+  test-simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile.simulator
+    container_name: verif-simulator
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - PROD=${PROD:-false}
+      - TEST_DATA_INTERVAL=${TEST_DATA_INTERVAL:-5}
+      - TEST_DATA_BATCH_SIZE=${TEST_DATA_BATCH_SIZE:-1}
+      - TEST_DATA_START_DELAY=${TEST_DATA_START_DELAY:-10}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - verification-net
+    restart: unless-stopped
+    profiles:
+      - testing
+
+  # Queue Manager - Handles orphaned tasks and cleanup
+  queue-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile.queue-manager
+    container_name: verif-queue-manager
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - QUEUE_MANAGEMENT_ENABLED=true
+      - QUEUE_CLEANUP_INTERVAL=${QUEUE_CLEANUP_INTERVAL:-60}
+      - QUEUE_TASK_TIMEOUT=${QUEUE_TASK_TIMEOUT:-1800}
+      - QUEUE_SESSION_TIMEOUT=${QUEUE_SESSION_TIMEOUT:-3600}
+      - QUEUE_MAX_RETRIES=${QUEUE_MAX_RETRIES:-3}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - verification-net
+    restart: unless-stopped
+
+  # Redis Commander - Optional Redis management UI
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: verif-redis-ui
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - verification-net
+    restart: unless-stopped
+    profiles:
+      - debug
+
+volumes:
+  redis_data:
+
+networks:
+  verification-net:
+    driver: bridge
