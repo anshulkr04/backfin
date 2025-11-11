@@ -1432,7 +1432,7 @@ CATEGORY_COLUMNS = [
 ]
 
 def parse_date(s: str):
-    return dt.strptime(s, "%Y-%m-%d").date()
+    return dt.datetime.strptime(s, "%Y-%m-%d").date()
 
 @app.route('/api/get_count', methods=['GET', 'OPTIONS'])
 def get_count():
