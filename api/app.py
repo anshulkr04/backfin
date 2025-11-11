@@ -1358,17 +1358,16 @@ def get_corporate_filings():
             if simple_response.data:
                 return jsonify({'count': len(simple_response.data), 'filings': simple_response.data,
                                 'note': 'Date filters were ignored to return results'}), 200
-            test_filings = generate_test_filings()
-            return jsonify({'count': len(test_filings), 'filings': test_filings,
-                            'note': 'Using test data as fallback'}), 200
+            # test_filings = generate_test_filings()
+            return jsonify({'count': 0, 'filings': [],
+                            'note': 'No data'}), 200
 
         return jsonify({'count': result_count, 'filings': response.data}), 200
 
     except Exception as e:
         logger.error(f"Unexpected error in get_corporate_filings: {e}", exc_info=True)
-        test_filings = generate_test_filings()
-        return jsonify({'count': len(test_filings), 'filings': test_filings,
-                        'note': 'Using test data due to server error'}), 200
+        return jsonify({'count': 0, 'filings': [],
+                        'note': 'No data due to server error'}), 200
 
     
 @app.route('/api/corporate_filings/<corp_id>', methods=['GET'])
@@ -1382,80 +1381,80 @@ def get_filing_by_id(corp_id):
     return jsonify(response.data[0]), 200
 
 # Helper function to generate test filings
-def generate_test_filings():
-    """Generate test filing data for when database is unavailable"""
-    current_time = dt.datetime.now()
+# def generate_test_filings():
+#     """Generate test filing data for when database is unavailable"""
+#     current_time = dt.datetime.now()
     
-    return [
-        {
-            "id": f"test-1-{current_time.timestamp()}",
-            "Symbol": "TC1",
-            "symbol": "TC1",
-            "ISIN": "TEST1234567890",
-            "isin": "TEST1234567890",
-            "Category": "Financial Results",
-            "category": "Financial Results",
-            "summary": "Test Company 1 announces financial results for Q1 2025",
-            "ai_summary": "**Category:** Financial Results\n**Headline:** Q1 2025 Results\n\nTest Company 1 announces financial results for Q1 2025 with a 15% increase in revenue.",
-            "date": current_time.isoformat(),
-            "companyname": "Test Company 1",
-            "corp_id": f"test-corp-1-{current_time.timestamp()}"
-        },
-        {
-            "id": f"test-2-{current_time.timestamp()}",
-            "Symbol": "TC2", 
-            "symbol": "TC2",
-            "ISIN": "TEST2234567890",
-            "isin": "TEST2234567890",
-            "Category": "Dividend",
-            "category": "Dividend",
-            "summary": "Test Company 2 announces dividend for shareholders",
-            "ai_summary": "**Category:** Dividend\n**Headline:** Dividend Announcement\n\nTest Company 2 announces a dividend of ₹5 per share for shareholders, payable on June 15, 2025.",
-            "date": (current_time -dt.timedelta(days=1)).isoformat(),
-            "companyname": "Test Company 2",
-            "corp_id": f"test-corp-2-{current_time.timestamp()}"
-        },
-        {
-            "id": f"test-3-{current_time.timestamp()}",
-            "Symbol": "TC3",
-            "symbol": "TC3",
-            "ISIN": "TEST3234567890",
-            "isin": "TEST3234567890",
-            "Category": "Mergers & Acquisitions",
-            "category": "Mergers & Acquisitions",
-            "summary": "Test Company 3 announces merger with another company",
-            "ai_summary": "**Category:** Mergers & Acquisitions\n**Headline:** Company Merger\n\nTest Company 3 announces a strategic merger with XYZ Corp valued at $500 million, expected to close in Q3 2025.",
-            "date": (current_time -dt.timedelta(days=2)).isoformat(),
-            "companyname": "Test Company 3",
-            "corp_id": f"test-corp-3-{current_time.timestamp()}"
-        }
-    ]
+#     return [
+#         {
+#             "id": f"test-1-{current_time.timestamp()}",
+#             "Symbol": "TC1",
+#             "symbol": "TC1",
+#             "ISIN": "TEST1234567890",
+#             "isin": "TEST1234567890",
+#             "Category": "Financial Results",
+#             "category": "Financial Results",
+#             "summary": "Test Company 1 announces financial results for Q1 2025",
+#             "ai_summary": "**Category:** Financial Results\n**Headline:** Q1 2025 Results\n\nTest Company 1 announces financial results for Q1 2025 with a 15% increase in revenue.",
+#             "date": current_time.isoformat(),
+#             "companyname": "Test Company 1",
+#             "corp_id": f"test-corp-1-{current_time.timestamp()}"
+#         },
+#         {
+#             "id": f"test-2-{current_time.timestamp()}",
+#             "Symbol": "TC2", 
+#             "symbol": "TC2",
+#             "ISIN": "TEST2234567890",
+#             "isin": "TEST2234567890",
+#             "Category": "Dividend",
+#             "category": "Dividend",
+#             "summary": "Test Company 2 announces dividend for shareholders",
+#             "ai_summary": "**Category:** Dividend\n**Headline:** Dividend Announcement\n\nTest Company 2 announces a dividend of ₹5 per share for shareholders, payable on June 15, 2025.",
+#             "date": (current_time -dt.timedelta(days=1)).isoformat(),
+#             "companyname": "Test Company 2",
+#             "corp_id": f"test-corp-2-{current_time.timestamp()}"
+#         },
+#         {
+#             "id": f"test-3-{current_time.timestamp()}",
+#             "Symbol": "TC3",
+#             "symbol": "TC3",
+#             "ISIN": "TEST3234567890",
+#             "isin": "TEST3234567890",
+#             "Category": "Mergers & Acquisitions",
+#             "category": "Mergers & Acquisitions",
+#             "summary": "Test Company 3 announces merger with another company",
+#             "ai_summary": "**Category:** Mergers & Acquisitions\n**Headline:** Company Merger\n\nTest Company 3 announces a strategic merger with XYZ Corp valued at $500 million, expected to close in Q3 2025.",
+#             "date": (current_time -dt.timedelta(days=2)).isoformat(),
+#             "companyname": "Test Company 3",
+#             "corp_id": f"test-corp-3-{current_time.timestamp()}"
+#         }
+#     ]
 
 # Improved test endpoint that always returns data
-@app.route('/api/test_corporate_filings', methods=['GET', 'OPTIONS'])
-def test_corporate_filings():
-    """Reliable test endpoint for corporate filings"""
-    if request.method == 'OPTIONS':
-        return _handle_options()
+# @app.route('/api/test_corporate_filings', methods=['GET', 'OPTIONS'])
+# def test_corporate_filings():
+#     """Reliable test endpoint for corporate filings"""
+#     if request.method == 'OPTIONS':
+#         return _handle_options()
     
-    # Generate test filings that match your schema
-    test_filings = generate_test_filings()
+#     # Generate test filings that match your schema
+#     test_filings = generate_test_filings()
     
-    # Apply any filters from the query parameters (optional)
-    start_date = request.args.get('start_date', '')
-    end_date = request.args.get('end_date', '')
-    category = request.args.get('category', '')
+#     # Apply any filters from the query parameters (optional)
+#     start_date = request.args.get('start_date', '')
+#     end_date = request.args.get('end_date', '')
+#     category = request.args.get('category', '')
     
-    logger.info(f"Test corporate filings request with filters: start_date={start_date}, end_date={end_date}, category={category}")
+#     logger.info(f"Test corporate filings request with filters: start_date={start_date}, end_date={end_date}, category={category}")
     
-    # Log that we're using test data
-    logger.info(f"Returning {len(test_filings)} test filings")
+#     # Log that we're using test data
+#     logger.info(f"Returning {len(test_filings)} test filings")
     
-    return jsonify({
-        'count': len(test_filings),
-        'filings': test_filings,
-        'note': 'This is test data from the test endpoint'
-    }), 200
+#     return jsonify({
+#         'count': len(test_filings),
+#         'filings': test_filings,
+#         'note': 'This is test data from the test endpoint'
+#     }), 200
 
 @app.route('/api/stock_price', methods=['GET', 'OPTIONS'])
 @auth_required
