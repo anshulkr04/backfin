@@ -406,8 +406,8 @@ class EphemeralSupabaseWorkerV2:
             #     except Exception as e:
             #         logger.warning(f"Child: Failed to push investor job: {e}")
 
-            # logger.info(f"Child: Completed job corp_id={job.corp_id}")
-            # sys.exit(0)
+            logger.info(f"Child: Completed job corp_id={job.corp_id}")
+            sys.exit(0)
 
         except SystemExit:
             raise
