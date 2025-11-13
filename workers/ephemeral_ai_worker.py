@@ -186,6 +186,16 @@ class RateLimitedGeminiClient:
     def files(self):
         return RateLimitedFiles(self.client.files if self.client else None, self.rate_limit_delay)
     
+    def delete_file(self, name):
+        if not self.client:
+            raise Exception("Gemini client not initialized")
+        try:
+            self.client.files.delete(name=name)
+            logger.info(f"✅ Deleted file from Gemini: {name}")
+        except Exception as e:
+            logger.error(f"❌ Failed to delete file {name} from Gemini: {e}")
+            raise
+    
 
     def generate_content(self, contents, config=None, model="gemini-2.5-flash-lite"):
         if not self.client:
@@ -429,6 +439,8 @@ class EphemeralAIWorker:
 
             logger.info(f"✅ AI processing completed successfully")
             logger.info(f"📊 Category: {category_text}")
+
+            genai_client.delete_file(name=uploaded_file.name)
             return category_text, summary_text, headline, financial_data, individual_investor_list, company_investor_list, sentiment
 
         except json.JSONDecodeError as e:
