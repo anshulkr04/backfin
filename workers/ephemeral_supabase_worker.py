@@ -273,7 +273,10 @@ class EphemeralSupabaseWorkerV2:
             
             def update_count(announcement):
                 raw = announcement.get("date")
-                today = datetime.fromisoformat(raw).date()
+                # Convert to date object for processing
+                date_obj = datetime.fromisoformat(raw).date()
+                # Convert back to ISO string for Supabase
+                today = date_obj.isoformat()
                 category = announcement.get("category")
 
                 # category is the column name, e.g. "Financial Results"
@@ -293,6 +296,7 @@ class EphemeralSupabaseWorkerV2:
                     # No row for today, create a new one
                     data = {"date": today, category: 1}
                     response = supabase.table("announcement_categories").insert(data).execute()
+                    logger.info(f"Created new row for date {today} with {category}=1")
                 else:
                     # Row exists; increment the category count
                     current_value = existing.data.get(category, 0) or 0
@@ -305,7 +309,7 @@ class EphemeralSupabaseWorkerV2:
                         .eq("date", today)
                         .execute()
                     )
-                    print(f"Updated {category} count to {new_value} for date {today}")
+                    logger.info(f"Updated {category} count to {new_value} for date {today}")
 
                 return response
 
