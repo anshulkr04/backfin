@@ -6,5 +6,6 @@ __pycache__
 logs
 bse_scraper.log
 nse_scraper.log
+*.json
 
 

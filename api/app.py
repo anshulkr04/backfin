@@ -1259,7 +1259,7 @@ def bulk_add_isins(current_user):
 @app.route('/api/corporate_filings', methods=['GET', 'OPTIONS'])
 # @auth_required
 def get_corporate_filings():
-    """Endpoint to get corporate filings with improved date handling"""
+    """Endpoint to get corporate filings with improved date handling (using index_date)"""
     if request.method == 'OPTIONS':
         return _handle_options()
         
@@ -1271,11 +1271,17 @@ def get_corporate_filings():
         symbol = request.args.get('symbol', '')
         isin = request.args.get('isin', '')
         
-        logger.info(f"Corporate filings request: start_date={start_date}, end_date={end_date}, category={category}, symbol={symbol}, isin={isin}")
+        logger.info(
+            f"Corporate filings request: start_date={start_date}, "
+            f"end_date={end_date}, category={category}, symbol={symbol}, isin={isin}"
+        )
         
         if not supabase_connected:
             logger.error("Database service unavailable")
-            return jsonify({'message': 'Database service unavailable. Please try again later.', 'status': 'error'}), 503
+            return jsonify({
+                'message': 'Database service unavailable. Please try again later.',
+                'status': 'error'
+            }), 503
         
         # Build main query
         query = supabase.table("corporatefilings").select(
@@ -1304,39 +1310,46 @@ def get_corporate_filings():
             )
             """
         )
+
         category_list = [c.strip() for c in category.split(',') if c.strip()]
         symbol_list = [s.strip() for s in symbol.split(',') if s.strip()]
         isin_list = [i.strip() for i in isin.split(',') if i.strip()]
 
-        # Order by date descending - most recent first
-        query = query.order('date', desc=True)
+        # Order by indexed timestamp column, most recent first
+        query = query.order('index_date', desc=True)
         
-        # Apply date filters if provided, using ISO format for correct string comparison
+        # Apply date filters using index_date (timestamptz)
         if start_date:
             try:
                 # Parse user input (YYYY-MM-DD)
                 start_dt = dt.datetime.strptime(start_date, '%Y-%m-%d')
-                # Convert to ISO format with time at start of day (00:00:00)
+                # Start of that day
+                start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
                 start_iso = start_dt.isoformat()
-                logger.debug(f"Filtering dates >= {start_iso}")
-                query = query.gte('date', start_iso)
+                logger.debug(f"Filtering index_date >= {start_iso}")
+                query = query.gte('index_date', start_iso)
             except ValueError as e:
                 logger.error(f"Invalid start_date format: {start_date} - {str(e)}")
-                return jsonify({'message': 'Invalid start_date format. Use YYYY-MM-DD', 'status': 'error'}), 400
+                return jsonify({
+                    'message': 'Invalid start_date format. Use YYYY-MM-DD',
+                    'status': 'error'
+                }), 400
         
         if end_date:
             try:
                 # Parse user input (YYYY-MM-DD)
                 end_dt = dt.datetime.strptime(end_date, '%Y-%m-%d')
-                # Set time to end of day (23:59:59)
-                end_dt = end_dt.replace(hour=23, minute=59, second=59)
-                # Convert to ISO format
+                # End of that day
+                end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
                 end_iso = end_dt.isoformat()
-                logger.debug(f"Filtering dates <= {end_iso}")
-                query = query.lte('date', end_iso)
+                logger.debug(f"Filtering index_date <= {end_iso}")
+                query = query.lte('index_date', end_iso)
             except ValueError as e:
                 logger.error(f"Invalid end_date format: {end_date} - {str(e)}")
-                return jsonify({'message': 'Invalid end_date format. Use YYYY-MM-DD', 'status': 'error'}), 400
+                return jsonify({
+                    'message': 'Invalid end_date format. Use YYYY-MM-DD',
+                    'status': 'error'
+                }), 400
         
         # Apply additional filters if provided
         if category_list:
@@ -1345,31 +1358,29 @@ def get_corporate_filings():
             query = query.in_('symbol', symbol_list)
         if isin_list:
             query = query.in_('isin', isin_list)
+
+        # Exclude Procedural/Administrative unless explicitly requested
         if not category_list or "Procedural/Administrative" not in category_list:
             query = query.neq('category', 'Procedural/Administrative')
 
-
-        query = query.neq('category' , 'Error')
-
+        # Exclude Error category
+        query = query.neq('category', 'Error')
         
         # Execute query with error handling
         try:
             logger.debug("Executing Supabase query")
             response = query.execute()
             
-            # Log the full response for debugging
             logger.debug(f"Query response: {response}")
             
-            # Return results
             result_count = len(response.data) if response.data else 0
             logger.info(f"Retrieved {result_count} corporate filings")
             
-            # If no results, try to return without date filters as fallback
+            # If no results, fallback without date filters
             if result_count == 0:
                 logger.warning("No results found with date filters, trying without filters")
                 try:
-                    # Build a simpler query without date filters
-                    simple_query = supabase.table('corporatefilings').select('*').limit(10)
+                    simple_query = supabase.table('corporatefilings').select('*').order('index_date', desc=True).limit(10)
                     if category:
                         simple_query = simple_query.eq('category', category)
                     if symbol:
@@ -1388,7 +1399,7 @@ def get_corporate_filings():
                 except Exception as e:
                     logger.error(f"Fallback query also failed: {str(e)}")
                 
-                logger.info("Returning generated test filings as fallback")
+                logger.info("Returning empty filings response")
                 return jsonify({
                     'count': 0,
                     'filings': [],
@@ -1403,7 +1414,6 @@ def get_corporate_filings():
             
         except Exception as e:
             logger.error(f"Supabase query error: {str(e)}")
-            logger.info("Returning generated test filings due to query error")
             return jsonify({
                 'count': 0,
                 'filings': [],
@@ -1411,7 +1421,6 @@ def get_corporate_filings():
             }), 200
     
     except Exception as e:
-        # Log the full error details
         logger.error(f"Unexpected error in get_corporate_filings: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
@@ -1421,6 +1430,7 @@ def get_corporate_filings():
             'filings': [],
             'note': 'No data due to server error'
         }), 200
+
     
 @app.route('/api/corporate_filings/<corp_id>', methods=['GET'])
 def get_filing_by_id(corp_id):
