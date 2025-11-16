@@ -1259,7 +1259,7 @@ def bulk_add_isins(current_user):
 @app.route('/api/corporate_filings', methods=['GET', 'OPTIONS'])
 # @auth_required
 def get_corporate_filings():
-    """Endpoint to get corporate filings with improved date handling"""
+    """Endpoint to get corporate filings with server-side pagination"""
     if request.method == 'OPTIONS':
         return _handle_options()
         
@@ -1271,7 +1271,28 @@ def get_corporate_filings():
         symbol = request.args.get('symbol', '')
         isin = request.args.get('isin', '')
         
-        logger.info(f"Corporate filings request: start_date={start_date}, end_date={end_date}, category={category}, symbol={symbol}, isin={isin}")
+        # Pagination parameters
+        page = request.args.get('page', '1')
+        page_size = 15
+        
+        # Validate and parse pagination parameters
+        try:
+            page = int(page)
+            if page < 1:
+                page = 1
+        except (ValueError, TypeError):
+            page = 1
+            
+        try:
+            page_size = int(page_size)
+            if page_size < 1:
+                page_size = 15
+            elif page_size > 100:  # Set a maximum limit to prevent abuse
+                page_size = 100
+        except (ValueError, TypeError):
+            page_size = 15
+        
+        logger.info(f"Corporate filings request: start_date={start_date}, end_date={end_date}, category={category}, symbol={symbol}, isin={isin}, page={page}, page_size={page_size}")
         
         if not supabase_connected:
             logger.error("Database service unavailable")
@@ -1348,66 +1369,91 @@ def get_corporate_filings():
         if not category_list or "Procedural/Administrative" not in category_list:
             query = query.neq('category', 'Procedural/Administrative')
 
-
         query = query.neq('category' , 'Error')
 
-        
-        # Execute query with error handling
+        # Execute query with pagination
         try:
-            logger.debug("Executing Supabase query")
+            logger.debug("Executing Supabase query with pagination")
+            
+            # First, get total count with same filters (without pagination)
+            count_query = supabase.table("corporatefilings").select("corp_id", count="exact")
+            
+            # Apply the same filters for count
+            if start_date:
+                try:
+                    start_dt = dt.datetime.strptime(start_date, '%Y-%m-%d')
+                    start_iso = start_dt.isoformat()
+                    count_query = count_query.gte('date', start_iso)
+                except ValueError:
+                    pass
+            
+            if end_date:
+                try:
+                    end_dt = dt.datetime.strptime(end_date, '%Y-%m-%d')
+                    end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                    end_iso = end_dt.isoformat()
+                    count_query = count_query.lte('date', end_iso)
+                except ValueError:
+                    pass
+            
+            if category_list:
+                count_query = count_query.in_('category', category_list)
+            if symbol_list:
+                count_query = count_query.in_('symbol', symbol_list)
+            if isin_list:
+                count_query = count_query.in_('isin', isin_list)
+            if not category_list or "Procedural/Administrative" not in category_list:
+                count_query = count_query.neq('category', 'Procedural/Administrative')
+            count_query = count_query.neq('category', 'Error')
+            
+            # Get total count
+            count_response = count_query.execute()
+            total_count = count_response.count if hasattr(count_response, 'count') and count_response.count is not None else 0
+            
+            # Calculate pagination
+            total_pages = (total_count + page_size - 1) // page_size  # Ceiling division
+            from_index = (page - 1) * page_size
+            to_index = from_index + page_size - 1
+            
+            # Apply pagination to main query using range
+            query = query.range(from_index, to_index)
+            
+            # Execute paginated query
             response = query.execute()
             
             # Log the full response for debugging
             logger.debug(f"Query response: {response}")
             
-            # Return results
+            # Get actual result count for this page
             result_count = len(response.data) if response.data else 0
-            logger.info(f"Retrieved {result_count} corporate filings")
+            logger.info(f"Retrieved {result_count} corporate filings (page {page}/{total_pages}, total: {total_count})")
             
-            # If no results, try to return without date filters as fallback
-            if result_count == 0:
-                logger.warning("No results found with date filters, trying without filters")
-                try:
-                    # Build a simpler query without date filters
-                    simple_query = supabase.table('corporatefilings').select('*').limit(10)
-                    if category:
-                        simple_query = simple_query.eq('category', category)
-                    if symbol:
-                        simple_query = simple_query.eq('symbol', symbol)
-                    if isin:
-                        simple_query = simple_query.eq('isin', isin)
-                    
-                    simple_response = simple_query.execute()
-                    if simple_response.data and len(simple_response.data) > 0:
-                        logger.info(f"Retrieved {len(simple_response.data)} filings without date filters")
-                        return jsonify({
-                            'count': len(simple_response.data),
-                            'filings': simple_response.data,
-                            'note': 'Date filters were ignored to return results'
-                        }), 200
-                except Exception as e:
-                    logger.error(f"Fallback query also failed: {str(e)}")
-                
-                logger.info("Returning generated test filings as fallback")
-                return jsonify({
-                    'count': 0,
-                    'filings': [],
-                    'note': 'No data available'
-                }), 200
-            
-            # Return the actual results
+            # Return the paginated results with metadata
             return jsonify({
                 'count': result_count,
-                'filings': response.data
+                'total_count': total_count,
+                'total_pages': total_pages,
+                'current_page': page,
+                'page_size': page_size,
+                'has_next': page < total_pages,
+                'has_previous': page > 1,
+                'filings': response.data if response.data else []
             }), 200
             
         except Exception as e:
             logger.error(f"Supabase query error: {str(e)}")
-            logger.info("Returning generated test filings due to query error")
+            import traceback
+            logger.error(traceback.format_exc())
             return jsonify({
                 'count': 0,
+                'total_count': 0,
+                'total_pages': 0,
+                'current_page': page,
+                'page_size': page_size,
+                'has_next': False,
+                'has_previous': False,
                 'filings': [],
-                'note': 'Database Error'
+                'error': 'Database Error'
             }), 200
     
     except Exception as e:
@@ -1418,8 +1464,14 @@ def get_corporate_filings():
         
         return jsonify({
             'count': 0,
+            'total_count': 0,
+            'total_pages': 0,
+            'current_page': 1,
+            'page_size': 15,
+            'has_next': False,
+            'has_previous': False,
             'filings': [],
-            'note': 'No data due to server error'
+            'error': 'Server error'
         }), 200
     
 @app.route('/api/corporate_filings/<corp_id>', methods=['GET'])
