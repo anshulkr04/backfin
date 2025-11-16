@@ -292,7 +292,7 @@ class EphemeralSupabaseWorkerV2:
                     .execute()
                 )
 
-                if existing.data is None:
+                if existing is None:
                     # No row for today, create a new one
                     data = {"date": today, category: 1}
                     response = supabase.table("announcement_categories").insert(data).execute()
