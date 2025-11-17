@@ -2672,16 +2672,17 @@ def search_companies():
     try:
         # Get search parameters
         query = request.args.get('q', '').strip()
-        limit = request.args.get('limit')
+        limit = request.args.get('limit', 20)  # Default to 20 results
         
-        # Validate and convert limit to integer if provided
-        if limit:
-            try:
-                limit = int(limit)
-                if limit < 1:
-                    return jsonify({'message': 'Limit must be a positive integer'}), 400
-            except ValueError:
-                return jsonify({'message': 'Limit must be a valid integer'}), 400
+        # Validate and convert limit to integer
+        try:
+            limit = int(limit)
+            if limit < 1:
+                limit = 20
+            elif limit > 100:  # Maximum limit
+                limit = 100
+        except (ValueError, TypeError):
+            limit = 20
         
         # If no search query is provided, return an error
         if not query:
@@ -2691,14 +2692,14 @@ def search_companies():
         
         if not supabase_connected:
             return jsonify({'message': 'Database service unavailable. Please try again later.'}), 503
-            
-        # Initialize the Supabase query
-        supabase_query = supabase.table('stocklistdata').select('*')
         
-        # Apply search filters (case-insensitive)
+        # Normalize query for better matching
+        query_upper = query.upper()
+        query_lower = query.lower()
+        
+        # Fetch all matching results (we'll rank them in Python)
+        # Get a larger set to ensure we have enough after ranking
         search_pattern = f"%{query}%"
-        
-        # Build the query with proper OR conditions
         or_filter = (
             f"newname.ilike.{search_pattern},"
             f"oldname.ilike.{search_pattern},"
@@ -2708,27 +2709,91 @@ def search_companies():
             f"oldbsecode.ilike.{search_pattern},"
             f"isin.ilike.{search_pattern}"
         )
-        filter_query = supabase_query.or_(or_filter)
         
-        # Apply limit if provided
-        if limit:
-            filter_query = filter_query.limit(limit)
+        response = supabase.table('stocklistdata').select('*').or_(or_filter).limit(500).execute()
         
-        # Execute the query
-        response = filter_query.execute()
-        
-        # Check if response was successful
         if hasattr(response, 'error') and response.error is not None:
             return jsonify({'message': f'Error searching companies: {response.error.message}'}), 500
         
-        # Return the search results
+        results = response.data or []
+        
+        if not results:
+            return jsonify({'count': 0, 'companies': []}), 200
+        
+        # Ranking function with prioritization
+        def calculate_rank(company):
+            """
+            Calculate ranking score for a company based on search query
+            Lower score = higher priority
+            """
+            name = (company.get('newname') or company.get('oldname') or '').strip()
+            nse_code = (company.get('newnsecode') or company.get('oldnsecode') or '').strip()
+            bse_code = (company.get('newbsecode') or company.get('oldbsecode') or '').strip()
+            
+            name_upper = name.upper()
+            name_lower = name.lower()
+            
+            # Priority 1: Company name starts with query (case-insensitive) - Score 10-19
+            if name_upper.startswith(query_upper):
+                # Exact length match gets best score
+                if len(name) == len(query):
+                    return 10
+                return 11
+            
+            # Priority 2: Symbol (NSE/BSE code) exact match - Score 20-29
+            if nse_code.upper() == query_upper or bse_code.upper() == query_upper:
+                return 20
+            
+            # Priority 2.5: Symbol starts with query - Score 30-39
+            if nse_code.upper().startswith(query_upper) or bse_code.upper().startswith(query_upper):
+                return 30
+            
+            # Priority 3: Any word in company name starts with query - Score 40-49
+            words = name_upper.split()
+            for word in words:
+                if word.startswith(query_upper):
+                    return 40
+            
+            # Priority 4: Company name contains query - Score 50-59
+            if query_upper in name_upper:
+                # Earlier position gets better score
+                position = name_upper.find(query_upper)
+                return 50 + min(position, 9)
+            
+            # Priority 5: Symbol contains query - Score 60-69
+            if query_upper in nse_code.upper() or query_upper in bse_code.upper():
+                return 60
+            
+            # Fallback - shouldn't happen if query matched
+            return 100
+        
+        # Rank all results
+        ranked_results = []
+        for company in results:
+            rank = calculate_rank(company)
+            ranked_results.append({
+                'rank': rank,
+                'company': company
+            })
+        
+        # Sort by rank (lower is better) and then by name
+        ranked_results.sort(key=lambda x: (x['rank'], x['company'].get('newname', '').upper()))
+        
+        # Extract top results up to limit
+        top_companies = [item['company'] for item in ranked_results[:limit]]
+        
+        logger.info(f"Search '{query}' returned {len(top_companies)} companies (from {len(results)} matches)")
+        
         return jsonify({
-            'count': len(response.data),
-            'companies': response.data
+            'count': len(top_companies),
+            'total_matches': len(results),
+            'companies': top_companies
         }), 200
         
     except Exception as e:
         logger.error(f"Search companies error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'message': f'Failed to search companies: {str(e)}'}), 500
 
 # List all users (admin endpoint)
