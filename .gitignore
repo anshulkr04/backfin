@@ -7,5 +7,6 @@ logs
 bse_scraper.log
 nse_scraper.log
 *.json
+*.pdf
 
 

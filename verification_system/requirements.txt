@@ -1,0 +1,22 @@
+# Verification System Dependencies (Supabase-only, no Redis)
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-jose[cryptography]==3.3.0
+bcrypt==4.0.1
+python-multipart==0.0.6
+pydantic[email]==2.11.4
+pydantic-settings==2.6.0
+python-dotenv==1.1.0
+python-dateutil==2.9.0.post0
+
+# HTTP Client - needs to be compatible with both supabase and google-genai
+httpx>=0.28.1,<1.0.0
+
+# Database - matching main requirements
+supabase==2.15.1
+postgrest==1.0.1
+
+# AI Content Generation - matching main requirements
+google-genai==1.15.0
+requests==2.32.3
+PyPDF2==3.0.1

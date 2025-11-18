@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  verification-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backfin-verification-api
+    restart: unless-stopped
+    ports:
+      - "5002:5002"
+    environment:
+      # Server Configuration
+      - HOST=0.0.0.0
+      - PORT=5002
+      - DEBUG=false
+      - PROD=true
+      
+      # CORS Origins (comma-separated)
+      - CORS_ORIGINS=*
+    
+    env_file:
+      - ../.env
+    
+    volumes:
+      # Mount logs directory for persistence
+      - ./logs:/app/logs
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    networks:
+      - backfin-network
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  backfin-network:
+    driver: bridge
+
+volumes:
+  logs:
+    driver: local
