@@ -10,7 +10,7 @@ import time
 from typing import Optional, Dict, Any
 
 # Configuration
-BASE_URL = "http://localhost:5002"
+BASE_URL = "https://admin.anshulkr.com"
 API_PREFIX = "/api/admin"
 
 # Test credentials

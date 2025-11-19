@@ -1313,6 +1313,7 @@ def get_corporate_filings():
             symbol,
             headline,
             sentiment,
+            verified,
             investorCorp!left(
                 id,
                 investor_id,
