@@ -175,23 +175,32 @@ Authorization: Bearer <access_token>
 
 ## 📝 Announcement Management
 
-### 5. Get Announcements
+### 5. Get Announcements (All Categories)
 
 **Endpoint:** `GET /api/admin/announcements`
 
 **Query Parameters:**
 - `verified` (boolean): Filter by verification status (default: false)
-- `limit` (integer): Number of results (default: 50)
-- `offset` (integer): Pagination offset (default: 0)
+- `page` (integer): Page number, starts at 1 (default: 1)
+- `page_size` (integer): Results per page, max 100 (default: 50)
+- `start_date` (string): Filter from date in YYYY-MM-DD format (optional)
+- `end_date` (string): Filter to date in YYYY-MM-DD format (optional)
 
 **Headers:**
 ```
 Authorization: Bearer <access_token>
 ```
 
-**Example Request:**
+**Example Requests:**
 ```
-GET /api/admin/announcements?verified=false&limit=10&offset=0
+# Get first page of unverified announcements
+GET /api/admin/announcements?verified=false&page=1&page_size=20
+
+# Get announcements for a specific date range
+GET /api/admin/announcements?start_date=2025-11-01&end_date=2025-11-15
+
+# Get second page with date filtering
+GET /api/admin/announcements?verified=false&page=2&page_size=50&start_date=2025-11-01
 ```
 
 **Response (200):**
@@ -209,12 +218,108 @@ GET /api/admin/announcements?verified=false&limit=10&offset=0
       "sentiment": "Neutral",
       "fileurl": "https://example.com/file.pdf",
       "verified": false,
-      "timestamp": "2025-11-18T10:00:00"
+      "date": "2025-11-18T10:00:00"
     }
   ],
-  "count": 10,
-  "offset": 0,
-  "limit": 10
+  "count": 20,
+  "total_count": 1250,
+  "total_pages": 63,
+  "current_page": 1,
+  "page_size": 20,
+  "has_next": true,
+  "has_previous": false
+}
+```
+
+### 5a. Get Financial Results Only
+
+**Endpoint:** `GET /api/admin/announcements/financial-results`
+
+**Query Parameters:**
+- `verified` (boolean): Filter by verification status (default: false)
+- `page` (integer): Page number, starts at 1 (default: 1)
+- `page_size` (integer): Results per page, max 100 (default: 50)
+- `start_date` (string): Filter from date in YYYY-MM-DD format (optional)
+- `end_date` (string): Filter to date in YYYY-MM-DD format (optional)
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Example Request:**
+```
+GET /api/admin/announcements/financial-results?verified=false&page=1&page_size=25&start_date=2025-11-01
+```
+
+**Response (200):**
+```json
+{
+  "announcements": [
+    {
+      "corp_id": "uuid",
+      "category": "Financial Results",
+      "headline": "Q3 Results Announcement",
+      "ai_summary": "Financial performance summary...",
+      "sentiment": "Positive",
+      "verified": false,
+      "date": "2025-11-15T09:30:00"
+    }
+  ],
+  "count": 25,
+  "total_count": 450,
+  "total_pages": 18,
+  "current_page": 1,
+  "page_size": 25,
+  "has_next": true,
+  "has_previous": false
+}
+```
+
+### 5b. Get Non-Financial Announcements
+
+**Endpoint:** `GET /api/admin/announcements/non-financial`
+
+**Query Parameters:**
+- `verified` (boolean): Filter by verification status (default: false)
+- `page` (integer): Page number, starts at 1 (default: 1)
+- `page_size` (integer): Results per page, max 100 (default: 50)
+- `start_date` (string): Filter from date in YYYY-MM-DD format (optional)
+- `end_date` (string): Filter to date in YYYY-MM-DD format (optional)
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Description:** Returns all announcements except those in "Financial Results" category (Board Meetings, AGM/EGM, Dividends, etc.)
+
+**Example Request:**
+```
+GET /api/admin/announcements/non-financial?verified=false&page=1&page_size=30&end_date=2025-11-18
+```
+
+**Response (200):**
+```json
+{
+  "announcements": [
+    {
+      "corp_id": "uuid",
+      "category": "Board Meetings",
+      "headline": "Board Meeting Scheduled",
+      "ai_summary": "Meeting details...",
+      "sentiment": "Neutral",
+      "verified": false,
+      "date": "2025-11-17T14:00:00"
+    }
+  ],
+  "count": 30,
+  "total_count": 800,
+  "total_pages": 27,
+  "current_page": 1,
+  "page_size": 30,
+  "has_next": true,
+  "has_previous": false
 }
 ```
 

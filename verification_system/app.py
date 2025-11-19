@@ -629,35 +629,250 @@ async def release_task(
 @app.get(f"{settings.API_PREFIX}/announcements")
 async def get_unverified_announcements(
     verified: bool = False,
-    limit: int = 50,
-    offset: int = 0,
+    page: int = 1,
+    page_size: int = 50,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
     supabase=Depends(get_db)
 ):
-    """Get announcements from corporatefilings table filtered by verification status"""
+    """Get announcements with pagination and date filters"""
     try:
-        logger.info(f"Fetching announcements with verified={verified}, limit={limit}, offset={offset}")
+        # Validate pagination parameters
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 50
+        elif page_size > 100:
+            page_size = 100
+            
+        offset = (page - 1) * page_size
         
-        result = supabase.table("corporatefilings")\
-            .select("*")\
-            .eq("verified", verified)\
-            .order("date", desc=True)\
-            .range(offset, offset + limit - 1)\
-            .execute()
+        logger.info(f"Fetching announcements: verified={verified}, page={page}, page_size={page_size}, start_date={start_date}, end_date={end_date}")
         
-        logger.info(f"Found {len(result.data)} announcements")
+        # Build query
+        query = supabase.table("corporatefilings").select("*", count="exact").eq("verified", verified)
+        
+        # Apply date filters
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                start_iso = start_dt.isoformat()
+                query = query.gte('date', start_iso)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+        
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                end_iso = end_dt.isoformat()
+                query = query.lte('date', end_iso)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
+        
+        # Apply pagination and ordering
+        query = query.order("date", desc=True).range(offset, offset + page_size - 1)
+        
+        result = query.execute()
+        
+        total_count = result.count if hasattr(result, 'count') else 0
+        total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+        
+        logger.info(f"Found {len(result.data)} announcements (page {page}/{total_pages}, total: {total_count})")
+        
         return {
             "announcements": result.data,
             "count": len(result.data),
-            "offset": offset,
-            "limit": limit
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "current_page": page,
+            "page_size": page_size,
+            "has_next": page < total_pages,
+            "has_previous": page > 1
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Get announcements error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch announcements: {str(e)}"
+        )
+
+
+@app.get(f"{settings.API_PREFIX}/announcements/financial-results")
+async def get_financial_results(
+    verified: bool = False,
+    page: int = 1,
+    page_size: int = 50,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: TokenData = Depends(get_current_user),
+    supabase=Depends(get_db)
+):
+    """Get Financial Results announcements only"""
+    try:
+        # Validate pagination parameters
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 50
+        elif page_size > 100:
+            page_size = 100
+            
+        offset = (page - 1) * page_size
+        
+        logger.info(f"Fetching Financial Results: verified={verified}, page={page}, page_size={page_size}")
+        
+        # Build query with category filter
+        query = supabase.table("corporatefilings").select("*", count="exact")\
+            .eq("verified", verified)\
+            .eq("category", "Financial Results")
+        
+        # Apply date filters
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                start_iso = start_dt.isoformat()
+                query = query.gte('date', start_iso)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+        
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                end_iso = end_dt.isoformat()
+                query = query.lte('date', end_iso)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
+        
+        # Apply pagination and ordering
+        query = query.order("date", desc=True).range(offset, offset + page_size - 1)
+        
+        result = query.execute()
+        
+        total_count = result.count if hasattr(result, 'count') else 0
+        total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+        
+        logger.info(f"Found {len(result.data)} Financial Results (page {page}/{total_pages}, total: {total_count})")
+        
+        return {
+            "announcements": result.data,
+            "count": len(result.data),
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "current_page": page,
+            "page_size": page_size,
+            "has_next": page < total_pages,
+            "has_previous": page > 1
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get financial results error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch financial results: {str(e)}"
+        )
+
+
+@app.get(f"{settings.API_PREFIX}/announcements/non-financial")
+async def get_non_financial_results(
+    verified: bool = False,
+    page: int = 1,
+    page_size: int = 50,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: TokenData = Depends(get_current_user),
+    supabase=Depends(get_db)
+):
+    """Get all announcements except Financial Results"""
+    try:
+        # Validate pagination parameters
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 50
+        elif page_size > 100:
+            page_size = 100
+            
+        offset = (page - 1) * page_size
+        
+        logger.info(f"Fetching non-Financial Results: verified={verified}, page={page}, page_size={page_size}")
+        
+        # Build query excluding Financial Results
+        query = supabase.table("corporatefilings").select("*", count="exact")\
+            .eq("verified", verified)\
+            .neq("category", "Financial Results")
+        
+        # Apply date filters
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                start_iso = start_dt.isoformat()
+                query = query.gte('date', start_iso)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+        
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                end_iso = end_dt.isoformat()
+                query = query.lte('date', end_iso)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
+        
+        # Apply pagination and ordering
+        query = query.order("date", desc=True).range(offset, offset + page_size - 1)
+        
+        result = query.execute()
+        
+        total_count = result.count if hasattr(result, 'count') else 0
+        total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+        
+        logger.info(f"Found {len(result.data)} non-Financial Results (page {page}/{total_pages}, total: {total_count})")
+        
+        return {
+            "announcements": result.data,
+            "count": len(result.data),
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "current_page": page,
+            "page_size": page_size,
+            "has_next": page < total_pages,
+            "has_previous": page > 1
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get non-financial results error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch non-financial results: {str(e)}"
         )
 
 
