@@ -37,6 +37,8 @@ from auth import (
     verify_password,
     create_access_token,
     get_current_user,
+    require_admin,
+    require_admin_or_verifier,
     AuthToken,
     TokenData
 )
@@ -180,13 +182,14 @@ async def register(request: RegisterRequest, supabase=Depends(get_db)):
         # Hash password
         password_hash = get_password_hash(request.password)
         
-        # Create user
+        # Create user (default role is 'verifier', can be changed to 'admin' manually in DB)
         user_data = {
             "email": request.email,
             "password_hash": password_hash,
             "name": request.name,
             "is_active": True,
-            "is_verified": True  # Auto-verify for simplicity
+            "is_verified": True,  # Auto-verify for simplicity
+            "role": "verifier"  # Default role
         }
         
         result = supabase.table("admin_users").insert(user_data).execute()
@@ -198,10 +201,14 @@ async def register(request: RegisterRequest, supabase=Depends(get_db)):
             )
         
         user = result.data[0]
-        logger.info(f"✅ Registered new user: {user['email']}")
+        logger.info(f"✅ Registered new user: {user['email']} with role: {user.get('role', 'verifier')}")
         
-        # Generate access token
-        access_token = create_access_token({"sub": user["email"], "user_id": user["id"]})
+        # Generate access token with role
+        access_token = create_access_token({
+            "sub": user["email"], 
+            "user_id": user["id"],
+            "role": user.get("role", "verifier")
+        })
         
         # Create session
         session_data = {
@@ -265,8 +272,12 @@ async def login(request: LoginRequest, supabase=Depends(get_db)):
                 detail="Invalid email or password"
             )
         
-        # Generate access token
-        access_token = create_access_token({"sub": user["email"], "user_id": user["id"]})
+        # Generate access token with role
+        access_token = create_access_token({
+            "sub": user["email"], 
+            "user_id": user["id"],
+            "role": user.get("role", "verifier")
+        })
         
         # Invalidate old sessions
         supabase.table("admin_sessions").update({"is_active": False}).eq("user_id", user["id"]).execute()
@@ -1041,7 +1052,11 @@ async def unverify_announcement(
             .update({
                 "verified": False,
                 "verified_at": None,
-                "verified_by": None
+                "verified_by": None,
+                "review_status": None,
+                "sent_to_review_at": None,
+                "sent_to_review_by": None,
+                "review_notes": None
             })\
             .eq("corp_id", corp_id)\
             .execute()
@@ -1069,12 +1084,275 @@ async def unverify_announcement(
 
 
 # ============================================================================
+# Review Queue Endpoints (Admin Only)
+# ============================================================================
+
+class SendToReviewRequest(BaseModel):
+    """Request model for sending announcement to review"""
+    notes: Optional[str] = None
+
+
+@app.post(f"{settings.API_PREFIX}/announcements/{{corp_id}}/send-to-review")
+async def send_to_review(
+    corp_id: str,
+    request: SendToReviewRequest = None,
+    current_user: TokenData = Depends(require_admin),
+    supabase=Depends(get_db)
+):
+    """
+    Send a verified announcement to review queue (Admin only)
+    This allows admins to flag verified announcements that need additional review
+    """
+    try:
+        logger.info(f"Admin {current_user.email} sending announcement {corp_id} to review")
+        
+        # Check if announcement exists and is verified
+        check_result = supabase.table("corporatefilings")\
+            .select("corp_id, verified, review_status")\
+            .eq("corp_id", corp_id)\
+            .execute()
+        
+        if not check_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Announcement with corp_id {corp_id} not found"
+            )
+        
+        announcement = check_result.data[0]
+        
+        if not announcement.get("verified"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only verified announcements can be sent to review"
+            )
+        
+        # Update announcement to pending review status
+        notes = request.notes if request else None
+        result = supabase.table("corporatefilings")\
+            .update({
+                "review_status": "pending_review",
+                "sent_to_review_at": datetime.utcnow().isoformat(),
+                "sent_to_review_by": current_user.user_id,
+                "review_notes": notes
+            })\
+            .eq("corp_id", corp_id)\
+            .execute()
+        
+        logger.info(f"✅ Announcement {corp_id} sent to review queue")
+        
+        return {
+            "success": True,
+            "corp_id": corp_id,
+            "review_status": "pending_review",
+            "sent_to_review_at": result.data[0]["sent_to_review_at"],
+            "sent_to_review_by": current_user.user_id,
+            "message": "Announcement sent to review queue successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Send to review error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send announcement to review: {str(e)}"
+        )
+
+
+@app.get(f"{settings.API_PREFIX}/review-queue")
+async def get_review_queue(
+    page: int = 1,
+    page_size: int = 50,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    category: Optional[str] = None,
+    current_user: TokenData = Depends(require_admin),
+    supabase=Depends(get_db)
+):
+    """
+    Get announcements in review queue (Admin only)
+    Returns verified announcements that have been flagged for review
+    """
+    try:
+        # Validate pagination
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 50
+        elif page_size > 100:
+            page_size = 100
+            
+        offset = (page - 1) * page_size
+        
+        logger.info(f"Admin {current_user.email} fetching review queue: page={page}, page_size={page_size}")
+        
+        # Build query for pending review items
+        query = supabase.table("corporatefilings")\
+            .select("*", count="exact")\
+            .eq("verified", True)\
+            .eq("review_status", "pending_review")
+        
+        # Apply category filter if specified
+        if category:
+            query = query.eq("category", category)
+        
+        # Apply date filters
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                start_iso = start_dt.isoformat()
+                query = query.gte('date', start_iso)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+        
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                end_iso = end_dt.isoformat()
+                query = query.lte('date', end_iso)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
+        
+        # Apply ordering and pagination
+        query = query.order("sent_to_review_at", desc=True).range(offset, offset + page_size - 1)
+        
+        result = query.execute()
+        
+        total_count = result.count if hasattr(result, 'count') else 0
+        total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+        
+        logger.info(f"Found {len(result.data)} announcements in review queue (page {page}/{total_pages}, total: {total_count})")
+        
+        return {
+            "announcements": result.data,
+            "count": len(result.data),
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "current_page": page,
+            "page_size": page_size,
+            "has_next": page < total_pages,
+            "has_previous": page > 1
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get review queue error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch review queue: {str(e)}"
+        )
+
+
+class ReviewDecisionRequest(BaseModel):
+    """Request model for review decision"""
+    action: str = Field(..., description="'approve' or 'reject'")
+    notes: Optional[str] = None
+
+
+@app.post(f"{settings.API_PREFIX}/announcements/{{corp_id}}/review")
+async def review_announcement(
+    corp_id: str,
+    request: ReviewDecisionRequest,
+    current_user: TokenData = Depends(require_admin),
+    supabase=Depends(get_db)
+):
+    """
+    Make a review decision on an announcement (Admin only)
+    - approve: Marks as approved and keeps verified status
+    - reject: Sends back to verification queue (unverified)
+    """
+    try:
+        if request.action not in ["approve", "reject"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Action must be either 'approve' or 'reject'"
+            )
+        
+        logger.info(f"Admin {current_user.email} reviewing announcement {corp_id}: action={request.action}")
+        
+        # Check if announcement is in review queue
+        check_result = supabase.table("corporatefilings")\
+            .select("corp_id, verified, review_status")\
+            .eq("corp_id", corp_id)\
+            .execute()
+        
+        if not check_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Announcement with corp_id {corp_id} not found"
+            )
+        
+        announcement = check_result.data[0]
+        
+        if announcement.get("review_status") != "pending_review":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Announcement is not in review queue"
+            )
+        
+        # Update based on action
+        if request.action == "approve":
+            update_data = {
+                "review_status": "approved",
+                "reviewed_at": datetime.utcnow().isoformat(),
+                "reviewed_by": current_user.user_id,
+                "review_notes": request.notes
+            }
+            message = "Announcement approved successfully"
+        else:  # reject
+            update_data = {
+                "verified": False,
+                "verified_at": None,
+                "verified_by": None,
+                "review_status": "rejected",
+                "reviewed_at": datetime.utcnow().isoformat(),
+                "reviewed_by": current_user.user_id,
+                "review_notes": request.notes
+            }
+            message = "Announcement rejected and sent back to verification queue"
+        
+        result = supabase.table("corporatefilings")\
+            .update(update_data)\
+            .eq("corp_id", corp_id)\
+            .execute()
+        
+        logger.info(f"✅ Announcement {corp_id} {request.action}ed by admin {current_user.email}")
+        
+        return {
+            "success": True,
+            "corp_id": corp_id,
+            "action": request.action,
+            "review_status": update_data["review_status"],
+            "reviewed_at": update_data["reviewed_at"],
+            "reviewed_by": current_user.user_id,
+            "message": message
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Review announcement error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to review announcement: {str(e)}"
+        )
+
+
+# ============================================================================
 # Statistics Endpoints
 # ============================================================================
 
 @app.get(f"{settings.API_PREFIX}/stats")
 async def get_stats(current_user: TokenData = Depends(get_current_user), supabase=Depends(get_db)):
-    """Get verification statistics"""
+    """Get verification statistics including review queue (admin sees review stats)"""
     try:
         # Count by verification status
         unverified = supabase.table("corporatefilings").select("corp_id", count="exact").eq("verified", False).execute()
@@ -1084,11 +1362,38 @@ async def get_stats(current_user: TokenData = Depends(get_current_user), supabas
         today = datetime.utcnow().date().isoformat()
         verified_today = supabase.table("corporatefilings").select("corp_id", count="exact").eq("verified", True).gte("verified_at", today).execute()
         
-        return {
+        stats = {
             "unverified": unverified.count or 0,
             "verified_total": verified.count or 0,
-            "verified_today": verified_today.count or 0
+            "verified_today": verified_today.count or 0,
+            "user_role": current_user.role
         }
+        
+        # Add review queue stats for admins only
+        if current_user.role == "admin":
+            pending_review = supabase.table("corporatefilings")\
+                .select("corp_id", count="exact")\
+                .eq("verified", True)\
+                .eq("review_status", "pending_review")\
+                .execute()
+            
+            approved = supabase.table("corporatefilings")\
+                .select("corp_id", count="exact")\
+                .eq("review_status", "approved")\
+                .execute()
+            
+            rejected = supabase.table("corporatefilings")\
+                .select("corp_id", count="exact")\
+                .eq("review_status", "rejected")\
+                .execute()
+            
+            stats["review_queue"] = {
+                "pending_review": pending_review.count or 0,
+                "approved": approved.count or 0,
+                "rejected": rejected.count or 0
+            }
+        
+        return stats
         
     except Exception as e:
         logger.error(f"Get stats error: {e}")

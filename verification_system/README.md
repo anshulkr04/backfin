@@ -72,6 +72,30 @@ GEMINI_API_KEY=your_gemini_api_key
 
 **Note:** The verification system uses `SUPABASE_URL2` and `SUPABASE_SERVICE_ROLE_KEY` from the main `.env` file to avoid duplication with other services.
 
+## 🔐 Role-Based Access Control
+
+The system supports two user roles:
+
+### Roles
+
+**Verifier (Default)**
+- Verify/unverify announcements
+- Update announcement details
+- View verification queue
+- Cannot access review queue
+
+**Admin (Elevated)**
+- All verifier permissions
+- Access review queue
+- Send verified announcements to review
+- Approve or reject announcements
+- View extended statistics
+
+**Note:** New users register as "verifier" by default. To promote a user to admin:
+```sql
+UPDATE admin_users SET role = 'admin' WHERE email = 'user@example.com';
+```
+
 ## 📚 API Documentation
 
 ### Base URL
@@ -445,6 +469,117 @@ Authorization: Bearer <access_token>
 
 ---
 
+## 🔍 Review Queue (Admin Only)
+
+### 10. Send Verified Announcement to Review
+
+**Endpoint:** `POST /api/admin/announcements/{corp_id}/send-to-review`
+
+**Authorization:** Admin role required
+
+**Headers:**
+```
+Authorization: Bearer <admin-token>
+```
+
+**Request Body:**
+```json
+{
+  "notes": "Please review the financial numbers"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "corp_id": "uuid",
+  "review_status": "pending_review",
+  "sent_to_review_at": "2025-11-21T10:30:00",
+  "sent_to_review_by": "admin-uuid",
+  "message": "Announcement sent to review queue successfully"
+}
+```
+
+### 11. Get Review Queue
+
+**Endpoint:** `GET /api/admin/review-queue`
+
+**Authorization:** Admin role required
+
+**Query Parameters:**
+- `page` (integer): Page number, starts at 1 (default: 1)
+- `page_size` (integer): Results per page, max 100 (default: 50)
+- `start_date` (string): Filter from date YYYY-MM-DD (optional)
+- `end_date` (string): Filter to date YYYY-MM-DD (optional)
+- `category` (string): Filter by category (optional)
+
+**Headers:**
+```
+Authorization: Bearer <admin-token>
+```
+
+**Response (200):**
+```json
+{
+  "announcements": [
+    {
+      "corp_id": "uuid",
+      "headline": "Q3 Financial Results",
+      "verified": true,
+      "review_status": "pending_review",
+      "sent_to_review_at": "2025-11-21T10:30:00",
+      "review_notes": "Check financial numbers"
+    }
+  ],
+  "count": 50,
+  "total_count": 120,
+  "total_pages": 3,
+  "current_page": 1,
+  "page_size": 50,
+  "has_next": true,
+  "has_previous": false
+}
+```
+
+### 12. Review Announcement (Approve/Reject)
+
+**Endpoint:** `POST /api/admin/announcements/{corp_id}/review`
+
+**Authorization:** Admin role required
+
+**Headers:**
+```
+Authorization: Bearer <admin-token>
+```
+
+**Request Body:**
+```json
+{
+  "action": "approve",
+  "notes": "Numbers verified from company website"
+}
+```
+
+**Actions:**
+- `"approve"` - Keeps verified status, marks as approved
+- `"reject"` - Sends back to verification queue (unverified)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "corp_id": "uuid",
+  "action": "approve",
+  "review_status": "approved",
+  "reviewed_at": "2025-11-21T11:00:00",
+  "reviewed_by": "admin-uuid",
+  "message": "Announcement approved successfully"
+}
+```
+
+---
+
 ## 🤖 AI Content Generation
 
 ### 10. Generate Content with AI
@@ -752,17 +887,66 @@ For issues and questions:
 
 ---
 
+## 💾 Database Setup
+
+### Initial Schema
+
+Run in Supabase SQL Editor:
+
+```sql
+-- Create admin_users table
+CREATE TABLE IF NOT EXISTS admin_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT DEFAULT 'verifier' CHECK (role IN ('admin', 'verifier')),
+    is_active BOOLEAN DEFAULT true,
+    is_verified BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create admin_sessions table
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES admin_users(id) ON DELETE CASCADE,
+    session_token TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Add verification columns to corporatefilings
+ALTER TABLE corporatefilings 
+ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS verified_by UUID REFERENCES admin_users(id);
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_user_id ON admin_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_token ON admin_sessions(session_token);
+CREATE INDEX IF NOT EXISTS idx_corporatefilings_verified ON corporatefilings(verified);
+```
+
+### Role-Based Review System (Optional)
+
+To enable the review queue feature, run the SQL migration:
+
+```bash
+# Execute in Supabase SQL Editor
+# File: verification_system/ROLE_BASED_REVIEW_SYSTEM.sql
+```
+
+This adds:
+- Review status tracking
+- Audit logging
+- Admin-only review queue
+- Approve/reject workflow
+
+---
+
 **Built with ❤️ using FastAPI, Supabase, and Google Gemini AI**
-
-### Health
-- `GET /health` - Health check endpoint
-
-## Database Schema
-
-### Tables Used
-1. **admin_users** - Verifier accounts
-2. **admin_sessions** - Active login sessions
-3. **verification_tasks** - Tasks to verify
 4. **verification_edits** - Audit trail of changes
 5. **corporatefilings** - Main table with verified announcements
 

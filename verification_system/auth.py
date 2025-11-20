@@ -28,6 +28,7 @@ class TokenData(BaseModel):
     """Data stored in JWT token"""
     email: EmailStr
     user_id: str
+    role: str = "verifier"  # 'admin' or 'verifier'
     exp: Optional[datetime] = None
 
 class AuthToken(BaseModel):
@@ -143,6 +144,7 @@ def decode_access_token(token: str) -> TokenData:
         
         email: str = payload.get("sub")
         user_id: str = payload.get("user_id")
+        role: str = payload.get("role", "verifier")
         exp: int = payload.get("exp")
         
         if email is None or user_id is None:
@@ -151,7 +153,7 @@ def decode_access_token(token: str) -> TokenData:
         # Convert exp timestamp to datetime
         exp_datetime = datetime.fromtimestamp(exp) if exp else None
         
-        return TokenData(email=email, user_id=user_id, exp=exp_datetime)
+        return TokenData(email=email, user_id=user_id, role=role, exp=exp_datetime)
         
     except JWTError as e:
         logger.error(f"JWT decode error: {e}")
@@ -248,4 +250,58 @@ async def get_current_active_user(
     Additional dependency layer if needed for more checks
     Currently just passes through from get_current_user
     """
+    return current_user
+
+
+# ============================================================================
+# Role-Based Access Control
+# ============================================================================
+
+async def require_admin(
+    current_user: TokenData = Depends(get_current_user)
+) -> TokenData:
+    """
+    FastAPI dependency that requires admin role
+    Use this to protect admin-only endpoints like review queue
+    
+    Args:
+        current_user: Current authenticated user
+        
+    Returns:
+        TokenData if user is admin
+        
+    Raises:
+        HTTPException: If user is not an admin
+    """
+    if current_user.role != "admin":
+        logger.warning(f"Access denied for user {current_user.email} (role: {current_user.role}) - admin required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required. You do not have permission to access this resource."
+        )
+    return current_user
+
+
+async def require_admin_or_verifier(
+    current_user: TokenData = Depends(get_current_user)
+) -> TokenData:
+    """
+    FastAPI dependency that requires admin or verifier role
+    Use this for endpoints accessible to both roles
+    
+    Args:
+        current_user: Current authenticated user
+        
+    Returns:
+        TokenData if user has required role
+        
+    Raises:
+        HTTPException: If user doesn't have valid role
+    """
+    if current_user.role not in ["admin", "verifier"]:
+        logger.warning(f"Access denied for user {current_user.email} (role: {current_user.role})")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions"
+        )
     return current_user
