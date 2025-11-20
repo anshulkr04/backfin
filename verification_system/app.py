@@ -633,10 +633,11 @@ async def get_unverified_announcements(
     page_size: int = 50,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    category: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
     supabase=Depends(get_db)
 ):
-    """Get announcements with pagination and date filters"""
+    """Get announcements with pagination, date filters, and optional category filter"""
     try:
         # Validate pagination parameters
         if page < 1:
@@ -648,10 +649,14 @@ async def get_unverified_announcements(
             
         offset = (page - 1) * page_size
         
-        logger.info(f"Fetching announcements: verified={verified}, page={page}, page_size={page_size}, start_date={start_date}, end_date={end_date}")
+        logger.info(f"Fetching announcements: verified={verified}, page={page}, page_size={page_size}, start_date={start_date}, end_date={end_date}, category={category}")
         
         # Build query
         query = supabase.table("corporatefilings").select("*", count="exact").eq("verified", verified)
+        
+        # Apply category filter if specified
+        if category:
+            query = query.eq("category", category)
         
         # Apply date filters
         if start_date:
@@ -715,10 +720,11 @@ async def get_financial_results(
     page_size: int = 50,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    category: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
     supabase=Depends(get_db)
 ):
-    """Get Financial Results announcements only"""
+    """Get Financial Results announcements only (category parameter is ignored for this endpoint)"""
     try:
         # Validate pagination parameters
         if page < 1:
@@ -799,10 +805,11 @@ async def get_non_financial_results(
     page_size: int = 50,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    category: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
     supabase=Depends(get_db)
 ):
-    """Get all announcements except Financial Results"""
+    """Get all announcements except Financial Results (category parameter is ignored for this endpoint)"""
     try:
         # Validate pagination parameters
         if page < 1:

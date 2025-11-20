@@ -185,6 +185,7 @@ Authorization: Bearer <access_token>
 - `page_size` (integer): Results per page, max 100 (default: 50)
 - `start_date` (string): Filter from date in YYYY-MM-DD format (optional)
 - `end_date` (string): Filter to date in YYYY-MM-DD format (optional)
+- `category` (string): Filter by specific category (optional)
 
 **Headers:**
 ```
@@ -199,8 +200,11 @@ GET /api/admin/announcements?verified=false&page=1&page_size=20
 # Get announcements for a specific date range
 GET /api/admin/announcements?start_date=2025-11-01&end_date=2025-11-15
 
-# Get second page with date filtering
-GET /api/admin/announcements?verified=false&page=2&page_size=50&start_date=2025-11-01
+# Get announcements filtered by category
+GET /api/admin/announcements?category=Board%20Meetings&verified=false
+
+# Combine multiple filters
+GET /api/admin/announcements?verified=false&page=2&page_size=50&start_date=2025-11-01&category=Dividends
 ```
 
 **Response (200):**
@@ -241,6 +245,7 @@ GET /api/admin/announcements?verified=false&page=2&page_size=50&start_date=2025-
 - `page_size` (integer): Results per page, max 100 (default: 50)
 - `start_date` (string): Filter from date in YYYY-MM-DD format (optional)
 - `end_date` (string): Filter to date in YYYY-MM-DD format (optional)
+- `category` (string): Not used in this endpoint (category is fixed to "Financial Results")
 
 **Headers:**
 ```
@@ -286,6 +291,7 @@ GET /api/admin/announcements/financial-results?verified=false&page=1&page_size=2
 - `page_size` (integer): Results per page, max 100 (default: 50)
 - `start_date` (string): Filter from date in YYYY-MM-DD format (optional)
 - `end_date` (string): Filter to date in YYYY-MM-DD format (optional)
+- `category` (string): Not used in this endpoint (excludes "Financial Results" category)
 
 **Headers:**
 ```
