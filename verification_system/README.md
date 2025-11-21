@@ -89,11 +89,174 @@ The system supports two user roles:
 - Access review queue
 - Send verified announcements to review
 - Approve or reject announcements
+- Manage company changes verification
+- Apply verified company changes
 - View extended statistics
 
 **Note:** New users register as "verifier" by default. To promote a user to admin:
 ```sql
 UPDATE admin_users SET role = 'admin' WHERE email = 'user@example.com';
+```
+
+## 📊 Company Database Management
+
+The system includes a comprehensive workflow for managing changes to the `stocklistdata` table. All changes to company data (new listings, ISIN changes, name changes) must be verified before being applied to the production database.
+
+### 🎯 Features
+- **Change Detection**: Automatically detect new companies and changes from exchange data
+- **Verification Queue**: All changes require admin/verifier approval before application
+- **Audit Trail**: Complete logging of all changes with timestamps and user tracking
+- **Safe Application**: Atomic operations ensure data integrity
+- **Role-Based**: Verifiers can verify, only admins can apply changes
+
+### 📋 Change Types Supported
+1. **new** - New company listed on exchange
+2. **isin** - ISIN code changed for existing company
+3. **name** - Company name changed
+4. **both** - Both ISIN and name changed
+5. **multiple** - Multiple fields changed
+
+### 🔄 Workflow
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  1. DETECTION                                           │
+│     Exchange Data → detect_changes.py → Detects Changes │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────┐
+│  2. SUBMISSION                                          │
+│     Changes → company_changes_pending table (pending)   │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────┐
+│  3. VERIFICATION                                        │
+│     Admin/Verifier → Reviews → Verify or Reject        │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────┐
+│  4. APPLICATION (Admin Only)                            │
+│     Admin → Apply → Updates stocklistdata table         │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+                   ┌──────▼──────┐
+                   │ Audit Trail │
+                   └─────────────┘
+```
+
+### 🚀 Quick Start
+
+**Step 1: Detect and Submit Changes**
+```bash
+cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management
+
+# Check current queue statistics
+python3 detect_changes.py --stats-only
+
+# Detect and submit changes (safe - has duplicate prevention)
+python3 detect_changes.py --source-dir ../common
+
+# The script automatically:
+# - Detects changes from exchange data
+# - Checks for duplicates (3-layer detection)
+# - Submits only new changes to verification queue
+# - Provides detailed summary
+```
+
+**Step 2: Verify Changes (via API)**
+```bash
+# Get pending changes
+curl -X GET "http://localhost:5002/api/admin/company-changes/pending?page=1" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Verify a change
+curl -X POST "http://localhost:5002/api/admin/company-changes/{id}/verify" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"notes": "Verified from BSE website"}'
+```
+
+**Step 3: Apply Changes (Admin Only)**
+```bash
+# Apply all verified changes
+curl -X POST "http://localhost:5002/api/admin/company-changes/apply-verified" \
+  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"notes": "Daily batch application"}'
+```
+
+### 📊 API Endpoints Summary
+
+| Endpoint | Method | Access | Description |
+|----------|--------|--------|-------------|
+| `/api/admin/company-changes/pending` | GET | Admin/Verifier | List pending changes with filters |
+| `/api/admin/company-changes/{id}` | GET | Admin/Verifier | Get change detail with audit log |
+| `/api/admin/company-changes/{id}/verify` | POST | Admin/Verifier | Verify a change |
+| `/api/admin/company-changes/{id}/reject` | POST | Admin/Verifier | Reject a change |
+| `/api/admin/company-changes/apply-verified` | POST | Admin Only | Apply verified changes to stocklistdata |
+| `/api/admin/company-changes/stats` | GET | Admin/Verifier | Get statistics |
+
+See **🏢 Company Database Management** section below for detailed API documentation with request/response examples.
+
+### ⚙️ Cronjob Setup
+
+The `detect_changes.py` script is designed to be cronjob-ready with proper error handling and logging.
+
+**Daily change detection (recommended):**
+```bash
+# Add to crontab (runs daily at 6 AM)
+0 6 * * * cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management && /usr/bin/python3 detect_changes.py --source-dir ../common >> /var/log/company_changes.log 2>&1
+```
+
+**Monitor the cronjob:**
+```bash
+# View log
+tail -f /var/log/company_changes.log
+
+# Check statistics
+cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management
+python3 detect_changes.py --stats-only
+```
+
+**Automatic application (optional):**
+```bash
+# Apply verified changes daily at 8 AM (requires admin token)
+0 8 * * * curl -X POST "http://localhost:5002/api/admin/company-changes/apply-verified" \
+  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"notes":"Automated daily application"}' >> /var/log/company_apply.log 2>&1
+```
+
+### 🔒 Safety Features
+
+1. **No Direct Modifications**: Detection script never modifies `stocklistdata` directly
+2. **Smart Duplicate Prevention**: 3-layer duplicate detection system
+   - Exact match check (same ISIN + same change_type)
+   - Same ISIN check (any pending change for that ISIN)
+   - Same company check (any pending change for that company_id)
+3. **Atomic Application**: Changes applied in database transactions
+4. **Complete Audit Trail**: Every action logged with user ID and timestamp
+5. **Role-Based Access**: Only admins can apply changes to production
+6. **Rollback Support**: Previous values stored for potential rollback
+7. **Cronjob Safe**: Proper error handling, exit codes, and logging
+
+### 📈 Monitoring
+
+**Check pending changes:**
+```sql
+SELECT COUNT(*) FROM company_changes_pending WHERE status = 'pending';
+```
+
+**View recent activity:**
+```sql
+SELECT * FROM company_changes_audit_log 
+ORDER BY performed_at DESC LIMIT 20;
+```
+
+**Get statistics via API:**
+```bash
+curl -X GET "http://localhost:5002/api/admin/company-changes/stats" \
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 ## 📚 API Documentation
@@ -580,9 +743,236 @@ Authorization: Bearer <admin-token>
 
 ---
 
+## 🏢 Company Database Management (Admin/Verifier)
+
+### 13. Get Pending Company Changes
+
+**Endpoint:** `GET /api/admin/company-changes/pending`
+
+**Authorization:** Admin or Verifier role required
+
+**Query Parameters:**
+- `page` (integer): Page number, starts at 1 (default: 1)
+- `page_size` (integer): Results per page, max 100 (default: 50)
+- `change_type` (string): Filter by change type (optional: "new", "isin", "name", "both", "multiple")
+- `status` (string): Filter by status (default: "pending", options: "pending", "verified", "rejected", "applied")
+- `exchange` (string): Filter by exchange (optional: "BSE", "NSE")
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "changes": [
+    {
+      "id": "uuid",
+      "change_type": "new",
+      "exchange": "BSE",
+      "symbol": "NEWCO",
+      "company_name_new": "New Company Limited",
+      "isin_new": "INE123A01012",
+      "status": "pending",
+      "submitted_at": "2025-11-21T10:00:00",
+      "submitted_by": "system"
+    }
+  ],
+  "count": 50,
+  "total_count": 120,
+  "total_pages": 3,
+  "current_page": 1,
+  "page_size": 50,
+  "has_next": true,
+  "has_previous": false
+}
+```
+
+### 14. Get Company Change Detail
+
+**Endpoint:** `GET /api/admin/company-changes/{id}`
+
+**Authorization:** Admin or Verifier role required
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "change": {
+    "id": "uuid",
+    "change_type": "name",
+    "exchange": "BSE",
+    "symbol": "OLDCO",
+    "company_name_old": "Old Company Limited",
+    "company_name_new": "New Company Limited",
+    "isin_old": "INE123A01012",
+    "isin_new": "INE123A01012",
+    "status": "pending",
+    "submitted_at": "2025-11-21T10:00:00",
+    "submitted_by": "system",
+    "verified_at": null,
+    "verified_by": null,
+    "applied_at": null,
+    "applied_by": null
+  },
+  "audit_log": [
+    {
+      "id": 1,
+      "action": "submitted",
+      "performed_at": "2025-11-21T10:00:00",
+      "performed_by": "system"
+    }
+  ]
+}
+```
+
+### 15. Verify Company Change
+
+**Endpoint:** `POST /api/admin/company-changes/{id}/verify`
+
+**Authorization:** Admin or Verifier role required
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "notes": "Verified from exchange website"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "id": "uuid",
+  "status": "verified",
+  "verified_at": "2025-11-21T11:00:00",
+  "verified_by": "admin-uuid",
+  "message": "Company change verified successfully"
+}
+```
+
+### 16. Reject Company Change
+
+**Endpoint:** `POST /api/admin/company-changes/{id}/reject`
+
+**Authorization:** Admin or Verifier role required
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "notes": "Invalid ISIN format"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "id": "uuid",
+  "status": "rejected",
+  "verified_at": "2025-11-21T11:00:00",
+  "verified_by": "admin-uuid",
+  "message": "Company change rejected"
+}
+```
+
+### 17. Apply Verified Changes
+
+**Endpoint:** `POST /api/admin/company-changes/apply-verified`
+
+**Authorization:** Admin role required (elevated privilege)
+
+**Headers:**
+```
+Authorization: Bearer <admin-token>
+```
+
+**Request Body (optional):**
+```json
+{
+  "change_ids": ["uuid1", "uuid2"],
+  "notes": "Batch application of verified changes"
+}
+```
+
+**Note:** If `change_ids` is omitted, all verified changes will be applied.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "applied_count": 5,
+  "failed_count": 0,
+  "results": [
+    {
+      "id": "uuid1",
+      "success": true,
+      "message": "Applied successfully"
+    }
+  ],
+  "message": "Applied 5 company changes successfully"
+}
+```
+
+### 18. Get Company Changes Statistics
+
+**Endpoint:** `GET /api/admin/company-changes/stats`
+
+**Authorization:** Admin or Verifier role required
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+```json
+{
+  "pending_count": 45,
+  "verified_count": 120,
+  "rejected_count": 8,
+  "applied_count": 112,
+  "by_change_type": {
+    "new": 30,
+    "isin": 15,
+    "name": 10,
+    "both": 5,
+    "multiple": 5
+  },
+  "by_exchange": {
+    "BSE": 40,
+    "NSE": 35
+  }
+}
+```
+
+**Full Documentation:** See `/src/services/exchange_data/company_management/README.md` for:
+- Change detection workflow
+- Database schema details
+- Complete usage examples
+- Safety features
+- Troubleshooting guide
+
+---
+
 ## 🤖 AI Content Generation
 
-### 10. Generate Content with AI
+### 19. Generate Content with AI
 
 **Endpoint:** `POST /api/admin/generate-content`
 
@@ -667,7 +1057,7 @@ Authorization: Bearer <access_token>
 
 ## 📊 Statistics
 
-### 11. Get Verification Statistics
+### 20. Get Verification Statistics
 
 **Endpoint:** `GET /api/admin/stats`
 
@@ -806,6 +1196,27 @@ curl -X POST http://localhost:5002/api/admin/announcements/{corp_id}/verify \
 # 7. Get statistics
 curl -X GET http://localhost:5002/api/admin/stats \
   -H "Authorization: Bearer $TOKEN"
+
+# 8. Admin-only: Send to review queue (requires admin role)
+curl -X POST http://localhost:5002/api/admin/announcements/{corp_id}/send-to-review \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "notes": "Please verify the financial figures"
+  }'
+
+# 9. Admin-only: Get review queue
+curl -X GET http://localhost:5002/api/admin/review-queue \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# 10. Admin-only: Approve/reject announcement
+curl -X POST http://localhost:5002/api/admin/announcements/{corp_id}/review \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "approve",
+    "notes": "Verified from company website"
+  }'
 ```
 
 ---
@@ -832,12 +1243,14 @@ Once the server is running, access interactive API docs:
 
 ## 🔒 Security Notes
 
-1. **JWT Tokens**: 8-hour expiration, stored in database sessions
+1. **JWT Tokens**: 8-hour expiration, stored in database sessions, includes user role
 2. **Password Hashing**: Bcrypt with salt rounds
-3. **CORS**: Configured for production use
-4. **Environment Variables**: Never commit `.env` to version control
-5. **API Keys**: Rotate Gemini API keys periodically
-6. **Database**: Use Supabase service role key only on server-side
+3. **Role-Based Access**: Admin endpoints protected by role validation
+4. **CORS**: Configured for production use
+5. **Environment Variables**: Never commit `.env` to version control
+6. **API Keys**: Rotate Gemini API keys periodically
+7. **Database**: Use Supabase service role key only on server-side
+8. **Audit Logging**: All verification actions tracked in audit log
 
 ---
 
@@ -929,7 +1342,7 @@ CREATE INDEX IF NOT EXISTS idx_admin_sessions_token ON admin_sessions(session_to
 CREATE INDEX IF NOT EXISTS idx_corporatefilings_verified ON corporatefilings(verified);
 ```
 
-### Role-Based Review System (Optional)
+### Role-Based Review System Migration
 
 To enable the review queue feature, run the SQL migration:
 
@@ -939,10 +1352,30 @@ To enable the review queue feature, run the SQL migration:
 ```
 
 This adds:
-- Review status tracking
-- Audit logging
-- Admin-only review queue
+- Review status tracking columns to `corporatefilings`
+- `verification_audit_log` table for audit trail
+- Admin-only review queue views
 - Approve/reject workflow
+
+### Company Management System Migration
+
+To enable company database change verification, run the SQL migration:
+
+```bash
+# Execute in Supabase SQL Editor
+# File: src/services/exchange_data/company_management/COMPANY_VERIFICATION_SCHEMA.sql
+```
+
+This adds:
+- `company_changes_pending` table for pending changes
+- `company_changes_audit_log` table for audit trail
+- `apply_company_change()` function for applying verified changes
+- Views for verification queue, ready-to-apply, and statistics
+- Complete workflow for new companies and existing company changes
+
+**Important:** Run both migrations in order:
+1. ROLE_BASED_REVIEW_SYSTEM.sql (for roles and review queue)
+2. COMPANY_VERIFICATION_SCHEMA.sql (for company change management)
 
 ---
 

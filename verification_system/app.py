@@ -1404,6 +1404,362 @@ async def get_stats(current_user: TokenData = Depends(get_current_user), supabas
 
 
 # ============================================================================
+# Company Changes Verification Endpoints
+# ============================================================================
+
+class CompanyChangeVerifyRequest(BaseModel):
+    """Request model for verifying company change"""
+    notes: Optional[str] = None
+
+
+class CompanyChangeReviewRequest(BaseModel):
+    """Request model for reviewing company change"""
+    action: str = Field(..., description="'approve' or 'reject'")
+    notes: Optional[str] = None
+
+
+@app.get(f"{settings.API_PREFIX}/company-changes/pending")
+async def get_pending_company_changes(
+    page: int = 1,
+    page_size: int = 50,
+    change_type: Optional[str] = None,
+    is_new_company: Optional[bool] = None,
+    current_user: TokenData = Depends(require_admin_or_verifier),
+    supabase=Depends(get_db)
+):
+    """
+    Get pending company changes awaiting verification
+    Accessible by both admins and verifiers
+    """
+    try:
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 50
+        elif page_size > 100:
+            page_size = 100
+            
+        offset = (page - 1) * page_size
+        
+        logger.info(f"User {current_user.email} fetching pending company changes: page={page}")
+        
+        # Build query
+        query = supabase.table("company_changes_pending")\
+            .select("*", count="exact")\
+            .eq("verified", False)\
+            .eq("applied", False)
+        
+        # Apply filters
+        if change_type:
+            query = query.eq("change_type", change_type)
+        
+        if is_new_company is not None:
+            if is_new_company:
+                query = query.is_("company_id", "null")
+            else:
+                query = query.not_.is_("company_id", "null")
+        
+        # Apply ordering and pagination
+        query = query.order("detected_at", desc=True).range(offset, offset + page_size - 1)
+        
+        result = query.execute()
+        
+        total_count = result.count if hasattr(result, 'count') else 0
+        total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+        
+        logger.info(f"Found {len(result.data)} pending company changes")
+        
+        return {
+            "changes": result.data,
+            "count": len(result.data),
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "current_page": page,
+            "page_size": page_size,
+            "has_next": page < total_pages,
+            "has_previous": page > 1
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get pending company changes error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch pending changes: {str(e)}"
+        )
+
+
+@app.get(f"{settings.API_PREFIX}/company-changes/stats")
+async def get_company_changes_stats(
+    current_user: TokenData = Depends(require_admin_or_verifier),
+    supabase=Depends(get_db)
+):
+    """Get statistics about company changes"""
+    try:
+        result = supabase.table("company_changes_stats").select("*").execute()
+        
+        if result.data and len(result.data) > 0:
+            return result.data[0]
+        else:
+            return {
+                "pending_verification": 0,
+                "ready_to_apply": 0,
+                "applied": 0,
+                "rejected": 0,
+                "new_companies": 0,
+                "isin_changes": 0,
+                "name_changes": 0,
+                "code_changes": 0
+            }
+        
+    except Exception as e:
+        logger.error(f"Get company changes stats error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get company changes statistics"
+        )
+
+
+@app.get(f"{settings.API_PREFIX}/company-changes/{{change_id}}")
+async def get_company_change_detail(
+    change_id: str,
+    current_user: TokenData = Depends(require_admin_or_verifier),
+    supabase=Depends(get_db)
+):
+    """Get detailed information about a specific company change"""
+    try:
+        result = supabase.table("company_changes_pending")\
+            .select("*")\
+            .eq("id", change_id)\
+            .execute()
+        
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Company change with ID {change_id} not found"
+            )
+        
+        # Get audit log for this change
+        audit_result = supabase.table("company_changes_audit_log")\
+            .select("*")\
+            .eq("pending_change_id", change_id)\
+            .order("created_at", desc=False)\
+            .execute()
+        
+        change_data = result.data[0]
+        change_data['audit_log'] = audit_result.data
+        
+        return change_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get company change detail error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch change details: {str(e)}"
+        )
+
+
+@app.post(f"{settings.API_PREFIX}/company-changes/{{change_id}}/verify")
+async def verify_company_change(
+    change_id: str,
+    request: CompanyChangeVerifyRequest = None,
+    current_user: TokenData = Depends(require_admin_or_verifier),
+    supabase=Depends(get_db)
+):
+    """Mark a company change as verified"""
+    try:
+        logger.info(f"User {current_user.email} verifying company change {change_id}")
+        
+        # Check if change exists and is not already verified
+        check_result = supabase.table("company_changes_pending")\
+            .select("id, verified, applied, isin, change_type")\
+            .eq("id", change_id)\
+            .execute()
+        
+        if not check_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Company change with ID {change_id} not found"
+            )
+        
+        change = check_result.data[0]
+        
+        if change.get("verified"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This change has already been verified"
+            )
+        
+        if change.get("applied"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This change has already been applied"
+            )
+        
+        # Update verification status
+        notes = request.notes if request else None
+        result = supabase.table("company_changes_pending")\
+            .update({
+                "verified": True,
+                "verified_at": datetime.utcnow().isoformat(),
+                "verified_by": current_user.user_id,
+                "review_status": "approved",
+                "review_notes": notes,
+                "updated_at": datetime.utcnow().isoformat()
+            })\
+            .eq("id", change_id)\
+            .execute()
+        
+        logger.info(f"✅ Company change {change_id} verified by {current_user.email}")
+        
+        return {
+            "success": True,
+            "change_id": change_id,
+            "isin": change.get("isin"),
+            "change_type": change.get("change_type"),
+            "verified_at": result.data[0]["verified_at"],
+            "verified_by": current_user.user_id,
+            "message": "Company change verified successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Verify company change error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to verify change: {str(e)}"
+        )
+
+
+@app.post(f"{settings.API_PREFIX}/company-changes/{{change_id}}/reject")
+async def reject_company_change(
+    change_id: str,
+    request: CompanyChangeReviewRequest,
+    current_user: TokenData = Depends(require_admin_or_verifier),
+    supabase=Depends(get_db)
+):
+    """Reject a company change"""
+    try:
+        logger.info(f"User {current_user.email} rejecting company change {change_id}")
+        
+        result = supabase.table("company_changes_pending")\
+            .update({
+                "review_status": "rejected",
+                "reviewed_at": datetime.utcnow().isoformat(),
+                "reviewed_by": current_user.user_id,
+                "review_notes": request.notes,
+                "updated_at": datetime.utcnow().isoformat()
+            })\
+            .eq("id", change_id)\
+            .execute()
+        
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Company change with ID {change_id} not found"
+            )
+        
+        logger.info(f"✅ Company change {change_id} rejected by {current_user.email}")
+        
+        return {
+            "success": True,
+            "change_id": change_id,
+            "review_status": "rejected",
+            "reviewed_at": result.data[0]["reviewed_at"],
+            "reviewed_by": current_user.user_id,
+            "message": "Company change rejected successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Reject company change error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reject change: {str(e)}"
+        )
+
+
+@app.post(f"{settings.API_PREFIX}/company-changes/apply-verified")
+async def apply_verified_company_changes(
+    current_user: TokenData = Depends(require_admin),
+    supabase=Depends(get_db)
+):
+    """
+    Apply all verified company changes to stocklistdata table (Admin only)
+    This bulk operation applies all approved changes
+    """
+    try:
+        logger.info(f"Admin {current_user.email} applying verified company changes")
+        
+        # Get all verified and approved changes that haven't been applied
+        result = supabase.table("company_changes_pending")\
+            .select("id, isin, change_type")\
+            .eq("verified", True)\
+            .eq("applied", False)\
+            .eq("review_status", "approved")\
+            .execute()
+        
+        if not result.data or len(result.data) == 0:
+            return {
+                "success": True,
+                "applied_count": 0,
+                "message": "No verified changes to apply"
+            }
+        
+        changes_to_apply = result.data
+        applied_count = 0
+        errors = []
+        
+        for change in changes_to_apply:
+            try:
+                # Call the database function to apply the change
+                apply_result = supabase.rpc(
+                    'apply_company_change',
+                    {
+                        'change_id': change['id'],
+                        'applied_by_user': current_user.user_id
+                    }
+                ).execute()
+                
+                if apply_result.data and apply_result.data.get('success'):
+                    applied_count += 1
+                    logger.info(f"✅ Applied change {change['id']} for ISIN {change['isin']}")
+                else:
+                    error_msg = apply_result.data.get('error', 'Unknown error')
+                    errors.append(f"ISIN {change['isin']}: {error_msg}")
+                    logger.error(f"❌ Failed to apply change {change['id']}: {error_msg}")
+                    
+            except Exception as e:
+                errors.append(f"ISIN {change['isin']}: {str(e)}")
+                logger.error(f"❌ Error applying change {change['id']}: {str(e)}")
+        
+        logger.info(f"✅ Applied {applied_count}/{len(changes_to_apply)} company changes")
+        
+        return {
+            "success": True,
+            "total_changes": len(changes_to_apply),
+            "applied_count": applied_count,
+            "error_count": len(errors),
+            "errors": errors if errors else None,
+            "message": f"Successfully applied {applied_count} company changes to stocklistdata"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Apply verified changes error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to apply changes: {str(e)}"
+        )
+
+
+# ============================================================================
 # AI Content Generation
 # ============================================================================
 
