@@ -1254,6 +1254,121 @@ def bulk_add_isins(current_user):
     except Exception as e:
         logger.error(f"Bulk add ISINs error: {str(e)}")
         return jsonify({'message': f'Failed to add ISINs: {str(e)}'}), 500
+
+
+@app.route('/api/deals', methods=['GET', 'OPTIONS'])
+@auth_required
+def get_deals():
+    """
+    Endpoint to get bulk and block deals with filtering options
+    
+    Query Parameters:
+        - exchange: Filter by exchange (NSE/BSE)
+        - deal: Filter by deal type (BULK/BLOCK)
+        - deal_type: Filter by buy/sell (BUY/SELL)
+        - start_date: Filter from this date (YYYY-MM-DD)
+        - end_date: Filter until this date (YYYY-MM-DD)
+        - symbol: Filter by stock symbol
+        - page: Page number for pagination (default: 1)
+        - page_size: Items per page (default: 50, max: 500)
+    """
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    
+    try:
+        # Get query parameters
+        exchange = request.args.get('exchange', '').upper()
+        deal = request.args.get('deal', '').upper()
+        deal_type = request.args.get('deal_type', '').upper()
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        symbol = request.args.get('symbol', '').upper()
+        
+        # Pagination parameters
+        page = int(request.args.get('page', '1'))
+        page_size = min(int(request.args.get('page_size', '50')), 500)  # Max 500 items per page
+        
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 50
+        
+        # Calculate offset
+        offset = (page - 1) * page_size
+        
+        # Build query
+        query = supabase.table('deals').select('*', count='exact')
+        
+        # Apply filters
+        if exchange and exchange in ['NSE', 'BSE']:
+            query = query.eq('exchange', exchange)
+        
+        if deal and deal in ['BULK', 'BLOCK']:
+            query = query.eq('deal', deal)
+        
+        if deal_type and deal_type in ['BUY', 'SELL']:
+            query = query.eq('deal_type', deal_type)
+        
+        if start_date:
+            query = query.gte('date', start_date)
+        
+        if end_date:
+            query = query.lte('date', end_date)
+        
+        if symbol:
+            query = query.ilike('symbol', f'%{symbol}%')
+        
+        # Order by date descending (most recent first)
+        query = query.order('date', desc=True).order('created_at', desc=True)
+        
+        # Apply pagination
+        query = query.range(offset, offset + page_size - 1)
+        
+        # Execute query
+        result = query.execute()
+        
+        # Get total count
+        total_count = result.count if hasattr(result, 'count') and result.count is not None else 0
+        deals = result.data or []
+        
+        # Calculate pagination metadata
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        
+        logger.info(f"Fetched {len(deals)} deals (page {page}/{total_pages}, total: {total_count})")
+        
+        return jsonify({
+            'success': True,
+            'deals': deals,
+            'pagination': {
+                'page': page,
+                'page_size': page_size,
+                'total_count': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            },
+            'filters': {
+                'exchange': exchange or None,
+                'deal': deal or None,
+                'deal_type': deal_type or None,
+                'start_date': start_date or None,
+                'end_date': end_date or None,
+                'symbol': symbol or None
+            }
+        }), 200
+        
+    except ValueError as ve:
+        logger.error(f"Invalid parameter: {str(ve)}")
+        return jsonify({
+            'success': False,
+            'message': f'Invalid parameter: {str(ve)}'
+        }), 400
+    except Exception as e:
+        logger.error(f"Get deals error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Failed to fetch deals: {str(e)}'
+        }), 500
     
 
 @app.route('/api/corporate_filings', methods=['GET', 'OPTIONS'])

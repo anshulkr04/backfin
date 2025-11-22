@@ -32,16 +32,19 @@ This system manages the verification workflow for changes to the `stocklistdata`
 
 ```
 company_management/
-├── detect_changes.py      # Main script - detects and submits changes (cronjob-ready)
+├── detect_changes.py      # Self-contained main script (downloads, processes, submits)
+├── cronjob_examples.txt   # Sample crontab configurations
 ├── README.md              # This file
 └── __init__.py            # Package initialization
-
-../common/
-├── compare_stockdata.py   # Core comparison logic
-├── testtablenew.csv       # Current stocklistdata
-├── stocklistdata.csv      # New exchange data
-└── stockdata_changes.csv  # Detected changes output
 ```
+
+**Key Features:**
+- ✅ **Self-Contained**: No dependencies on external folders
+- ✅ **Auto-Downloads**: Fetches NSE/BSE data from Dhan API automatically
+- ✅ **Auto-Cleanup**: Removes temporary files after completion
+- ✅ **Database Integration**: Fetches current data from Supabase
+- ✅ **Smart Detection**: Compares and detects all types of changes
+- ✅ **Duplicate Prevention**: 3-layer duplicate checking system
 
 **Note:** The database schema is managed by the verification system. See `/verification_system/` for API setup.
 
@@ -112,27 +115,33 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
 ### Step 1: Detect and Submit Changes
 
-Run the detection script (the only script needed):
+Run the detection script (completely self-contained):
 
 ```bash
 cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management
 
-# Standard run
-python3 detect_changes.py --source-dir ../common
+# Standard run (does everything automatically)
+python3 detect_changes.py
 
 # Check statistics only (no detection)
 python3 detect_changes.py --stats-only
 
+# Keep downloaded files for inspection (debugging)
+python3 detect_changes.py --keep-files
+
 # Direct execution (file is executable)
-./detect_changes.py --source-dir ../common
+./detect_changes.py
 ```
 
-This will:
-1. Compare current stocklistdata with new exchange data
-2. Detect all changes (new companies, ISIN changes, etc.)
-3. Check for duplicates (3-layer detection: exact match, same ISIN, same company)
-4. Submit only new changes to `company_changes_pending` table
-5. Provide detailed summary with skip reasons
+**What it does automatically:**
+1. 📥 Downloads latest NSE and BSE data from Dhan API
+2. 📊 Fetches current stocklistdata from Supabase database
+3. 🔄 Generates merged stocklist (combines NSE + BSE with priority logic)
+4. 🔍 Compares and detects all changes (new companies, ISIN changes, name changes, etc.)
+5. ✅ Checks for duplicates (3-layer detection: exact match, same ISIN, same company)
+6. 📤 Submits only new changes to `company_changes_pending` table
+7. 🧹 Cleans up all temporary files (unless --keep-files used)
+8. 📝 Provides detailed summary with statistics
 
 **Output:**
 ```
@@ -362,22 +371,30 @@ WHERE isin = 'INE123A01012';
 
 ### Recommended Configuration
 
+**See `cronjob_examples.txt` for various crontab configurations.**
+
+**Quick Setup:**
 ```bash
-# Edit crontab
+# 1. Edit crontab
 crontab -e
 
-# Add this line for daily detection at 6 AM
+# 2. Add this line for daily detection at 6 AM
 0 6 * * * cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management && /usr/bin/python3 detect_changes.py --source-dir ../common >> /var/log/company_changes.log 2>&1
 
-# Or with full virtual environment path
+# Or with virtual environment:
 0 6 * * * cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management && /Users/anshulkumar/backfin/.venv/bin/python detect_changes.py --source-dir ../common >> /var/log/company_changes.log 2>&1
+
+# 3. Save and exit
+
+# 4. Verify it's scheduled
+crontab -l
 ```
 
 **Important Notes:**
 - Use absolute paths in cronjobs
 - Specify full Python path (system python3 or virtual environment)
 - Redirect output to log file for monitoring
-- Script handles errors gracefully with proper exit codes
+- Script handles errors gracefully with proper exit codes (0=success, 1=error)
 
 ### Monitoring
 

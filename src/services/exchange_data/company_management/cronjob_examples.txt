@@ -1,0 +1,64 @@
+# Company Changes Detection Cronjob Examples
+# Add these lines to your crontab using: crontab -e
+
+# ============================================================================
+# DAILY CHANGE DETECTION (Recommended)
+# ============================================================================
+# Runs every day at 6:00 AM
+# Downloads data from Dhan API, detects changes, submits to verification queue
+# No arguments needed - script is self-contained!
+0 6 * * * cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management && /usr/bin/python3 detect_changes.py >> /var/log/company_changes.log 2>&1
+
+# Alternative: Using virtual environment Python
+0 6 * * * cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management && /Users/anshulkumar/backfin/.venv/bin/python detect_changes.py >> /var/log/company_changes.log 2>&1
+
+# ============================================================================
+# HOURLY CHECK (More frequent monitoring)
+# ============================================================================
+# Runs every hour at minute 0
+0 * * * * cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management && /usr/bin/python3 detect_changes.py >> /var/log/company_changes.log 2>&1
+
+# ============================================================================
+# TWICE DAILY (Morning and Evening)
+# ============================================================================
+# Runs at 6 AM and 6 PM
+0 6,18 * * * cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management && /usr/bin/python3 detect_changes.py >> /var/log/company_changes.log 2>&1
+
+# ============================================================================
+# WEEKLY SUMMARY (Statistics Check)
+# ============================================================================
+# Runs every Monday at 9 AM - just shows statistics
+0 9 * * 1 cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management && /usr/bin/python3 detect_changes.py --stats-only >> /var/log/company_stats.log 2>&1
+
+# ============================================================================
+# SETUP INSTRUCTIONS
+# ============================================================================
+# 1. Create log directory (if it doesn't exist):
+#    sudo mkdir -p /var/log && sudo touch /var/log/company_changes.log
+#    sudo chown $(whoami) /var/log/company_changes.log
+#
+# 2. Make script executable:
+#    chmod +x /Users/anshulkumar/backfin/src/services/exchange_data/company_management/detect_changes.py
+#
+# 3. Test the command manually first:
+#    cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management
+#    python3 detect_changes.py
+#
+# 4. Add to crontab:
+#    crontab -e
+#    (paste the desired line from above)
+#
+# 5. Verify crontab is set:
+#    crontab -l
+#
+# 6. Monitor the logs:
+#    tail -f /var/log/company_changes.log
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# - Use absolute paths in cronjobs
+# - The script has built-in duplicate prevention (safe to run multiple times)
+# - Exit codes: 0=success, 1=error, 130=interrupted
+# - Logs include timestamps automatically
+# - Script handles errors gracefully

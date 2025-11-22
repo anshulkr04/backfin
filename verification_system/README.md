@@ -153,13 +153,17 @@ cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management
 # Check current queue statistics
 python3 detect_changes.py --stats-only
 
-# Detect and submit changes (safe - has duplicate prevention)
-python3 detect_changes.py --source-dir ../common
+# Detect and submit changes (completely self-contained!)
+python3 detect_changes.py
 
 # The script automatically:
-# - Detects changes from exchange data
+# - Downloads NSE/BSE data from Dhan API
+# - Fetches current stocklistdata from Supabase
+# - Generates merged stocklist
+# - Detects all changes
 # - Checks for duplicates (3-layer detection)
 # - Submits only new changes to verification queue
+# - Cleans up temporary files
 # - Provides detailed summary
 ```
 
@@ -200,12 +204,12 @@ See **🏢 Company Database Management** section below for detailed API document
 
 ### ⚙️ Cronjob Setup
 
-The `detect_changes.py` script is designed to be cronjob-ready with proper error handling and logging.
+The `detect_changes.py` script is completely self-contained, downloads data automatically, and is designed to be cronjob-ready with proper error handling and logging.
 
 **Daily change detection (recommended):**
 ```bash
-# Add to crontab (runs daily at 6 AM)
-0 6 * * * cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management && /usr/bin/python3 detect_changes.py --source-dir ../common >> /var/log/company_changes.log 2>&1
+# Add to crontab (runs daily at 6 AM) - no arguments needed!
+0 6 * * * cd /Users/anshulkumar/backfin/src/services/exchange_data/company_management && /usr/bin/python3 detect_changes.py >> /var/log/company_changes.log 2>&1
 ```
 
 **Monitor the cronjob:**

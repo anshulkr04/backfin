@@ -2067,6 +2067,531 @@ async def generate_content(
 
 
 # ============================================================================
+# Deals Verification Endpoints
+# ============================================================================
+
+class DealUpdateRequest(BaseModel):
+    """Request model for updating deal fields"""
+    symbol: Optional[str] = None
+    securityid: Optional[str] = None
+    date: Optional[str] = None
+    client_name: Optional[str] = None
+    deal_type: Optional[str] = None
+    quantity: Optional[int] = None
+    price: Optional[str] = None
+    exchange: Optional[str] = None
+    deal: Optional[str] = None
+
+class DealVerifyRequest(BaseModel):
+    """Request model for verifying a deal"""
+    notes: Optional[str] = None
+
+class DealRejectRequest(BaseModel):
+    """Request model for rejecting a deal"""
+    reason: str = Field(min_length=5, description="Reason for rejection")
+
+
+@app.get(f"{settings.API_PREFIX}/deals/pending")
+async def get_pending_deals(
+    skip: int = 0,
+    limit: int = 50,
+    exchange: Optional[str] = None,
+    deal: Optional[str] = None,
+    supabase=Depends(get_db),
+    current_user=Depends(require_admin_or_verifier)
+):
+    """
+    Get list of pending deals for verification
+    
+    Args:
+        skip: Number of records to skip (pagination)
+        limit: Maximum number of records to return
+        exchange: Filter by exchange (NSE/BSE)
+        deal: Filter by deal type (BULK/BLOCK)
+    """
+    try:
+        query = supabase.table("deals_pending_verification")\
+            .select("*")\
+            .eq("verification_status", "pending")\
+            .order("created_at", desc=False)\
+            .range(skip, skip + limit - 1)
+        
+        # Apply filters if provided
+        if exchange:
+            query = query.eq("exchange", exchange.upper())
+        if deal:
+            query = query.eq("deal", deal.upper())
+        
+        result = query.execute()
+        
+        return {
+            "success": True,
+            "deals": result.data or [],
+            "count": len(result.data) if result.data else 0
+        }
+    except Exception as e:
+        logger.error(f"Error fetching pending deals: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch pending deals: {str(e)}"
+        )
+
+
+@app.post(f"{settings.API_PREFIX}/deals/{deal_id}/claim")
+async def claim_deal(
+    deal_id: str,
+    supabase=Depends(get_db),
+    current_user=Depends(require_admin_or_verifier)
+):
+    """
+    Claim a deal for verification
+    
+    This marks the deal as claimed by the current user
+    """
+    try:
+        # Check if deal exists and is pending
+        existing = supabase.table("deals_pending_verification")\
+            .select("*")\
+            .eq("id", deal_id)\
+            .execute()
+        
+        if not existing.data or len(existing.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deal not found"
+            )
+        
+        deal = existing.data[0]
+        
+        if deal["verification_status"] == "claimed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Deal already claimed by user {deal.get('claimed_by')}"
+            )
+        
+        if deal["verification_status"] != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Deal is already {deal['verification_status']}"
+            )
+        
+        # Claim the deal
+        update_data = {
+            "verification_status": "claimed",
+            "claimed_by": current_user.user_id,
+            "claimed_at": datetime.utcnow().isoformat()
+        }
+        
+        result = supabase.table("deals_pending_verification")\
+            .update(update_data)\
+            .eq("id", deal_id)\
+            .execute()
+        
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to claim deal"
+            )
+        
+        return {
+            "success": True,
+            "message": "Deal claimed successfully",
+            "deal": result.data[0]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error claiming deal: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to claim deal: {str(e)}"
+        )
+
+
+@app.get(f"{settings.API_PREFIX}/deals/{deal_id}")
+async def get_deal_details(
+    deal_id: str,
+    supabase=Depends(get_db),
+    current_user=Depends(require_admin_or_verifier)
+):
+    """Get detailed information about a specific deal"""
+    try:
+        result = supabase.table("deals_pending_verification")\
+            .select("*")\
+            .eq("id", deal_id)\
+            .execute()
+        
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deal not found"
+            )
+        
+        return {
+            "success": True,
+            "deal": result.data[0]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching deal details: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch deal details: {str(e)}"
+        )
+
+
+@app.put(f"{settings.API_PREFIX}/deals/{deal_id}")
+async def update_deal(
+    deal_id: str,
+    update_req: DealUpdateRequest,
+    supabase=Depends(get_db),
+    current_user=Depends(require_admin_or_verifier)
+):
+    """
+    Update deal fields before verification
+    
+    Only deals claimed by the current user can be edited
+    """
+    try:
+        # Check if deal exists and is claimed by current user
+        existing = supabase.table("deals_pending_verification")\
+            .select("*")\
+            .eq("id", deal_id)\
+            .execute()
+        
+        if not existing.data or len(existing.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deal not found"
+            )
+        
+        deal = existing.data[0]
+        
+        # Check if deal is claimed by current user or user is admin
+        if deal["claimed_by"] != current_user.user_id and current_user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only edit deals claimed by you"
+            )
+        
+        if deal["verification_status"] not in ["pending", "claimed"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot edit deal with status: {deal['verification_status']}"
+            )
+        
+        # Build update data (only include provided fields)
+        update_data = {}
+        for field, value in update_req.dict(exclude_unset=True).items():
+            if value is not None:
+                update_data[field] = value
+        
+        if not update_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No fields to update"
+            )
+        
+        # Update the deal
+        result = supabase.table("deals_pending_verification")\
+            .update(update_data)\
+            .eq("id", deal_id)\
+            .execute()
+        
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update deal"
+            )
+        
+        return {
+            "success": True,
+            "message": "Deal updated successfully",
+            "deal": result.data[0]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating deal: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update deal: {str(e)}"
+        )
+
+
+@app.post(f"{settings.API_PREFIX}/deals/{deal_id}/verify")
+async def verify_deal(
+    deal_id: str,
+    verify_req: DealVerifyRequest,
+    supabase=Depends(get_db),
+    current_user=Depends(require_admin_or_verifier)
+):
+    """
+    Verify a deal and insert it into the deals table
+    
+    This marks the deal as verified and inserts it into the final deals table
+    """
+    try:
+        # Get the deal
+        result = supabase.table("deals_pending_verification")\
+            .select("*")\
+            .eq("id", deal_id)\
+            .execute()
+        
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deal not found"
+            )
+        
+        deal = result.data[0]
+        
+        # Check if deal is claimed by current user or user is admin
+        if deal["claimed_by"] != current_user.user_id and current_user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only verify deals claimed by you"
+            )
+        
+        if deal["verification_status"] not in ["pending", "claimed"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Deal is already {deal['verification_status']}"
+            )
+        
+        # Prepare data for deals table
+        deal_data = {
+            "symbol": deal["symbol"],
+            "securityid": deal["securityid"],
+            "date": deal["date"],
+            "client_name": deal["client_name"],
+            "deal_type": deal["deal_type"],
+            "quantity": deal["quantity"],
+            "price": deal["price"],
+            "exchange": deal["exchange"],
+            "deal": deal["deal"]
+        }
+        
+        # Insert into deals table (trigger will auto-populate securityid if needed)
+        insert_result = supabase.table("deals").insert(deal_data).execute()
+        
+        if not insert_result.data or len(insert_result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to insert deal into deals table"
+            )
+        
+        # Update verification status
+        update_data = {
+            "verification_status": "verified",
+            "verified_by": current_user.user_id,
+            "verified_at": datetime.utcnow().isoformat()
+        }
+        
+        supabase.table("deals_pending_verification")\
+            .update(update_data)\
+            .eq("id", deal_id)\
+            .execute()
+        
+        return {
+            "success": True,
+            "message": "Deal verified and inserted successfully",
+            "deal": insert_result.data[0]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error verifying deal: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to verify deal: {str(e)}"
+        )
+
+
+@app.post(f"{settings.API_PREFIX}/deals/{deal_id}/reject")
+async def reject_deal(
+    deal_id: str,
+    reject_req: DealRejectRequest,
+    supabase=Depends(get_db),
+    current_user=Depends(require_admin_or_verifier)
+):
+    """
+    Reject a deal with a reason
+    
+    This marks the deal as rejected and removes it from the verification queue
+    """
+    try:
+        # Get the deal
+        result = supabase.table("deals_pending_verification")\
+            .select("*")\
+            .eq("id", deal_id)\
+            .execute()
+        
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deal not found"
+            )
+        
+        deal = result.data[0]
+        
+        # Check if deal is claimed by current user or user is admin
+        if deal["claimed_by"] != current_user.user_id and current_user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only reject deals claimed by you"
+            )
+        
+        if deal["verification_status"] not in ["pending", "claimed"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Deal is already {deal['verification_status']}"
+            )
+        
+        # Update verification status to rejected
+        update_data = {
+            "verification_status": "rejected",
+            "verified_by": current_user.user_id,
+            "verified_at": datetime.utcnow().isoformat(),
+            "rejection_reason": reject_req.reason
+        }
+        
+        result = supabase.table("deals_pending_verification")\
+            .update(update_data)\
+            .eq("id", deal_id)\
+            .execute()
+        
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to reject deal"
+            )
+        
+        return {
+            "success": True,
+            "message": "Deal rejected successfully",
+            "deal": result.data[0]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error rejecting deal: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reject deal: {str(e)}"
+        )
+
+
+@app.post(f"{settings.API_PREFIX}/deals/{deal_id}/release")
+async def release_deal(
+    deal_id: str,
+    supabase=Depends(get_db),
+    current_user=Depends(require_admin_or_verifier)
+):
+    """
+    Release a claimed deal back to pending status
+    
+    Useful if a verifier can't complete the verification
+    """
+    try:
+        # Get the deal
+        result = supabase.table("deals_pending_verification")\
+            .select("*")\
+            .eq("id", deal_id)\
+            .execute()
+        
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deal not found"
+            )
+        
+        deal = result.data[0]
+        
+        # Check if deal is claimed by current user or user is admin
+        if deal["claimed_by"] != current_user.user_id and current_user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Can only release deals claimed by you"
+            )
+        
+        if deal["verification_status"] != "claimed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only release claimed deals"
+            )
+        
+        # Release the deal
+        update_data = {
+            "verification_status": "pending",
+            "claimed_by": None,
+            "claimed_at": None
+        }
+        
+        result = supabase.table("deals_pending_verification")\
+            .update(update_data)\
+            .eq("id", deal_id)\
+            .execute()
+        
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to release deal"
+            )
+        
+        return {
+            "success": True,
+            "message": "Deal released successfully",
+            "deal": result.data[0]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error releasing deal: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to release deal: {str(e)}"
+        )
+
+
+@app.get(f"{settings.API_PREFIX}/deals/stats")
+async def get_deals_stats(
+    supabase=Depends(get_db),
+    current_user=Depends(require_admin_or_verifier)
+):
+    """Get statistics about deals verification queue"""
+    try:
+        result = supabase.table("deals_verification_stats").select("*").execute()
+        
+        if not result.data or len(result.data) == 0:
+            return {
+                "success": True,
+                "stats": {
+                    "pending_verification": 0,
+                    "currently_claimed": 0,
+                    "verified": 0,
+                    "rejected": 0,
+                    "bulk_deals": 0,
+                    "block_deals": 0,
+                    "nse_deals": 0,
+                    "bse_deals": 0
+                }
+            }
+        
+        return {
+            "success": True,
+            "stats": result.data[0]
+        }
+    except Exception as e:
+        logger.error(f"Error fetching deals stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch deals stats: {str(e)}"
+        )
+
+
+# ============================================================================
 # Application Startup
 # ============================================================================
 

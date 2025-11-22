@@ -368,6 +368,102 @@ curl -X POST http://localhost:5001/api/watchlist/660e8400-e29b-41d4-a716-4466554
 ```
 
 ---
+### Bulk and Block Deals
+
+Retrieve bulk and block deals from NSE and BSE with comprehensive filtering options.
+
+**Authentication Required:** This endpoint requires a valid Bearer token.
+
+```bash
+# Get all deals (default: 50 per page)
+curl -X GET http://localhost:5001/api/deals \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Filter by exchange
+curl -X GET "http://localhost:5001/api/deals?exchange=NSE" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Filter by deal type (BULK or BLOCK)
+curl -X GET "http://localhost:5001/api/deals?deal=BULK" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Filter by buy/sell
+curl -X GET "http://localhost:5001/api/deals?deal_type=BUY" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Filter by date range
+curl -X GET "http://localhost:5001/api/deals?start_date=2025-11-01&end_date=2025-11-22" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Filter by symbol (partial match)
+curl -X GET "http://localhost:5001/api/deals?symbol=RELIANCE" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Combined filters with pagination
+curl -X GET "http://localhost:5001/api/deals?exchange=BSE&deal=BULK&deal_type=BUY&start_date=2025-11-20&page=2&page_size=100" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+**Query Parameters:**
+- `exchange` (optional): Filter by exchange - NSE or BSE
+- `deal` (optional): Filter by deal type - BULK or BLOCK
+- `deal_type` (optional): Filter by transaction type - BUY or SELL
+- `start_date` (optional): Start date in YYYY-MM-DD format
+- `end_date` (optional): End date in YYYY-MM-DD format
+- `symbol` (optional): Filter by stock symbol (partial match, case-insensitive)
+- `page` (optional): Page number (default: 1)
+- `page_size` (optional): Items per page (default: 50, max: 500)
+
+**Response:**
+```json
+{
+  "success": true,
+  "deals": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "symbol": "RELIANCE",
+      "securityid": "500325",
+      "date": "2025-11-21",
+      "client_name": "ABC SECURITIES LIMITED",
+      "deal_type": "BUY",
+      "quantity": 150000,
+      "price": "2850.50",
+      "exchange": "BSE",
+      "deal": "BULK",
+      "created_at": "2025-11-22T10:30:00.000Z"
+    },
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440002",
+      "symbol": "TCS",
+      "securityid": "532540",
+      "date": "2025-11-21",
+      "client_name": "XYZ TRADING COMPANY",
+      "deal_type": "SELL",
+      "quantity": 50000,
+      "price": "3420.75",
+      "exchange": "BSE",
+      "deal": "BLOCK",
+      "created_at": "2025-11-22T10:35:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "page_size": 50,
+    "total_count": 217,
+    "total_pages": 5,
+    "has_next": true,
+    "has_prev": false
+  },
+  "filters": {
+    "exchange": null,
+    "deal": null,
+    "deal_type": null,
+    "start_date": null,
+    "end_date": null,
+    "symbol": null
+  }
+}
+```
 
 ## Corporate Filings
 
@@ -376,6 +472,9 @@ curl -X POST http://localhost:5001/api/watchlist/660e8400-e29b-41d4-a716-4466554
 ```bash
 # Basic request
 curl -X GET http://localhost:5001/api/corporate_filings
+```
+
+---
 
 # With filters
 curl -X GET "http://localhost:5001/api/corporate_filings?start_date=2025-01-01&end_date=2025-10-16&category=Financial%20Results&symbol=RELIANCE&isin=INE002A01018"
