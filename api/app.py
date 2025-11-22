@@ -1258,7 +1258,7 @@ def bulk_add_isins(current_user):
 
 @app.route('/api/deals', methods=['GET', 'OPTIONS'])
 @auth_required
-def get_deals():
+def get_deals(current_user):
     """
     Endpoint to get bulk and block deals with filtering options
     

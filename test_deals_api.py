@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta
 
 # Configuration
-BASE_URL = "http://localhost:5001/api"
+BASE_URL = "https://fin.anshulkr.com/api"
 TEST_EMAIL = f"test_deals_{int(time.time())}@example.com"
 TEST_PASSWORD = "SecureTestPass123!"
 TEST_PHONE = "+1234567890"
@@ -77,7 +77,7 @@ def test_1_register():
     
     assert response.status_code == 201, f"Expected 201, got {response.status_code}"
     data = response.json()
-    assert "access_token" in data, "No access token in response"
+    assert "token" in data, "No token in response"
     assert data.get("message") == "User registered successfully!", "Unexpected message"
     print_info(f"Registered user: {TEST_EMAIL}")
 
@@ -92,8 +92,8 @@ def test_2_login():
     
     assert response.status_code == 200, f"Expected 200, got {response.status_code}"
     data = response.json()
-    assert "access_token" in data, "No access token in response"
-    access_token = data["access_token"]
+    assert "token" in data, "No token in response"
+    access_token = data["token"]
     user_data = data.get("user", {})
     print_info(f"Logged in successfully. Token: {access_token[:20]}...")
 
