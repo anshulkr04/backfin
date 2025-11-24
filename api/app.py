@@ -1369,6 +1369,191 @@ def get_deals(current_user):
             'success': False,
             'message': f'Failed to fetch deals: {str(e)}'
         }), 500
+
+
+@app.route('/api/insider_trading', methods=['GET', 'OPTIONS'])
+@auth_required
+def get_insider_trading(current_user):
+    """
+    Endpoint to get insider trading data with filtering options
+    
+    Query Parameters:
+        - exchange: Filter by exchange (NSE/BSE)
+        - start_date: Filter from this date (YYYY-MM-DD)
+        - end_date: Filter until this date (YYYY-MM-DD)
+        - symbol: Filter by stock symbol
+        - sec_code: Filter by security code
+        - person_name: Filter by person name
+        - page: Page number for pagination (default: 1)
+        - page_size: Items per page (default: 50, max: 500)
+    """
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    
+    try:
+        # Predefined filters for BSE
+        BSE_MODE_ACQ = [
+            'Creation Of Pledge', 'Market Purchase', 'Market Sale', 'Preferential Offer',
+            'Revocation Of Pledge', 'Pledge Released', 'Invocation Of Pledged', 'Pledge Creation',
+            'Block Deal', 'Release Of Pledge/encumbrance On Shares Held Under Borrowings',
+            'Transfer', 'Pledge', 'Release Of Pledge', 'Preferential Issue', 'Release of Shares',
+            'Conv. of Warrants', 'Pledge / Revoke', 'Revocation', 'Pref. Allotment',
+            'Preferential Allotment Of Convertible Warrants', 'Invocation of pledge',
+            'Invocation Of Pledge & Market', 'Shares Purchased',
+            'Conversion Of Compulsory Convertible Preference Shares', 'Creation Of Shares',
+            'Encumbrance Shares', 'Physical Share Transfer',
+            'Release of Shares to clients as a Security to secure loan facility against shares',
+            'Compulsory Redemption Of Shares', 'Conv. of Pref. Shares', 'Shares Pledged For Loan Given',
+            'Conversion Of Ocps - Preference Shares', 'Allotment Of Bonus Shares',
+            'Transfer Of Shares After Invocation Of Pledge', 'Redumtion Of Shares',
+            'Perferential Issue Of Optionally Convertible Preference Shares (ocps)',
+            'Allotment Of Shares On Conversion Of Compulsorily Covertible Debentures (ccds)',
+            'Transfer of Shares by clients as a Security to secure loan facility against shares',
+            'Preference Shares', 'Employee Shares', 'Forfeiture Of Shares'
+        ]
+        
+        BSE_PERSON_CAT = [
+            'Promoter Group', 'Promoter', 'Director', 'Promoter & Director',
+            'Promoters Immediate Relative', 'Promoter and Director', 'Member of Promoter Group',
+            'Promoter Immediate Relative'
+        ]
+        
+        BSE_POST_SEC_TYPE = ['Equity', 'Warrants', 'Preference Shares', 'Convertible Warrants']
+        
+        # Predefined filters for NSE
+        NSE_POST_SEC_TYPE = [
+            'Equity Shares', 'Warrants', 'Preference Shares', 'Convertible preference shares',
+            'Equity', 'Shares', 'Equity Share', 'Compulsorily Convertible Preference Shares',
+            'Share', 'Equity  Shares'
+        ]
+        
+        NSE_MODE_ACQ = [
+            'Pledge Creation', 'Market Purchase', 'Market Sale', 'Revokation of Pledge',
+            'Invocation of pledge', 'market purchases'
+        ]
+        
+        NSE_PERSON_CAT = [
+            'Promoter Group', 'Promoters', 'Promoter, Chairman and Managing Director',
+            'Promoters Immediate Relative', 'Promoter', 'Member of Promoter Group',
+            'Promoter & Director', 'Promoters & Promoters Group'
+        ]
+        
+        # Get query parameters
+        exchange = request.args.get('exchange', '').upper()
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        symbol = request.args.get('symbol', '').upper()
+        sec_code = request.args.get('sec_code', '')
+        person_name = request.args.get('person_name', '')
+        
+        # Pagination parameters
+        page = int(request.args.get('page', '1'))
+        page_size = min(int(request.args.get('page_size', '50')), 500)  # Max 500 items per page
+        
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 50
+        
+        # Calculate offset
+        offset = (page - 1) * page_size
+        
+        # Build query
+        query = supabase.table('insider_trading').select('*', count='exact')
+        
+        # Apply exchange filter and corresponding predefined filters
+        if exchange:
+            if exchange == 'BSE':
+                query = query.eq('exchange', 'BSE')
+                query = query.in_('mode_acq', BSE_MODE_ACQ)
+                query = query.in_('person_cat', BSE_PERSON_CAT)
+                query = query.in_('post_sec_type', BSE_POST_SEC_TYPE)
+            elif exchange == 'NSE':
+                query = query.eq('exchange', 'NSE')
+                query = query.in_('mode_acq', NSE_MODE_ACQ)
+                query = query.in_('person_cat', NSE_PERSON_CAT)
+                query = query.in_('post_sec_type', NSE_POST_SEC_TYPE)
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid exchange. Must be NSE or BSE.'
+                }), 400
+        else:
+            # If no exchange specified, apply filters for both
+            # Create OR condition for both BSE and NSE
+            query = query.or_(
+                f'and(exchange.eq.BSE,mode_acq.in.({",".join(BSE_MODE_ACQ)}),person_cat.in.({",".join(BSE_PERSON_CAT)}),post_sec_type.in.({",".join(BSE_POST_SEC_TYPE)})),'
+                f'and(exchange.eq.NSE,mode_acq.in.({",".join(NSE_MODE_ACQ)}),person_cat.in.({",".join(NSE_PERSON_CAT)}),post_sec_type.in.({",".join(NSE_POST_SEC_TYPE)}))'
+            )
+        
+        # Apply date filters
+        if start_date:
+            query = query.gte('date_from', start_date)
+        
+        if end_date:
+            query = query.lte('date_to', end_date)
+        
+        # Apply other filters
+        if symbol:
+            query = query.ilike('symbol', f'%{symbol}%')
+        
+        if sec_code:
+            query = query.eq('sec_code', sec_code)
+        
+        if person_name:
+            query = query.ilike('person_name', f'%{person_name}%')
+        
+        # Order by date descending (most recent first)
+        query = query.order('date_from', desc=True).order('date_intimation', desc=True)
+        
+        # Apply pagination
+        query = query.range(offset, offset + page_size - 1)
+        
+        # Execute query
+        result = query.execute()
+        
+        # Get total count
+        total_count = result.count if hasattr(result, 'count') and result.count is not None else 0
+        records = result.data or []
+        
+        # Calculate pagination metadata
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        
+        logger.info(f"Fetched {len(records)} insider trading records (page {page}/{total_pages}, total: {total_count})")
+        
+        return jsonify({
+            'success': True,
+            'data': records,
+            'pagination': {
+                'page': page,
+                'page_size': page_size,
+                'total_count': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            },
+            'filters': {
+                'exchange': exchange or None,
+                'start_date': start_date or None,
+                'end_date': end_date or None,
+                'symbol': symbol or None,
+                'sec_code': sec_code or None,
+                'person_name': person_name or None
+            }
+        }), 200
+        
+    except ValueError as ve:
+        logger.error(f"Invalid parameter: {str(ve)}")
+        return jsonify({
+            'success': False,
+            'message': f'Invalid parameter: {str(ve)}'
+        }), 400
+    except Exception as e:
+        logger.error(f"Get insider trading error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Failed to fetch insider trading data: {str(e)}'
+        }), 500
     
 
 @app.route('/api/corporate_filings', methods=['GET', 'OPTIONS'])

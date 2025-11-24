@@ -849,6 +849,128 @@ curl -X GET "http://localhost:5001/api/company/search?query=reliance"
 
 ---
 
+## Insider Trading Data
+
+### Get Insider Trading Records
+
+Retrieve insider trading data with automatic filtering based on exchange-specific criteria.
+
+**Endpoint:** `GET /api/insider_trading`
+
+**Authentication:** Required (Bearer token)
+
+**Query Parameters:**
+- `exchange` (optional): Filter by exchange - `NSE` or `BSE`
+- `start_date` (optional): Filter from date (YYYY-MM-DD format)
+- `end_date` (optional): Filter until date (YYYY-MM-DD format)
+- `symbol` (optional): Filter by stock symbol
+- `sec_code` (optional): Filter by security code
+- `person_name` (optional): Filter by person name
+- `page` (optional): Page number for pagination (default: 1)
+- `page_size` (optional): Items per page (default: 50, max: 500)
+
+**Automatic Filters Applied:**
+
+For **BSE** records, only includes transactions with:
+- `mode_acq`: Market Purchase, Market Sale, Pledge Creation, Revocation Of Pledge, and 38 other approved acquisition modes
+- `person_cat`: Promoter Group, Promoter, Director, Promoter & Director, Promoters Immediate Relative, and related categories
+- `post_sec_type`: Equity, Warrants, Preference Shares, Convertible Warrants
+
+For **NSE** records, only includes transactions with:
+- `mode_acq`: Pledge Creation, Market Purchase, Market Sale, Revokation of Pledge, Invocation of pledge, market purchases
+- `person_cat`: Promoter Group, Promoters, Promoter, Member of Promoter Group, Promoter & Director, and related categories
+- `post_sec_type`: Equity Shares, Warrants, Preference Shares, Convertible preference shares, Equity, Shares, and related types
+
+**Example Request:**
+```bash
+# Get today's BSE insider trading
+curl -X GET "http://localhost:5001/api/insider_trading?exchange=BSE&start_date=2025-11-24&end_date=2025-11-24" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Get NSE insider trading for a specific symbol
+curl -X GET "http://localhost:5001/api/insider_trading?exchange=NSE&symbol=RELIANCE&start_date=2025-11-01" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Get all insider trading with pagination
+curl -X GET "http://localhost:5001/api/insider_trading?page=1&page_size=100" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "insider_uuid": "550e8400-e29b-41d4-a716-446655440000",
+      "sec_code": "500325",
+      "sec_name": "Reliance Industries Limited",
+      "symbol": "RELIANCE",
+      "person_name": "MUKESH D AMBANI",
+      "person_cat": "Promoter",
+      "pre_sec_type": "Equity Shares",
+      "pre_sec_num": 5000000,
+      "pre_sec_pct": 2.5,
+      "trans_sec_type": "Equity Shares",
+      "trans_sec_num": 100000,
+      "trans_value": 25000000.00,
+      "trans_type": "Acquisition",
+      "post_sec_type": "Equity",
+      "post_sec_num": 5100000,
+      "post_sec_pct": 2.55,
+      "date_from": "2025-11-24",
+      "date_to": "2025-11-24",
+      "date_intimation": "2025-11-24",
+      "mode_acq": "Market Purchase",
+      "exchange": "BSE"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "page_size": 50,
+    "total_count": 150,
+    "total_pages": 3,
+    "has_next": true,
+    "has_prev": false
+  },
+  "filters": {
+    "exchange": "BSE",
+    "start_date": "2025-11-24",
+    "end_date": "2025-11-24",
+    "symbol": null,
+    "sec_code": null,
+    "person_name": null
+  }
+}
+```
+
+**Error Responses:**
+
+401 Unauthorized:
+```json
+{
+  "message": "Authentication token is missing!"
+}
+```
+
+400 Bad Request:
+```json
+{
+  "success": false,
+  "message": "Invalid exchange. Must be NSE or BSE."
+}
+```
+
+500 Internal Server Error:
+```json
+{
+  "success": false,
+  "message": "Failed to fetch insider trading data: <error details>"
+}
+```
+
+---
+
 ## Rate Limiting
 
 The API implements standard rate limiting practices. Please be mindful of request frequency to ensure optimal performance for all users.
