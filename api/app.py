@@ -1479,42 +1479,99 @@ def get_insider_trading(current_user):
                     'message': 'Invalid exchange. Must be NSE or BSE.'
                 }), 400
         else:
-            # If no exchange specified, apply filters for both
-            # Create OR condition for both BSE and NSE
-            query = query.or_(
-                f'and(exchange.eq.BSE,mode_acq.in.({",".join(BSE_MODE_ACQ)}),person_cat.in.({",".join(BSE_PERSON_CAT)}),post_sec_type.in.({",".join(BSE_POST_SEC_TYPE)})),'
-                f'and(exchange.eq.NSE,mode_acq.in.({",".join(NSE_MODE_ACQ)}),person_cat.in.({",".join(NSE_PERSON_CAT)}),post_sec_type.in.({",".join(NSE_POST_SEC_TYPE)}))'
-            )
+            # If no exchange specified, we need to fetch both BSE and NSE separately and combine
+            # This is more reliable than complex OR conditions
+            pass  # We'll handle this after other filters
         
-        # Apply date filters
-        if start_date:
-            query = query.gte('date_from', start_date)
-        
-        if end_date:
-            query = query.lte('date_to', end_date)
-        
-        # Apply other filters
-        if symbol:
-            query = query.ilike('symbol', f'%{symbol}%')
-        
-        if sec_code:
-            query = query.eq('sec_code', sec_code)
-        
-        if person_name:
-            query = query.ilike('person_name', f'%{person_name}%')
-        
-        # Order by date descending (most recent first)
-        query = query.order('date_from', desc=True).order('date_intimation', desc=True)
-        
-        # Apply pagination
-        query = query.range(offset, offset + page_size - 1)
-        
-        # Execute query
-        result = query.execute()
-        
-        # Get total count
-        total_count = result.count if hasattr(result, 'count') and result.count is not None else 0
-        records = result.data or []
+        # If no exchange specified, fetch both BSE and NSE separately
+        if not exchange:
+            # Fetch BSE records
+            bse_query = supabase.table('insider_trading').select('*', count='exact')
+            bse_query = bse_query.eq('exchange', 'BSE')
+            bse_query = bse_query.in_('mode_acq', BSE_MODE_ACQ)
+            bse_query = bse_query.in_('person_cat', BSE_PERSON_CAT)
+            bse_query = bse_query.in_('post_sec_type', BSE_POST_SEC_TYPE)
+            
+            # Apply date filters to BSE
+            if start_date:
+                bse_query = bse_query.gte('date_from', start_date)
+            if end_date:
+                bse_query = bse_query.lte('date_to', end_date)
+            if symbol:
+                bse_query = bse_query.ilike('symbol', f'%{symbol}%')
+            if sec_code:
+                bse_query = bse_query.eq('sec_code', sec_code)
+            if person_name:
+                bse_query = bse_query.ilike('person_name', f'%{person_name}%')
+            
+            # Fetch NSE records
+            nse_query = supabase.table('insider_trading').select('*', count='exact')
+            nse_query = nse_query.eq('exchange', 'NSE')
+            nse_query = nse_query.in_('mode_acq', NSE_MODE_ACQ)
+            nse_query = nse_query.in_('person_cat', NSE_PERSON_CAT)
+            nse_query = nse_query.in_('post_sec_type', NSE_POST_SEC_TYPE)
+            
+            # Apply date filters to NSE
+            if start_date:
+                nse_query = nse_query.gte('date_from', start_date)
+            if end_date:
+                nse_query = nse_query.lte('date_to', end_date)
+            if symbol:
+                nse_query = nse_query.ilike('symbol', f'%{symbol}%')
+            if sec_code:
+                nse_query = nse_query.eq('sec_code', sec_code)
+            if person_name:
+                nse_query = nse_query.ilike('person_name', f'%{person_name}%')
+            
+            # Order both queries
+            bse_query = bse_query.order('date_from', desc=True)
+            nse_query = nse_query.order('date_from', desc=True)
+            
+            # Execute both queries
+            bse_result = bse_query.execute()
+            nse_result = nse_query.execute()
+            
+            # Combine results
+            all_records = (bse_result.data or []) + (nse_result.data or [])
+            
+            # Sort combined results by date
+            all_records.sort(key=lambda x: (x.get('date_from', ''), x.get('date_intimation', '')), reverse=True)
+            
+            # Calculate total count
+            total_count = len(all_records)
+            
+            # Apply pagination manually
+            records = all_records[offset:offset + page_size]
+        else:
+            # Apply date filters
+            if start_date:
+                query = query.gte('date_from', start_date)
+            
+            if end_date:
+                query = query.lte('date_to', end_date)
+            
+            # Apply other filters
+            if symbol:
+                query = query.ilike('symbol', f'%{symbol}%')
+            
+            if sec_code:
+                query = query.eq('sec_code', sec_code)
+            
+            if person_name:
+                query = query.ilike('person_name', f'%{person_name}%')
+            
+            # Order by date descending (most recent first)
+            query = query.order('date_from', desc=True).order('date_intimation', desc=True)
+            
+            # Apply pagination
+            query = query.range(offset, offset + page_size - 1)
+            
+            # Execute query
+            result = query.execute()
+            
+            # Get total count
+            total_count = result.count if hasattr(result, 'count') and result.count is not None else 0
+            records = result.data or []
         
         # Calculate pagination metadata
         total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1

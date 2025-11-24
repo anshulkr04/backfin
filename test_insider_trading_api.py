@@ -11,7 +11,7 @@ import random
 import string
 
 # API Configuration
-BASE_URL = "http://localhost:5001/api"
+BASE_URL = "https://fin.anshulkr.com/api"
 HEADERS = {"Content-Type": "application/json"}
 
 def generate_random_email():
