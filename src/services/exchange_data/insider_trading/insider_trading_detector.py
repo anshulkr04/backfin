@@ -314,7 +314,8 @@ class NSEInsiderScraper:
                     'date_intimation': self.parse_date(record.get('intimDt')),
                     'mode_acq': record.get('acqMode', ''),
                     'exchange': 'NSE',
-                    'symbol': record.get('symbol', '')
+                    'symbol': record.get('symbol', ''),
+                    'reported_to_exchange': datetime.now().date().isoformat()
                 }
                 processed_records.append(processed_record)
             except Exception as e:
@@ -678,7 +679,7 @@ class BSEInsiderScraper:
             "trans_sec_type", "trans_sec_num", "trans_value", "trans_type",
             "post_sec_type", "post_sec_num", "post_sec_pct",
             "date_from", "date_to", "date_intimation", "mode_acq",
-            "exchange", "symbol"
+            "exchange", "symbol", "reported_to_exchange"
         ]
         
         out = pd.DataFrame(columns=expected_cols)
@@ -771,6 +772,10 @@ class BSEInsiderScraper:
                 filtered['symbol'] = filtered['symbol'].apply(lambda x: str(x).strip() if x is not None and not pd.isna(x) and str(x).strip() not in ('', 'nan', 'None') else None)
             else:
                 logger.info("BSE: Symbol column in CSV but all empty, set to None - database trigger will populate from sec_code")
+        
+        # Add reported_to_exchange column with today's date
+        filtered['reported_to_exchange'] = datetime.now().date().isoformat()
+        logger.info(f"BSE: Set reported_to_exchange to {datetime.now().date().isoformat()}")
         
         filtered = filtered[expected_cols]
         

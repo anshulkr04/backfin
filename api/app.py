@@ -1492,11 +1492,11 @@ def get_insider_trading(current_user):
             bse_query = bse_query.in_('person_cat', BSE_PERSON_CAT)
             bse_query = bse_query.in_('post_sec_type', BSE_POST_SEC_TYPE)
             
-            # Apply date filters to BSE
+            # Apply date filters to BSE (use reported_to_exchange for when data was uploaded)
             if start_date:
-                bse_query = bse_query.gte('date_from', start_date)
+                bse_query = bse_query.gte('reported_to_exchange', start_date)
             if end_date:
-                bse_query = bse_query.lte('date_to', end_date)
+                bse_query = bse_query.lte('reported_to_exchange', end_date)
             if symbol:
                 bse_query = bse_query.ilike('symbol', f'%{symbol}%')
             if sec_code:
@@ -1511,11 +1511,11 @@ def get_insider_trading(current_user):
             nse_query = nse_query.in_('person_cat', NSE_PERSON_CAT)
             nse_query = nse_query.in_('post_sec_type', NSE_POST_SEC_TYPE)
             
-            # Apply date filters to NSE
+            # Apply date filters to NSE (use reported_to_exchange for when data was uploaded)
             if start_date:
-                nse_query = nse_query.gte('date_from', start_date)
+                nse_query = nse_query.gte('reported_to_exchange', start_date)
             if end_date:
-                nse_query = nse_query.lte('date_to', end_date)
+                nse_query = nse_query.lte('reported_to_exchange', end_date)
             if symbol:
                 nse_query = nse_query.ilike('symbol', f'%{symbol}%')
             if sec_code:
@@ -1523,9 +1523,9 @@ def get_insider_trading(current_user):
             if person_name:
                 nse_query = nse_query.ilike('person_name', f'%{person_name}%')
             
-            # Order both queries
-            bse_query = bse_query.order('date_from', desc=True)
-            nse_query = nse_query.order('date_from', desc=True)
+            # Order both queries by reported date
+            bse_query = bse_query.order('reported_to_exchange', desc=True).order('date_from', desc=True)
+            nse_query = nse_query.order('reported_to_exchange', desc=True).order('date_from', desc=True)
             
             # Execute both queries
             bse_result = bse_query.execute()
@@ -1534,8 +1534,8 @@ def get_insider_trading(current_user):
             # Combine results
             all_records = (bse_result.data or []) + (nse_result.data or [])
             
-            # Sort combined results by date
-            all_records.sort(key=lambda x: (x.get('date_from', ''), x.get('date_intimation', '')), reverse=True)
+            # Sort combined results by reported date, then transaction date
+            all_records.sort(key=lambda x: (x.get('reported_to_exchange', ''), x.get('date_from', ''), x.get('date_intimation', '')), reverse=True)
             
             # Calculate total count
             total_count = len(all_records)
@@ -1543,12 +1543,12 @@ def get_insider_trading(current_user):
             # Apply pagination manually
             records = all_records[offset:offset + page_size]
         else:
-            # Apply date filters
+            # Apply date filters (use reported_to_exchange for when data was uploaded)
             if start_date:
-                query = query.gte('date_from', start_date)
+                query = query.gte('reported_to_exchange', start_date)
             
             if end_date:
-                query = query.lte('date_to', end_date)
+                query = query.lte('reported_to_exchange', end_date)
             
             # Apply other filters
             if symbol:
@@ -1560,8 +1560,8 @@ def get_insider_trading(current_user):
             if person_name:
                 query = query.ilike('person_name', f'%{person_name}%')
             
-            # Order by date descending (most recent first)
-            query = query.order('date_from', desc=True).order('date_intimation', desc=True)
+            # Order by reported date, then transaction date descending (most recent first)
+            query = query.order('reported_to_exchange', desc=True).order('date_from', desc=True).order('date_intimation', desc=True)
             
             # Apply pagination
             query = query.range(offset, offset + page_size - 1)

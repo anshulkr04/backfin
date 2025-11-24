@@ -871,15 +871,19 @@ Retrieve insider trading data with automatic filtering based on exchange-specifi
 
 **Automatic Filters Applied:**
 
-For **BSE** records, only includes transactions with:
-- `mode_acq`: Market Purchase, Market Sale, Pledge Creation, Revocation Of Pledge, and 38 other approved acquisition modes
-- `person_cat`: Promoter Group, Promoter, Director, Promoter & Director, Promoters Immediate Relative, and related categories
-- `post_sec_type`: Equity, Warrants, Preference Shares, Convertible Warrants
+When `exchange` parameter is specified, the API automatically applies exchange-specific filters:
 
-For **NSE** records, only includes transactions with:
-- `mode_acq`: Pledge Creation, Market Purchase, Market Sale, Revokation of Pledge, Invocation of pledge, market purchases
-- `person_cat`: Promoter Group, Promoters, Promoter, Member of Promoter Group, Promoter & Director, and related categories
-- `post_sec_type`: Equity Shares, Warrants, Preference Shares, Convertible preference shares, Equity, Shares, and related types
+**BSE Records** - Only includes transactions with:
+- **mode_acq** (42 approved modes): Market Purchase, Market Sale, Pledge Creation, Revocation Of Pledge, Invocation Of Pledged, Block Deal, Transfer, Preferential Offer, Preferential Issue, Conv. of Warrants, Invocation of pledge, Shares Purchased, Conversion Of Compulsory Convertible Preference Shares, Physical Share Transfer, Allotment Of Bonus Shares, and 27 more acquisition modes
+- **person_cat** (8 categories): Promoter Group, Promoter, Director, Promoter & Director, Promoters Immediate Relative, Promoter and Director, Member of Promoter Group, Promoter Immediate Relative
+- **post_sec_type** (4 types): Equity, Warrants, Preference Shares, Convertible Warrants
+
+**NSE Records** - Only includes transactions with:
+- **mode_acq** (6 approved modes): Pledge Creation, Market Purchase, Market Sale, Revokation of Pledge, Invocation of pledge, market purchases
+- **person_cat** (8 categories): Promoter Group, Promoters, Promoter, Chairman and Managing Director, Promoters Immediate Relative, Member of Promoter Group, Promoter & Director, Promoters & Promoters Group
+- **post_sec_type** (10 types): Equity Shares, Warrants, Preference Shares, Convertible preference shares, Equity, Shares, Equity Share, Compulsorily Convertible Preference Shares, Share, Equity  Shares
+
+**When no exchange is specified**: Returns records from both BSE and NSE that match their respective filter criteria. This allows you to get all qualifying insider trading activity across both exchanges in a single request.
 
 **Example Request:**
 ```bash
@@ -891,8 +895,12 @@ curl -X GET "http://localhost:5001/api/insider_trading?exchange=BSE&start_date=2
 curl -X GET "http://localhost:5001/api/insider_trading?exchange=NSE&symbol=RELIANCE&start_date=2025-11-01" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 
-# Get all insider trading with pagination
-curl -X GET "http://localhost:5001/api/insider_trading?page=1&page_size=100" \
+# Get all insider trading from both exchanges with pagination
+curl -X GET "http://localhost:5001/api/insider_trading?start_date=2025-11-01&page=1&page_size=100" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Search by person name
+curl -X GET "http://localhost:5001/api/insider_trading?person_name=AMBANI&exchange=BSE" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
@@ -944,20 +952,54 @@ curl -X GET "http://localhost:5001/api/insider_trading?page=1&page_size=100" \
 }
 ```
 
+**Response Fields:**
+- `insider_uuid`: Unique identifier for the record
+- `sec_code`: Security code (populated automatically for NSE from symbol)
+- `sec_name`: Security/company name
+- `symbol`: Stock symbol (populated automatically for BSE from sec_code)
+- `person_name`: Name of the person involved in the transaction
+- `person_cat`: Category of person (Promoter, Director, etc.)
+- `pre_sec_num`: Number of securities held before transaction
+- `pre_sec_pct`: Percentage of securities held before transaction
+- `trans_sec_num`: Number of securities in the transaction
+- `trans_value`: Value of the transaction
+- `trans_type`: Transaction type (Acquisition/Disposal)
+- `post_sec_num`: Number of securities held after transaction
+- `post_sec_pct`: Percentage of securities held after transaction
+- `date_from`: Transaction start date
+- `date_to`: Transaction end date
+- `date_intimation`: Date of intimation to company
+- `mode_acq`: Mode of acquisition/disposal
+- `exchange`: Exchange (BSE/NSE)
+
+**Notes:**
+- For **BSE** records, `symbol` is automatically populated from `stocklistdata` table using `sec_code` via database trigger
+- For **NSE** records, `sec_code` is automatically populated from `stocklistdata` table using `symbol` via database trigger
+- All data is deduplicated with BSE records taking priority when duplicates exist
+- Filters are case-insensitive for text searches
+
 **Error Responses:**
 
-401 Unauthorized:
+401 Unauthorized (Missing/Invalid Token):
 ```json
 {
   "message": "Authentication token is missing!"
 }
 ```
 
-400 Bad Request:
+400 Bad Request (Invalid Exchange):
 ```json
 {
   "success": false,
   "message": "Invalid exchange. Must be NSE or BSE."
+}
+```
+
+400 Bad Request (Invalid Parameters):
+```json
+{
+  "success": false,
+  "message": "Invalid parameter: page must be a positive integer"
 }
 ```
 
