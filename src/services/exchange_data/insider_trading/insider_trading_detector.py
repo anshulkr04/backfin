@@ -803,29 +803,112 @@ class InsiderTradingManager:
         self.nse_scraper = NSEInsiderScraper()
         self.bse_scraper = BSEInsiderScraper()
     
-    def deduplicate_data(self, df: pd.DataFrame) -> pd.DataFrame:
+    def get_existing_records_from_db(self, date_from: str, date_to: str) -> set:
+        """
+        Fetch existing records from database for the given date range.
+        Returns a set of deduplication keys to check against.
+        """
+        try:
+            logger.info(f"Fetching existing records from database for date range: {date_from} to {date_to}")
+            
+            # Query database for records in the date range
+            # Using reported_to_exchange date to get records uploaded today/recently
+            response = self.supabase.table(TABLE_NAME)\
+                .select('sec_name,person_name,date_from,date_to,trans_sec_num')\
+                .gte('reported_to_exchange', date_from)\
+                .lte('reported_to_exchange', date_to)\
+                .execute()
+            
+            existing_records = response.data if response.data else []
+            logger.info(f"Found {len(existing_records)} existing records in database")
+            
+            # Create deduplication keys from existing records
+            existing_keys = set()
+            for record in existing_records:
+                # Convert trans_sec_num to int to match new data format (removes .0)
+                trans_num = record.get('trans_sec_num', 0)
+                try:
+                    trans_num = int(float(trans_num)) if trans_num else 0
+                except (ValueError, TypeError):
+                    trans_num = 0
+                
+                key = (
+                    str(record.get('sec_name', '')).strip().lower() + '|' +
+                    str(record.get('person_name', '')).strip().lower() + '|' +
+                    str(record.get('date_from', '')) + '|' +
+                    str(record.get('date_to', '')) + '|' +
+                    str(trans_num)
+                )
+                existing_keys.add(key)
+            
+            logger.info(f"Created {len(existing_keys)} unique keys from existing records")
+            if existing_keys:
+                logger.info(f"Sample existing key: {list(existing_keys)[0]}")
+            return existing_keys
+            
+        except Exception as e:
+            logger.error(f"Error fetching existing records: {e}")
+            # Return empty set to continue processing (will attempt to insert, may fail on duplicates)
+            return set()
+    
+    def deduplicate_data(self, df: pd.DataFrame, existing_keys: set = None) -> pd.DataFrame:
         """
         Deduplicate insider trading records based on sec_name and person_name.
         When duplicates are found, prefer BSE data over NSE data.
+        Also filters out records that already exist in the database.
         """
         if df.empty:
             return df
         
         logger.info(f"Deduplication: Starting with {len(df)} total records")
         
+        # Filter out invalid records (missing critical fields)
+        initial_count = len(df)
+        df = df[
+            (df['person_name'].notna()) & 
+            (df['person_name'] != '-') & 
+            (df['person_name'] != '') &
+            (df['date_from'].notna()) &
+            (df['date_to'].notna())
+        ].copy()  # Use copy() to avoid SettingWithCopyWarning
+        invalid_count = initial_count - len(df)
+        if invalid_count > 0:
+            logger.info(f"Deduplication: Filtered out {invalid_count} invalid records (missing person name or dates)")
+        
+        if df.empty:
+            logger.info("Deduplication: No valid records remaining after filtering invalid data")
+            return df
+        
         # Create a deduplication key
+        # Convert trans_sec_num to int (removes .0 suffix) for consistent matching
+        trans_sec_num_int = df['trans_sec_num'].fillna(0).astype(float).astype(int)
         df['dedup_key'] = (
             df['sec_name'].fillna('').str.strip().str.lower() + '|' +
             df['person_name'].fillna('').str.strip().str.lower() + '|' +
             df['date_from'].fillna('').astype(str) + '|' +
             df['date_to'].fillna('').astype(str) + '|' +
-            df['trans_sec_num'].fillna(0).astype(str)
+            trans_sec_num_int.astype(str)
         )
         
-        # Count duplicates
+        if len(df) > 0:
+            logger.info(f"Sample new key: {df['dedup_key'].iloc[0]}")
+        
+        # First, filter out records that already exist in database
+        if existing_keys:
+            initial_count = len(df)
+            df = df[~df['dedup_key'].isin(existing_keys)]
+            filtered_count = initial_count - len(df)
+            if filtered_count > 0:
+                logger.info(f"Deduplication: Filtered out {filtered_count} records that already exist in database")
+        
+        if df.empty:
+            logger.info("Deduplication: No new records to upload after filtering existing records")
+            return df
+        
+        # Count duplicates within new data
         duplicates = df[df.duplicated(subset=['dedup_key'], keep=False)]
         if not duplicates.empty:
-            logger.info(f"Deduplication: Found {len(duplicates)} duplicate records")
+            logger.info(f"Deduplication: Found {len(duplicates)} duplicate records in new data")
         
         # Sort by exchange (BSE first) to prefer BSE data
         df['exchange_priority'] = df['exchange'].map({'BSE': 0, 'NSE': 1})
@@ -838,7 +921,7 @@ class InsiderTradingManager:
         df_deduped = df_deduped.drop(columns=['dedup_key', 'exchange_priority'])
         
         removed_count = len(df) - len(df_deduped)
-        logger.info(f"Deduplication: Removed {removed_count} duplicates, kept {len(df_deduped)} unique records")
+        logger.info(f"Deduplication: Removed {removed_count} duplicates within new data, kept {len(df_deduped)} unique records")
         
         # Log distribution
         exchange_counts = df_deduped['exchange'].value_counts().to_dict()
@@ -1041,7 +1124,18 @@ class InsiderTradingManager:
         combined_df = pd.concat(all_data, ignore_index=True)
         logger.info(f"Combined total: {len(combined_df)} records")
         
-        deduped_df = self.deduplicate_data(combined_df)
+        # Get existing records from database to avoid duplicates
+        # Convert date format for database query (YYYY-MM-DD)
+        try:
+            date_obj = datetime.strptime(from_date, "%d-%m-%Y")
+            db_date = date_obj.strftime("%Y-%m-%d")
+        except:
+            db_date = datetime.now().strftime("%Y-%m-%d")
+        
+        existing_keys = self.get_existing_records_from_db(db_date, db_date)
+        
+        # Deduplicate against new data and existing database records
+        deduped_df = self.deduplicate_data(combined_df, existing_keys)
         
         # Upload to database
         logger.info("\n" + "=" * 80)
