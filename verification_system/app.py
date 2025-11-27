@@ -8,7 +8,7 @@ import sys
 import json
 import tempfile
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 from typing import Optional, List
 from pathlib import Path
 
@@ -283,8 +283,7 @@ async def login(request: LoginRequest, supabase=Depends(get_db)):
         supabase.table("admin_sessions").update({"is_active": False}).eq("user_id", user["id"]).execute()
         
         # Create new session
-        from datetime import timezone
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=8)).isoformat()
         session_data = {
             "user_id": user["id"],
             "session_token": access_token,
