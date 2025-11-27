@@ -2134,15 +2134,29 @@ async def refresh_stock_price(
         Success status with metadata about the refresh operation
     """
     try:
-        # Import the refresh function
+        # Import the refresh function dynamically
         import sys
+        import os
         from pathlib import Path
         
-        # Add the path to stockpricedata module
-        stockpricedata_path = Path(__file__).parent.parent / "src" / "services" / "exchange_data" / "stockpricedata"
-        sys.path.insert(0, str(stockpricedata_path))
+        # Determine the correct path based on app location
+        # In Docker: /app/app.py -> /app/src/services/exchange_data/stockpricedata
+        # Locally: verification_system/app.py -> ../src/services/exchange_data/stockpricedata
         
-        from stockpricedata import refresh_stock_price_data_by_security_id
+        app_dir = Path(__file__).parent
+        project_root = app_dir.parent
+        
+        stockpricedata_path = project_root / "src" / "services" / "exchange_data" / "stockpricedata"
+        
+        if not stockpricedata_path.exists():
+            # Try alternative path (if running from different location)
+            stockpricedata_path = Path("/app/src/services/exchange_data/stockpricedata")
+        
+        if stockpricedata_path.exists():
+            sys.path.insert(0, str(stockpricedata_path))
+            from stockpricedata import refresh_stock_price_data_by_security_id
+        else:
+            raise ImportError(f"stockpricedata module not found at {stockpricedata_path}")
         
         logger.info(f"User {current_user.email} (ID: {current_user.user_id}) refreshing stock price data for security ID: {request.securityid}")
         

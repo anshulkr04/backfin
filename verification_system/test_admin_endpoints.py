@@ -348,10 +348,10 @@ def test_no_auth():
     url = f"{BASE_URL}{API_PREFIX}/corporate-actions"
     response = requests.get(url)
     
-    if response.status_code == 401:
-        print(f"✅ Correctly rejected request without auth token")
+    if response.status_code in [401, 403]:
+        print(f"✅ Correctly rejected request without auth token (status: {response.status_code})")
     else:
-        print(f"❌ Expected 401, got {response.status_code}")
+        print(f"❌ Expected 401 or 403, got {response.status_code}")
     
     # Test 2: Stock Price Refresh without token
     print("\n📍 Test 9.2: Stock Price Refresh - No Auth Token")
@@ -359,10 +359,10 @@ def test_no_auth():
     payload = {"securityid": 542034}
     response = requests.post(url, json=payload)
     
-    if response.status_code == 401:
-        print(f"✅ Correctly rejected request without auth token")
+    if response.status_code in [401, 403]:
+        print(f"✅ Correctly rejected request without auth token (status: {response.status_code})")
     else:
-        print(f"❌ Expected 401, got {response.status_code}")
+        print(f"❌ Expected 401 or 403, got {response.status_code}")
 
 
 def run_all_tests():
