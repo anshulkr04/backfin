@@ -4,22 +4,32 @@ Tests: Corporate Actions, Stock Price Refresh endpoints
 
 Usage:
     python test_admin_endpoints.py
+
+Expected Endpoints:
+    - POST /api/admin/auth/register
+    - POST /api/admin/auth/login
+    - GET  /api/admin/corporate-actions
+    - POST /api/admin/refresh-stock-price
 """
 
 import requests
 import json
 from datetime import datetime, timedelta
+import time
+import random
+import string
 
 # Configuration
-BASE_URL = "http://localhost:8000"  # Change to your API URL
-API_PREFIX = "/api/v1"
+BASE_URL = "https://admin.anshulkr.com"  # Change to your API URL
+API_PREFIX = "/api/admin"
 
-# Test user credentials
+# Generate random credentials for new test user
+timestamp = int(time.time())
+random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
 TEST_USER = {
-    "email": "test_admin@backfin.com",
-    "password": "TestAdmin@123",
-    "full_name": "Test Admin User",
-    "role": "admin"
+    "email": f"test_{timestamp}_{random_suffix}@backfin.com",
+    "password": f"TestPass{timestamp}@{random_suffix}",
+    "name": "Test API User"
 }
 
 # Global token storage
@@ -54,7 +64,7 @@ def register_user():
     
     response = requests.post(url, json=TEST_USER, headers=headers)
     
-    if response.status_code == 201:
+    if response.status_code in [200, 201]:
         print(f"✅ User registered successfully: {TEST_USER['email']}")
         data = response.json()
         return data.get('access_token')
@@ -103,7 +113,7 @@ def test_corporate_actions_basic():
     """Test basic corporate actions endpoint"""
     print_section("3. GET CORPORATE ACTIONS (Basic)")
     
-    url = f"{BASE_URL}{API_PREFIX}/admin/corporate-actions"
+    url = f"{BASE_URL}{API_PREFIX}/corporate-actions"
     params = {
         "page": 1,
         "page_size": 5
@@ -129,7 +139,7 @@ def test_corporate_actions_with_filters():
     
     # Test 1: Filter by Exchange (NSE)
     print("\n📍 Test 4.1: Filter by Exchange = NSE")
-    url = f"{BASE_URL}{API_PREFIX}/admin/corporate-actions"
+    url = f"{BASE_URL}{API_PREFIX}/corporate-actions"
     params = {
         "page": 1,
         "page_size": 5,
@@ -218,7 +228,7 @@ def test_corporate_actions_pagination():
     """Test corporate actions pagination"""
     print_section("5. GET CORPORATE ACTIONS (Pagination)")
     
-    url = f"{BASE_URL}{API_PREFIX}/admin/corporate-actions"
+    url = f"{BASE_URL}{API_PREFIX}/corporate-actions"
     
     # Get first page
     print("\n📍 Test 5.1: Page 1")
@@ -250,7 +260,7 @@ def test_corporate_actions_invalid():
     """Test corporate actions with invalid inputs"""
     print_section("6. GET CORPORATE ACTIONS (Error Handling)")
     
-    url = f"{BASE_URL}{API_PREFIX}/admin/corporate-actions"
+    url = f"{BASE_URL}{API_PREFIX}/corporate-actions"
     
     # Test 1: Invalid Exchange
     print("\n📍 Test 6.1: Invalid Exchange")
@@ -279,7 +289,7 @@ def test_refresh_stock_price():
     """Test stock price refresh endpoint"""
     print_section("7. REFRESH STOCK PRICE DATA")
     
-    url = f"{BASE_URL}{API_PREFIX}/admin/refresh-stock-price"
+    url = f"{BASE_URL}{API_PREFIX}/refresh-stock-price"
     
     # Test with security ID 542034
     print("\n📍 Test 7.1: Refresh Stock Price for Security ID: 542034")
@@ -310,7 +320,7 @@ def test_refresh_stock_price_invalid():
     """Test stock price refresh with invalid input"""
     print_section("8. REFRESH STOCK PRICE (Error Handling)")
     
-    url = f"{BASE_URL}{API_PREFIX}/admin/refresh-stock-price"
+    url = f"{BASE_URL}{API_PREFIX}/refresh-stock-price"
     
     # Test 1: Invalid Security ID (doesn't exist)
     print("\n📍 Test 8.1: Non-existent Security ID")
@@ -335,7 +345,7 @@ def test_no_auth():
     
     # Test 1: Corporate Actions without token
     print("\n📍 Test 9.1: Corporate Actions - No Auth Token")
-    url = f"{BASE_URL}{API_PREFIX}/admin/corporate-actions"
+    url = f"{BASE_URL}{API_PREFIX}/corporate-actions"
     response = requests.get(url)
     
     if response.status_code == 401:
@@ -345,7 +355,7 @@ def test_no_auth():
     
     # Test 2: Stock Price Refresh without token
     print("\n📍 Test 9.2: Stock Price Refresh - No Auth Token")
-    url = f"{BASE_URL}{API_PREFIX}/admin/refresh-stock-price"
+    url = f"{BASE_URL}{API_PREFIX}/refresh-stock-price"
     payload = {"securityid": 542034}
     response = requests.post(url, json=payload)
     
@@ -393,10 +403,10 @@ def run_all_tests():
         print_section("TEST SUMMARY")
         print("✅ All tests completed!")
         print(f"\nTested Endpoints:")
-        print(f"  1. POST {API_PREFIX}/auth/register")
-        print(f"  2. POST {API_PREFIX}/auth/login")
-        print(f"  3. GET  {API_PREFIX}/admin/corporate-actions")
-        print(f"  4. POST {API_PREFIX}/admin/refresh-stock-price")
+        print(f"  1. POST {BASE_URL}{API_PREFIX}/auth/register")
+        print(f"  2. POST {BASE_URL}{API_PREFIX}/auth/login")
+        print(f"  3. GET  {BASE_URL}{API_PREFIX}/corporate-actions")
+        print(f"  4. POST {BASE_URL}{API_PREFIX}/refresh-stock-price")
         
     except requests.exceptions.ConnectionError:
         print(f"\n❌ ERROR: Could not connect to {BASE_URL}")

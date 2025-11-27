@@ -2114,7 +2114,7 @@ class RefreshStockPriceResponse(BaseModel):
     error: Optional[str] = None
 
 
-@app.post(f"{settings.API_PREFIX}/admin/refresh-stock-price", response_model=RefreshStockPriceResponse)
+@app.post(f"{settings.API_PREFIX}/refresh-stock-price", response_model=RefreshStockPriceResponse)
 async def refresh_stock_price(
     request: RefreshStockPriceRequest,
     current_user: TokenData = Depends(require_admin_or_verifier),
@@ -2198,7 +2198,7 @@ async def refresh_stock_price(
 # Corporate Actions Endpoint
 # ============================================================================
 
-@app.get(f"{settings.API_PREFIX}/admin/corporate-actions")
+@app.get(f"{settings.API_PREFIX}/corporate-actions")
 async def get_corporate_actions(
     page: int = 1,
     page_size: int = 50,
