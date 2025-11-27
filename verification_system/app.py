@@ -2123,7 +2123,7 @@ async def refresh_stock_price(
     """
     Refresh stock price data for a specific security ID (Admin/Verifier only)
     
-    This endpoint fetches fresh data from Dhan API for the period 2025-01-01 to today.
+    This endpoint fetches fresh data from Dhan API for the period 2015-01-01 to today.
     It deletes existing records for the security in this date range and inserts new data.
     
     Args:
@@ -2138,32 +2138,50 @@ async def refresh_stock_price(
         import sys
         import os
         from pathlib import Path
+        import importlib.util
         
-        # Determine the correct path based on app location
-        # In Docker: /app/app.py -> /app/src/services/exchange_data/stockpricedata
-        # Locally: verification_system/app.py -> ../src/services/exchange_data/stockpricedata
-        
+        # Try multiple possible paths for the stockpricedata module
         app_dir = Path(__file__).parent
-        project_root = app_dir.parent
+        workspace_root = app_dir if app_dir.name == "backfin" else app_dir.parent
         
-        stockpricedata_path = project_root / "src" / "services" / "exchange_data" / "stockpricedata"
+        possible_paths = [
+            # If running from workspace root (Docker: /app maps to workspace root)
+            workspace_root / "src" / "services" / "exchange_data" / "stockpricedata",
+            # Local development from verification_system/
+            app_dir.parent / "src" / "services" / "exchange_data" / "stockpricedata",
+            # Absolute Docker paths
+            Path("/app/src/services/exchange_data/stockpricedata"),
+            Path("/src/services/exchange_data/stockpricedata"),
+        ]
         
-        if not stockpricedata_path.exists():
-            # Try alternative path (if running from different location)
-            stockpricedata_path = Path("/app/src/services/exchange_data/stockpricedata")
+        stockpricedata_module = None
+        stockpricedata_path = None
         
-        if stockpricedata_path.exists():
-            sys.path.insert(0, str(stockpricedata_path))
-            from stockpricedata import refresh_stock_price_data_by_security_id
-        else:
-            raise ImportError(f"stockpricedata module not found at {stockpricedata_path}")
+        # Try to find and import the module
+        for path in possible_paths:
+            module_file = path / "stockpricedata.py"
+            if module_file.exists():
+                stockpricedata_path = path
+                sys.path.insert(0, str(stockpricedata_path))
+                try:
+                    from stockpricedata import refresh_stock_price_data_by_security_id
+                    logger.info(f"✅ Successfully imported stockpricedata from {stockpricedata_path}")
+                    break
+                except ImportError as import_err:
+                    logger.warning(f"Failed to import from {path}: {import_err}")
+                    sys.path.remove(str(stockpricedata_path))
+                    continue
+        
+        if 'refresh_stock_price_data_by_security_id' not in locals():
+            tried_paths = "\n".join([f"  - {p}" for p in possible_paths])
+            raise ImportError(f"stockpricedata module not found. Tried paths:\n{tried_paths}")
         
         logger.info(f"User {current_user.email} (ID: {current_user.user_id}) refreshing stock price data for security ID: {request.securityid}")
         
         # Call the refresh function with hardcoded date range
         result = refresh_stock_price_data_by_security_id(
             security_id=request.securityid,
-            from_date="2025-01-01",
+            from_date="2015-01-01",
             to_date=datetime.utcnow().strftime("%Y-%m-%d")
         )
         
