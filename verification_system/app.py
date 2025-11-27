@@ -64,6 +64,16 @@ except ImportError as e:
     sum_prompt = "Generate a summary."
     sentiment_prompt = "Analyze sentiment (Positive/Negative/Neutral)."
 
+# Import stock price data helper
+try:
+    from stockpricedata_helper import refresh_stock_price_data_by_security_id
+    STOCKPRICE_HELPER_AVAILABLE = True
+    logger.info("✅ Stock price helper module loaded successfully")
+except ImportError as e:
+    logger.warning(f"⚠️  Could not import stock price helper: {e}")
+    STOCKPRICE_HELPER_AVAILABLE = False
+    refresh_stock_price_data_by_security_id = None
+
 # Initialize FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
@@ -2133,10 +2143,12 @@ async def refresh_stock_price(
         Success status with metadata about the refresh operation
     """
     try:
-        # Import from local helper module in verification_system directory
-        from stockpricedata_helper import refresh_stock_price_data_by_security_id
-        
-        logger.info(f"✅ Successfully imported stockpricedata_helper module")
+        # Check if helper module is available
+        if not STOCKPRICE_HELPER_AVAILABLE:
+            raise HTTPException(
+                status_code=500,
+                detail="Stock price helper module is not available"
+            )
         
         logger.info(f"User {current_user.email} (ID: {current_user.user_id}) refreshing stock price data for security ID: {request.securityid}")
         
