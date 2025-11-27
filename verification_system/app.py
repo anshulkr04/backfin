@@ -283,7 +283,7 @@ async def login(request: LoginRequest, supabase=Depends(get_db)):
         supabase.table("admin_sessions").update({"is_active": False}).eq("user_id", user["id"]).execute()
         
         # Create new session
-        expires_at = (datetime.now(timezone.utc) + timedelta(hours=8)).isoformat()
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=8))
         session_data = {
             "user_id": user["id"],
             "session_token": access_token,
