@@ -2133,47 +2133,10 @@ async def refresh_stock_price(
         Success status with metadata about the refresh operation
     """
     try:
-        # Import the refresh function dynamically
-        import sys
-        import os
-        from pathlib import Path
-        import importlib.util
+        # Import from local helper module in verification_system directory
+        from stockpricedata_helper import refresh_stock_price_data_by_security_id
         
-        # Try multiple possible paths for the stockpricedata module
-        app_dir = Path(__file__).parent
-        workspace_root = app_dir if app_dir.name == "backfin" else app_dir.parent
-        
-        possible_paths = [
-            # If running from workspace root (Docker: /app maps to workspace root)
-            workspace_root / "src" / "services" / "exchange_data" / "stockpricedata",
-            # Local development from verification_system/
-            app_dir.parent / "src" / "services" / "exchange_data" / "stockpricedata",
-            # Absolute Docker paths
-            Path("/app/src/services/exchange_data/stockpricedata"),
-            Path("/src/services/exchange_data/stockpricedata"),
-        ]
-        
-        stockpricedata_module = None
-        stockpricedata_path = None
-        
-        # Try to find and import the module
-        for path in possible_paths:
-            module_file = path / "stockpricedata.py"
-            if module_file.exists():
-                stockpricedata_path = path
-                sys.path.insert(0, str(stockpricedata_path))
-                try:
-                    from stockpricedata import refresh_stock_price_data_by_security_id
-                    logger.info(f"✅ Successfully imported stockpricedata from {stockpricedata_path}")
-                    break
-                except ImportError as import_err:
-                    logger.warning(f"Failed to import from {path}: {import_err}")
-                    sys.path.remove(str(stockpricedata_path))
-                    continue
-        
-        if 'refresh_stock_price_data_by_security_id' not in locals():
-            tried_paths = "\n".join([f"  - {p}" for p in possible_paths])
-            raise ImportError(f"stockpricedata module not found. Tried paths:\n{tried_paths}")
+        logger.info(f"✅ Successfully imported stockpricedata_helper module")
         
         logger.info(f"User {current_user.email} (ID: {current_user.user_id}) refreshing stock price data for security ID: {request.securityid}")
         
