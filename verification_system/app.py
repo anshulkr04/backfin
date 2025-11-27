@@ -2368,7 +2368,7 @@ async def get_pending_deals(
         )
 
 
-@app.post(f"{settings.API_PREFIX}/deals/{deal_id}/claim")
+@app.post(f"{settings.API_PREFIX}/deals/{{deal_id}}/claim")
 async def claim_deal(
     deal_id: str,
     supabase=Depends(get_db),
@@ -2439,7 +2439,7 @@ async def claim_deal(
         )
 
 
-@app.get(f"{settings.API_PREFIX}/deals/{deal_id}")
+@app.get(f"{settings.API_PREFIX}/deals/{{deal_id}}")
 async def get_deal_details(
     deal_id: str,
     supabase=Depends(get_db),
@@ -2472,7 +2472,7 @@ async def get_deal_details(
         )
 
 
-@app.put(f"{settings.API_PREFIX}/deals/{deal_id}")
+@app.put(f"{settings.API_PREFIX}/deals/{{deal_id}}")
 async def update_deal(
     deal_id: str,
     update_req: DealUpdateRequest,
@@ -2551,7 +2551,7 @@ async def update_deal(
         )
 
 
-@app.post(f"{settings.API_PREFIX}/deals/{deal_id}/verify")
+@app.post(f"{settings.API_PREFIX}/deals/{{deal_id}}/verify")
 async def verify_deal(
     deal_id: str,
     verify_req: DealVerifyRequest,
@@ -2640,7 +2640,7 @@ async def verify_deal(
         )
 
 
-@app.post(f"{settings.API_PREFIX}/deals/{deal_id}/reject")
+@app.post(f"{settings.API_PREFIX}/deals/{{deal_id}}/reject")
 async def reject_deal(
     deal_id: str,
     reject_req: DealRejectRequest,
@@ -2714,7 +2714,7 @@ async def reject_deal(
         )
 
 
-@app.post(f"{settings.API_PREFIX}/deals/{deal_id}/release")
+@app.post(f"{settings.API_PREFIX}/deals/{{deal_id}}/release")
 async def release_deal(
     deal_id: str,
     supabase=Depends(get_db),
