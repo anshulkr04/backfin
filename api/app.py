@@ -1611,6 +1611,123 @@ def get_insider_trading(current_user):
             'success': False,
             'message': f'Failed to fetch insider trading data: {str(e)}'
         }), 500
+
+
+@app.route('/api/corporate_actions', methods=['GET', 'OPTIONS'])
+@auth_required
+def get_corporate_actions(current_user):
+    """
+    Endpoint to get corporate actions data with filtering options
+    
+    Query Parameters:
+        - exchange: Filter by exchange (NSE/BSE)
+        - start_date: Filter from this ex_date (YYYY-MM-DD)
+        - end_date: Filter until this ex_date (YYYY-MM-DD)
+        - symbol: Filter by stock symbol
+        - action_required: Filter by action_required (true/false)
+        - page: Page number for pagination (default: 1)
+        - page_size: Items per page (default: 50, max: 500)
+    """
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    
+    try:
+        # Get query parameters
+        exchange = request.args.get('exchange', '').upper()
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        symbol = request.args.get('symbol', '').upper()
+        action_required = request.args.get('action_required', '')
+        
+        # Pagination parameters
+        page = int(request.args.get('page', '1'))
+        page_size = int(request.args.get('page_size', '50'))
+        
+        # Validate pagination
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 50
+        elif page_size > 500:
+            page_size = 500
+        
+        # Calculate offset for pagination
+        offset = (page - 1) * page_size
+        
+        # Build the query
+        query = supabase.table('corporate_actions').select('*', count='exact')
+        
+        # Apply filters
+        if exchange:
+            if exchange not in ['NSE', 'BSE']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid exchange. Must be NSE or BSE'
+                }), 400
+            query = query.eq('exchange', exchange)
+        
+        if start_date:
+            query = query.gte('ex_date', start_date)
+        
+        if end_date:
+            query = query.lte('ex_date', end_date)
+        
+        if symbol:
+            query = query.ilike('symbol', f'%{symbol}%')
+        
+        if action_required:
+            if action_required.lower() == 'true':
+                query = query.eq('action_required', True)
+            elif action_required.lower() == 'false':
+                query = query.eq('action_required', False)
+        
+        # Apply pagination and sorting
+        query = query.order('ex_date', desc=True).order('created_at', desc=True)
+        query = query.range(offset, offset + page_size - 1)
+        
+        # Execute query
+        response = query.execute()
+        
+        # Get total count
+        total_count = response.count if hasattr(response, 'count') else 0
+        
+        # Calculate pagination metadata
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+        
+        logger.info(f"Corporate actions fetched: {len(response.data)} records, page {page}/{total_pages}")
+        
+        return jsonify({
+            'success': True,
+            'data': response.data,
+            'pagination': {
+                'current_page': page,
+                'page_size': page_size,
+                'total_records': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_previous': page > 1
+            },
+            'filters': {
+                'exchange': exchange if exchange else 'all',
+                'start_date': start_date if start_date else 'all',
+                'end_date': end_date if end_date else 'all',
+                'symbol': symbol if symbol else 'all',
+                'action_required': action_required if action_required else 'all'
+            }
+        }), 200
+        
+    except ValueError as ve:
+        logger.error(f"Invalid parameter: {str(ve)}")
+        return jsonify({
+            'success': False,
+            'message': f'Invalid parameter: {str(ve)}'
+        }), 400
+    except Exception as e:
+        logger.error(f"Get corporate actions error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Failed to fetch corporate actions data: {str(e)}'
+        }), 500
     
 
 @app.route('/api/corporate_filings', methods=['GET', 'OPTIONS'])
