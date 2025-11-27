@@ -408,6 +408,192 @@ curl -X POST https://fin.anshulkr.com/api/watchlist/bulk_add \
 7. The response includes detailed information about successful, duplicate, and failed ISINs
 8. The response format matches the GET watchlist endpoint (categories as array)
 
+### Corporate Actions
+
+The Corporate Actions API provides access to upcoming and historical corporate actions data from NSE and BSE exchanges with advanced filtering capabilities.
+
+| Endpoint | Method | Description | Authentication |
+|----------|--------|-------------|----------------|
+| `/api/corporate_actions` | GET | Get corporate actions with filters | Yes |
+
+#### Features
+
+- **Exchange Filtering**: Filter by NSE or BSE
+- **Date Range Filtering**: Filter by ex-date range
+- **Symbol Search**: Search by stock symbol (case-insensitive)
+- **Action Type Filtering**: Filter by action_required (bonus, split, etc.)
+- **Pagination**: Support for large datasets with customizable page size
+- **Comprehensive Data**: Includes ex-date, record date, purpose, ISIN, and more
+
+#### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `exchange` | String | No | Filter by exchange (NSE or BSE) |
+| `start_date` | String | No | Start date in YYYY-MM-DD format (ex_date) |
+| `end_date` | String | No | End date in YYYY-MM-DD format (ex_date) |
+| `symbol` | String | No | Filter by stock symbol (partial match) |
+| `action_required` | String | No | Filter by action_required (true/false) |
+| `page` | Integer | No | Page number (default: 1) |
+| `page_size` | Integer | No | Items per page (default: 50, max: 500) |
+
+#### Action Required Field
+
+The `action_required` field indicates whether the corporate action requires historical price adjustment. It is set to `true` for:
+
+- Bonus Issue
+- Stock Split / Sub-Division
+- Reverse Split / Consolidation
+- Rights Issue (adjusted to TERP)
+- Spin-Off
+- Reduction of Capital
+
+#### Get Corporate Actions Examples
+
+**Basic Request**
+```bash
+curl -X GET "https://fin.anshulkr.com/api/corporate_actions" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+**Filter by Exchange**
+```bash
+curl -X GET "https://fin.anshulkr.com/api/corporate_actions?exchange=NSE" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+**Filter by Date Range**
+```bash
+curl -X GET "https://fin.anshulkr.com/api/corporate_actions?start_date=2025-11-27&end_date=2025-12-04" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+**Filter by Symbol**
+```bash
+curl -X GET "https://fin.anshulkr.com/api/corporate_actions?symbol=HDFC" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+**Filter by Action Required**
+```bash
+curl -X GET "https://fin.anshulkr.com/api/corporate_actions?action_required=true" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+**Combined Filters with Pagination**
+```bash
+curl -X GET "https://fin.anshulkr.com/api/corporate_actions?exchange=NSE&start_date=2025-11-27&end_date=2025-12-04&action_required=true&page=1&page_size=20" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+#### Response Structure
+
+**Success Response (200 OK)**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "sec_code": "532810",
+      "symbol": "PFC",
+      "company_name": "Power Finance Corporation Ltd",
+      "ex_date": "2025-11-26",
+      "purpose": "Interim Dividend - Rs. - 3.6500",
+      "record_date": "2025-11-26",
+      "bc_start_date": null,
+      "bc_end_date": null,
+      "nd_start_date": "2025-11-26",
+      "nd_end_date": "2025-11-26",
+      "payment_date": null,
+      "exchange": "BSE",
+      "isin": "INE134E01011",
+      "series": null,
+      "face_value": null,
+      "action_required": false,
+      "created_at": "2025-11-27T10:00:00.000Z",
+      "updated_at": "2025-11-27T10:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "sec_code": "541729",
+      "symbol": "HDFCAMC",
+      "company_name": "HDFC Asset Management Company Ltd",
+      "ex_date": "2025-11-26",
+      "purpose": "Bonus issue 1:1",
+      "record_date": "2025-11-26",
+      "bc_start_date": null,
+      "bc_end_date": null,
+      "nd_start_date": "2025-11-26",
+      "nd_end_date": "2025-11-26",
+      "payment_date": null,
+      "exchange": "BSE",
+      "isin": "INE127D01025",
+      "series": null,
+      "face_value": null,
+      "action_required": true,
+      "created_at": "2025-11-27T10:00:00.000Z",
+      "updated_at": "2025-11-27T10:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "current_page": 1,
+    "page_size": 50,
+    "total_records": 18,
+    "total_pages": 1,
+    "has_next": false,
+    "has_previous": false
+  },
+  "filters": {
+    "exchange": "all",
+    "start_date": "all",
+    "end_date": "all",
+    "symbol": "all",
+    "action_required": "all"
+  }
+}
+```
+
+**Error Response (400 Bad Request)**
+```json
+{
+  "success": false,
+  "message": "Invalid exchange. Must be NSE or BSE"
+}
+```
+
+**Error Response (401 Unauthorized)**
+```json
+{
+  "message": "Authentication token is missing!"
+}
+```
+
+**Error Response (500 Internal Server Error)**
+```json
+{
+  "success": false,
+  "message": "Failed to fetch corporate actions data: [error details]"
+}
+```
+
+#### Database Triggers
+
+The corporate actions table has automatic triggers for data enrichment:
+
+1. **sec_code Population (NSE)**: Automatically populates `sec_code` for NSE records using `symbol` from `stocklistdata` table
+2. **ISIN Population (BSE)**: Automatically populates `ISIN` for BSE records using `sec_code` or `symbol` from `stocklistdata` table
+
+#### Notes
+
+- Corporate actions data is collected daily via automated scraper
+- Data includes upcoming actions for the next 7 days
+- Ex-date is the key date for filtering and sorting
+- NSE data includes ISIN by default, BSE ISIN is populated via trigger
+- Action required flag helps identify actions that affect historical prices
+- All dates are stored in YYYY-MM-DD format
+- Deduplication is handled automatically during data collection
+
 ### Corporate Filings
 
 The Corporate Filings API provides access to corporate announcements and filings with advanced filtering capabilities, improved date handling, and robust error handling with fallback mechanisms.

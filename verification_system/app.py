@@ -2091,6 +2091,237 @@ class DealRejectRequest(BaseModel):
     reason: str = Field(min_length=5, description="Reason for rejection")
 
 
+# ============================================================================
+# Stock Price Data Refresh Endpoint
+# ============================================================================
+
+class RefreshStockPriceRequest(BaseModel):
+    """Request model for refreshing stock price data"""
+    securityid: int = Field(..., description="Security ID to refresh data for")
+
+
+class RefreshStockPriceResponse(BaseModel):
+    """Response model for stock price refresh"""
+    success: bool
+    securityid: int
+    symbol: Optional[str] = None
+    isin: Optional[str] = None
+    exchange: Optional[str] = None
+    records_fetched: Optional[int] = None
+    from_date: Optional[str] = None
+    to_date: Optional[str] = None
+    message: str
+    error: Optional[str] = None
+
+
+@app.post(f"{settings.API_PREFIX}/admin/refresh-stock-price", response_model=RefreshStockPriceResponse)
+async def refresh_stock_price(
+    request: RefreshStockPriceRequest,
+    current_user: TokenData = Depends(require_admin_or_verifier),
+    supabase=Depends(get_db)
+):
+    """
+    Refresh stock price data for a specific security ID (Admin/Verifier only)
+    
+    This endpoint fetches fresh data from Dhan API for the period 2025-01-01 to today.
+    It deletes existing records for the security in this date range and inserts new data.
+    
+    Args:
+        request: Contains securityid
+        current_user: Authenticated admin or verifier user
+        
+    Returns:
+        Success status with metadata about the refresh operation
+    """
+    try:
+        # Import the refresh function
+        import sys
+        from pathlib import Path
+        
+        # Add the path to stockpricedata module
+        stockpricedata_path = Path(__file__).parent.parent / "src" / "services" / "exchange_data" / "stockpricedata"
+        sys.path.insert(0, str(stockpricedata_path))
+        
+        from stockpricedata import refresh_stock_price_data_by_security_id
+        
+        logger.info(f"User {current_user.email} (ID: {current_user.user_id}) refreshing stock price data for security ID: {request.securityid}")
+        
+        # Call the refresh function with hardcoded date range
+        result = refresh_stock_price_data_by_security_id(
+            security_id=request.securityid,
+            from_date="2025-01-01",
+            to_date=datetime.utcnow().strftime("%Y-%m-%d")
+        )
+        
+        # Build response message
+        if result.get("success"):
+            message = f"Successfully refreshed stock price data for {result.get('symbol', 'Unknown')} (Security ID: {request.securityid}). Fetched {result.get('records_fetched', 0)} records."
+            logger.info(f"✅ {message}")
+        else:
+            message = f"Failed to refresh stock price data for security ID {request.securityid}"
+            error_detail = result.get('error', 'Unknown error')
+            logger.error(f"❌ {message}: {error_detail}")
+        
+        # Log the operation to audit trail (optional - can be added later)
+        # You can create a stock_price_refresh_audit table to track these operations
+        
+        return RefreshStockPriceResponse(
+            success=result.get("success", False),
+            securityid=request.securityid,
+            symbol=result.get("symbol"),
+            isin=result.get("isin"),
+            exchange=result.get("exchange"),
+            records_fetched=result.get("records_fetched"),
+            from_date=result.get("from_date"),
+            to_date=result.get("to_date"),
+            message=message,
+            error=result.get("error")
+        )
+        
+    except ImportError as e:
+        logger.error(f"Failed to import stockpricedata module: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Stock price refresh service unavailable: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Stock price refresh error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to refresh stock price data: {str(e)}"
+        )
+
+
+# ============================================================================
+# Corporate Actions Endpoint
+# ============================================================================
+
+@app.get(f"{settings.API_PREFIX}/admin/corporate-actions")
+async def get_corporate_actions(
+    page: int = 1,
+    page_size: int = 50,
+    exchange: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    symbol: Optional[str] = None,
+    current_user: TokenData = Depends(require_admin_or_verifier),
+    supabase=Depends(get_db)
+):
+    """
+    Get corporate actions data where action_required = true (Admin/Verifier only)
+    
+    This endpoint returns corporate actions that require investor action,
+    such as bonus issues, rights issues, stock splits, etc.
+    
+    Args:
+        page: Page number (default: 1)
+        page_size: Records per page (max: 100, default: 50)
+        exchange: Filter by exchange (NSE or BSE)
+        start_date: Filter by ex_date >= start_date (YYYY-MM-DD)
+        end_date: Filter by ex_date <= end_date (YYYY-MM-DD)
+        symbol: Filter by stock symbol
+        current_user: Authenticated admin or verifier user
+        
+    Returns:
+        Paginated list of corporate actions with action_required = true
+    """
+    try:
+        # Validate pagination
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 50
+        elif page_size > 100:
+            page_size = 100
+            
+        offset = (page - 1) * page_size
+        
+        logger.info(f"User {current_user.email} fetching corporate actions: page={page}, page_size={page_size}")
+        
+        # Build query - only action_required = true
+        query = supabase.table("corporate_actions")\
+            .select("*", count="exact")\
+            .eq("action_required", True)
+        
+        # Apply filters
+        if exchange:
+            if exchange.upper() not in ["NSE", "BSE"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Exchange must be either 'NSE' or 'BSE'"
+                )
+            query = query.eq("exchange", exchange.upper())
+        
+        if start_date:
+            try:
+                datetime.strptime(start_date, '%Y-%m-%d')
+                query = query.gte("ex_date", start_date)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+        
+        if end_date:
+            try:
+                datetime.strptime(end_date, '%Y-%m-%d')
+                query = query.lte("ex_date", end_date)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
+        
+        if symbol:
+            query = query.ilike("symbol", f"%{symbol}%")
+        
+        # Apply ordering and pagination
+        query = query.order("ex_date", desc=True)\
+                     .order("created_at", desc=True)\
+                     .range(offset, offset + page_size - 1)
+        
+        result = query.execute()
+        
+        total_count = result.count if hasattr(result, 'count') else 0
+        total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+        
+        logger.info(f"Found {len(result.data)} corporate actions (page {page}/{total_pages}, total: {total_count})")
+        
+        return {
+            "success": True,
+            "corporate_actions": result.data,
+            "count": len(result.data),
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "current_page": page,
+            "page_size": page_size,
+            "has_next": page < total_pages,
+            "has_previous": page > 1,
+            "filters": {
+                "action_required": True,
+                "exchange": exchange,
+                "start_date": start_date,
+                "end_date": end_date,
+                "symbol": symbol
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get corporate actions error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch corporate actions: {str(e)}"
+        )
+
+
+# ============================================================================
+# Deals Verification Endpoints
+# ============================================================================
+
 @app.get(f"{settings.API_PREFIX}/deals/pending")
 async def get_pending_deals(
     skip: int = 0,
