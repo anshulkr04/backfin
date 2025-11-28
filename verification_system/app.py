@@ -289,19 +289,30 @@ async def login(request: LoginRequest, supabase=Depends(get_db)):
             "role": user.get("role", "verifier")
         })
         
-        # Invalidate old sessions
+        # Invalidate old sessions for this user
         supabase.table("admin_sessions").update({"is_active": False}).eq("user_id", user["id"]).execute()
         
-        # Create new session
-        expires_at = (datetime.now(timezone.utc) + timedelta(hours=8))
-        session_data = {
-            "user_id": user["id"],
-            "session_token": access_token,
-            "expires_at": expires_at.isoformat(),
-            "is_active": True
-        }
+        # Check if this token already exists (edge case for rapid requests)
+        existing_session = supabase.table("admin_sessions").select("*").eq("session_token", access_token).execute()
         
-        session_result = supabase.table("admin_sessions").insert(session_data).execute()
+        if existing_session.data:
+            # Reactivate existing session
+            session_result = supabase.table("admin_sessions").update({
+                "is_active": True,
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=8)).isoformat()
+            }).eq("session_token", access_token).execute()
+            logger.info(f"Session reactivated for existing token")
+        else:
+            # Create new session
+            expires_at = (datetime.now(timezone.utc) + timedelta(hours=8))
+            session_data = {
+                "user_id": user["id"],
+                "session_token": access_token,
+                "expires_at": expires_at.isoformat(),
+                "is_active": True
+            }
+            
+            session_result = supabase.table("admin_sessions").insert(session_data).execute()
         logger.info(f"Session created: {len(session_result.data) if session_result.data else 0} records")
         
         # Update last login
