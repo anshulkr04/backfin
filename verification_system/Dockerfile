@@ -24,6 +24,7 @@ COPY auth.py .
 COPY config.py .
 COPY database.py .
 COPY prompts.py .
+COPY stockpricedata_helper.py .
 
 # Create logs directory
 RUN mkdir -p /app/logs
