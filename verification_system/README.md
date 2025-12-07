@@ -726,6 +726,27 @@ Authorization: Bearer <admin-token>
 }
 ```
 
+**Error Responses:**
+
+**400 Bad Request - Not Verified:**
+```json
+{
+  "detail": "Only verified announcements can be sent to review"
+}
+```
+
+**400 Bad Request - Already in Review:**
+```json
+{
+  "detail": "Announcement is already in review queue"
+}
+```
+
+**Notes:**
+- Only announcements with `verified = true` can be sent to review
+- Prevents duplicate review queue entries
+- The announcement maintains `verified = true` status while in review queue
+
 ### 12. Get Review Queue
 
 **Endpoint:** `GET /api/admin/review-queue`
@@ -787,8 +808,26 @@ Authorization: Bearer <admin-token>
 ```
 
 **Actions:**
-- `"approve"` - Keeps verified status, marks as approved
-- `"reject"` - Sends back to verification queue (unverified)
+- `"approve"` - **Maintains `verified = true`** in corporatefilings table, sets `review_status = "approved"`
+- `"reject"` - **Sets `verified = false`** in corporatefilings table, removes verification, sets `review_status = "rejected"`
+
+**What Gets Updated in corporatefilings table:**
+
+**On Approve:**
+- `verified` = `true` (explicitly maintained)
+- `review_status` = `"approved"`
+- `reviewed_at` = current timestamp
+- `reviewed_by` = admin user ID
+- `review_notes` = provided notes
+
+**On Reject:**
+- `verified` = `false` (verification removed)
+- `verified_at` = `null`
+- `verified_by` = `null`
+- `review_status` = `"rejected"`
+- `reviewed_at` = current timestamp
+- `reviewed_by` = admin user ID
+- `review_notes` = provided notes
 
 **Response (200):**
 ```json
@@ -802,6 +841,12 @@ Authorization: Bearer <admin-token>
   "message": "Announcement approved successfully"
 }
 ```
+
+**Notes:**
+- Approving an announcement ensures it remains in the main corporatefilings table with `verified = true`
+- Rejecting sends it back to the verification queue by setting `verified = false`
+- All review actions are tracked with timestamps and admin user ID for audit purposes
+- Only announcements with `review_status = "pending_review"` can be reviewed
 
 ---
 

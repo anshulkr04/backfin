@@ -1229,6 +1229,13 @@ async def send_to_review(
                 detail="Only verified announcements can be sent to review"
             )
         
+        # Check if already in review
+        if announcement.get("review_status") == "pending_review":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Announcement is already in review queue"
+            )
+        
         # Update announcement to pending review status
         notes = request.notes if request else None
         result = supabase.table("corporatefilings")\
@@ -1401,16 +1408,25 @@ async def review_announcement(
                 detail="Announcement is not in review queue"
             )
         
+        # Additional validation: ensure announcement was verified before being sent to review
+        if not announcement.get("verified") and request.action == "approve":
+            logger.warning(f"Announcement {corp_id} in review queue but not verified - correcting state")
+            # This shouldn't happen, but if it does, we'll fix it during approval
+        
         # Update based on action
         if request.action == "approve":
+            # Ensure verified remains true when approving
             update_data = {
+                "verified": True,  # Explicitly maintain verified status
                 "review_status": "approved",
                 "reviewed_at": datetime.utcnow().isoformat(),
                 "reviewed_by": current_user.user_id,
                 "review_notes": request.notes
             }
             message = "Announcement approved successfully"
+            logger.info(f"Approving announcement {corp_id} - maintaining verified=true, setting review_status=approved")
         else:  # reject
+            # Remove verification when rejecting
             update_data = {
                 "verified": False,
                 "verified_at": None,
@@ -1421,6 +1437,7 @@ async def review_announcement(
                 "review_notes": request.notes
             }
             message = "Announcement rejected and sent back to verification queue"
+            logger.info(f"Rejecting announcement {corp_id} - setting verified=false, review_status=rejected")
         
         result = supabase.table("corporatefilings")\
             .update(update_data)\
