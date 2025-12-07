@@ -149,17 +149,17 @@ class GenerateContentResponse(BaseModel):
 # ============================================================================
 
 gemini_client = None
-if GENAI_AVAILABLE and settings.GEMINI_API_KEY:
+if GENAI_AVAILABLE and settings.GEMINI_ADMIN_KEY:
     try:
-        gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        logger.info("✅ Gemini AI client initialized")
+        gemini_client = genai.Client(api_key=settings.GEMINI_ADMIN_KEY)
+        logger.info("✅ Gemini AI client initialized (Admin)")
     except Exception as e:
         logger.error(f"Failed to initialize Gemini client: {e}")
 else:
     if not GENAI_AVAILABLE:
         logger.warning("⚠️  Google GenAI not available - content generation disabled")
-    if not settings.GEMINI_API_KEY:
-        logger.warning("⚠️  GEMINI_API_KEY not configured - content generation disabled")
+    if not settings.GEMINI_ADMIN_KEY:
+        logger.warning("⚠️  GEMINI_ADMIN_KEY not configured - content generation disabled")
 
 # ============================================================================
 # Health Check

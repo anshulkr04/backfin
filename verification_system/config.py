@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours
     
     # Gemini AI Configuration
-    GEMINI_API_KEY: str = ""
+    GEMINI_ADMIN_KEY: str = ""
     
     # Session Configuration
     SESSION_TIMEOUT_MINUTES: int = 30

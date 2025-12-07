@@ -60,8 +60,8 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 # JWT Secret for Verification System
 JWT_SECRET_KEY=your_jwt_secret_key_min_32_chars
 
-# Google Gemini API
-GEMINI_API_KEY=your_gemini_api_key
+# Google Gemini API (Admin)
+GEMINI_ADMIN_KEY=your_gemini_admin_api_key
 
 # Optional: Server Configuration
 # HOST=0.0.0.0
@@ -1160,7 +1160,7 @@ Authorization: Bearer <access_token>
 - `"Page numbers [15, 16] exceed document length (10 pages)"`
 - `"Failed to download PDF from URL"`
 - `"Content generation failed: Model overloaded"`
-- `"AI content generation not available - Gemini API key not configured"`
+- `"AI content generation not available - Gemini Admin API key not configured"`
 
 ---
 
@@ -1612,7 +1612,7 @@ Key dependencies (see `requirements.txt` for full list):
 - **Solution**: Ensure `google-genai` is installed: `pip install google-genai==1.15.0`
 
 **Issue**: "AI content generation not available"
-- **Solution**: Set `GEMINI_API_KEY` in `.env` file
+- **Solution**: Set `GEMINI_ADMIN_KEY` in `.env` file
 
 **Issue**: "Failed to download PDF: 403 Forbidden"
 - **Solution**: The system includes User-Agent headers for BSE PDFs. Check if PDF URL is accessible.
