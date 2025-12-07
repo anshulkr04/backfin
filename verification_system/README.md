@@ -1077,11 +1077,13 @@ Authorization: Bearer <token>
 
 ---
 
-## 🤖 AI Content Generation
+## 🤖 AI Content Generation (Admin/Verifier)
 
 ### 20. Generate Content with AI
 
 **Endpoint:** `POST /api/admin/generate-content`
+
+**Authorization:** Admin or Verifier role required
 
 **Headers:**
 ```

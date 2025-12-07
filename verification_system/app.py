@@ -1968,14 +1968,14 @@ def extract_pdf_pages(input_path: str, output_path: str, page_numbers: List[int]
 @app.post(f"{settings.API_PREFIX}/generate-content", response_model=GenerateContentResponse)
 async def generate_content(
     request: GenerateContentRequest,
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(require_admin_or_verifier)
 ):
     """
-    Generate AI content from announcement PDF using Gemini
+    Generate AI content from announcement PDF using Gemini (Admin/Verifier)
     
     Args:
         request: Contains fileurl, summary, and model selection
-        current_user: Authenticated admin user
+        current_user: Authenticated admin or verifier user
         
     Returns:
         Generated category, headline, AI summary, financial data, and sentiment
