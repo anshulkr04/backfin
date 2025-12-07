@@ -446,7 +446,7 @@ async def logout(current_user: TokenData = Depends(get_current_user), supabase=D
 async def get_current_user_info(current_user: TokenData = Depends(get_current_user), supabase=Depends(get_db)):
     """Get current user information"""
     try:
-        result = supabase.table("admin_users").select("id, email, name, created_at").eq("id", current_user.user_id).execute()
+        result = supabase.table("admin_users").select("id, email, name, role, created_at").eq("id", current_user.user_id).execute()
         
         if not result.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

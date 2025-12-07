@@ -415,6 +415,7 @@ Authorization: Bearer <access_token>
   "id": "uuid-here",
   "email": "admin@example.com",
   "name": "John Doe",
+  "role": "admin",
   "created_at": "2025-11-18T10:30:00"
 }
 ```
