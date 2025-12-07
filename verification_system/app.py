@@ -2041,6 +2041,7 @@ async def generate_content(
     
     temp_file_path = None
     uploaded_file = None
+    extracted_file_path = None  # Initialize here to avoid UnboundLocalError
     
     try:
         # Download PDF from URL
