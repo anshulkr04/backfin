@@ -1731,7 +1731,7 @@ def get_corporate_actions(current_user):
     
 
 @app.route('/api/corporate_filings', methods=['GET', 'OPTIONS'])
-# @auth_required
+@auth_required
 def get_corporate_filings():
     """Endpoint to get corporate filings with server-side pagination"""
     if request.method == 'OPTIONS':
