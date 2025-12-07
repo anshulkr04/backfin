@@ -302,7 +302,64 @@ All endpoints except registration and login require authentication via Bearer to
 }
 ```
 
-### 2. Login
+**Note:** New users are registered with the "verifier" role by default. To promote a user to admin, use the dedicated admin creation endpoint or update the database directly.
+
+### 2. Create Admin User
+
+**Endpoint:** `POST /api/admin/auth/create-admin`
+
+**Authorization:** None required (for now)
+
+**Description:** Creates a new user account with admin privileges. This is the recommended way to create admin users.
+
+**Note:** Currently open for testing purposes. In production, this should be restricted to existing admin users only.
+
+**Request Body:**
+```json
+{
+  "email": "newadmin@example.com",
+  "password": "SecurePassword123!",
+  "name": "Jane Admin"
+}
+```
+
+**Response (200):**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user": {
+    "id": "uuid-here",
+    "email": "newadmin@example.com",
+    "name": "Jane Admin"
+  }
+}
+```
+
+**Error Responses:**
+
+**400 Bad Request - Email Already Exists:**
+```json
+{
+  "detail": "Email already registered"
+}
+```
+
+**500 Internal Server Error:**
+```json
+{
+  "detail": "Failed to create admin user: <error details>"
+}
+```
+
+**Notes:**
+- Currently does not require authentication (for testing/initial setup)
+- The new admin account is created with full admin privileges
+- A valid JWT token is returned for the newly created admin
+- All admin creation operations are logged for audit purposes
+- **Production Warning**: Should be restricted to existing admins only in production
+
+### 3. Login
 
 **Endpoint:** `POST /api/admin/auth/login`
 
@@ -327,7 +384,7 @@ All endpoints except registration and login require authentication via Bearer to
 }
 ```
 
-### 3. Logout
+### 4. Logout
 
 **Endpoint:** `POST /api/admin/auth/logout`
 
@@ -343,7 +400,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-### 4. Get Current User
+### 5. Get Current User
 
 **Endpoint:** `GET /api/admin/auth/me`
 
@@ -366,7 +423,7 @@ Authorization: Bearer <access_token>
 
 ## 📝 Announcement Management
 
-### 5. Get Announcements (All Categories)
+### 6. Get Announcements (All Categories)
 
 **Endpoint:** `GET /api/admin/announcements`
 
@@ -520,7 +577,7 @@ GET /api/admin/announcements/non-financial?verified=false&page=1&page_size=30&en
 }
 ```
 
-### 6. Get Single Announcement
+### 7. Get Single Announcement
 
 **Endpoint:** `GET /api/admin/announcements/{corp_id}`
 
@@ -550,7 +607,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-### 7. Update Announcement
+### 8. Update Announcement
 
 **Endpoint:** `PATCH /api/admin/announcements/{corp_id}`
 
@@ -589,7 +646,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-### 8. Verify Announcement
+### 9. Verify Announcement
 
 **Endpoint:** `POST /api/admin/announcements/{corp_id}/verify`
 
@@ -616,7 +673,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-### 9. Unverify Announcement
+### 10. Unverify Announcement
 
 **Endpoint:** `POST /api/admin/announcements/{corp_id}/unverify`
 
@@ -638,7 +695,7 @@ Authorization: Bearer <access_token>
 
 ## 🔍 Review Queue (Admin Only)
 
-### 10. Send Verified Announcement to Review
+### 11. Send Verified Announcement to Review
 
 **Endpoint:** `POST /api/admin/announcements/{corp_id}/send-to-review`
 
@@ -668,7 +725,7 @@ Authorization: Bearer <admin-token>
 }
 ```
 
-### 11. Get Review Queue
+### 12. Get Review Queue
 
 **Endpoint:** `GET /api/admin/review-queue`
 
@@ -709,7 +766,7 @@ Authorization: Bearer <admin-token>
 }
 ```
 
-### 12. Review Announcement (Approve/Reject)
+### 13. Review Announcement (Approve/Reject)
 
 **Endpoint:** `POST /api/admin/announcements/{corp_id}/review`
 
@@ -749,7 +806,7 @@ Authorization: Bearer <admin-token>
 
 ## 🏢 Company Database Management (Admin/Verifier)
 
-### 13. Get Pending Company Changes
+### 14. Get Pending Company Changes
 
 **Endpoint:** `GET /api/admin/company-changes/pending`
 
@@ -835,7 +892,7 @@ Authorization: Bearer <token>
 }
 ```
 
-### 15. Verify Company Change
+### 16. Verify Company Change
 
 **Endpoint:** `POST /api/admin/company-changes/{id}/verify`
 
@@ -865,7 +922,7 @@ Authorization: Bearer <token>
 }
 ```
 
-### 16. Reject Company Change
+### 17. Reject Company Change
 
 **Endpoint:** `POST /api/admin/company-changes/{id}/reject`
 
@@ -895,7 +952,7 @@ Authorization: Bearer <token>
 }
 ```
 
-### 17. Apply Verified Changes
+### 18. Apply Verified Changes
 
 **Endpoint:** `POST /api/admin/company-changes/apply-verified`
 
@@ -933,7 +990,7 @@ Authorization: Bearer <admin-token>
 }
 ```
 
-### 18. Get Company Changes Statistics
+### 19. Get Company Changes Statistics
 
 **Endpoint:** `GET /api/admin/company-changes/stats`
 
@@ -976,7 +1033,7 @@ Authorization: Bearer <token>
 
 ## 🤖 AI Content Generation
 
-### 19. Generate Content with AI
+### 20. Generate Content with AI
 
 **Endpoint:** `POST /api/admin/generate-content`
 
@@ -1059,9 +1116,237 @@ Authorization: Bearer <access_token>
 
 ---
 
+## 💼 Corporate Actions (Admin/Verifier)
+
+### 21. Get Corporate Actions
+
+**Endpoint:** `GET /api/admin/corporate-actions`
+
+**Authorization:** Admin or Verifier role required
+
+**Description:** Retrieves corporate actions data where `action_required = true`, including bonus issues, rights issues, stock splits, and other corporate actions that require investor action.
+
+**Query Parameters:**
+- `page` (integer): Page number, starts at 1 (default: 1)
+- `page_size` (integer): Records per page, max 100 (default: 50)
+- `exchange` (string): Filter by exchange - "NSE" or "BSE" (optional)
+- `start_date` (string): Filter by ex_date >= start_date, format: YYYY-MM-DD (optional)
+- `end_date` (string): Filter by ex_date <= end_date, format: YYYY-MM-DD (optional)
+- `symbol` (string): Filter by stock symbol, case-insensitive partial match (optional)
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Example Request:**
+```bash
+curl -X GET "http://localhost:5002/api/admin/corporate-actions?page=1&page_size=50&exchange=NSE&start_date=2025-01-01&end_date=2025-12-31" \
+  -H "Authorization: Bearer <token>"
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "corporate_actions": [
+    {
+      "id": "uuid",
+      "exchange": "NSE",
+      "symbol": "RELIANCE",
+      "company_name": "Reliance Industries Limited",
+      "security_id": 12345,
+      "ex_date": "2025-12-01",
+      "purpose": "Bonus",
+      "record_date": "2025-12-02",
+      "bc_start_date": "2025-11-25",
+      "bc_end_date": "2025-12-02",
+      "action_required": true,
+      "details": "1:1 Bonus Issue",
+      "created_at": "2025-11-20T10:00:00Z",
+      "updated_at": "2025-11-20T10:00:00Z"
+    },
+    {
+      "id": "uuid",
+      "exchange": "BSE",
+      "symbol": "TCS",
+      "company_name": "Tata Consultancy Services Ltd",
+      "security_id": 67890,
+      "ex_date": "2025-11-28",
+      "purpose": "Dividend",
+      "record_date": "2025-11-29",
+      "bc_start_date": "2025-11-20",
+      "bc_end_date": "2025-11-29",
+      "action_required": true,
+      "details": "Final Dividend Rs. 25 per share",
+      "created_at": "2025-11-15T08:30:00Z",
+      "updated_at": "2025-11-15T08:30:00Z"
+    }
+  ],
+  "count": 2,
+  "total_count": 145,
+  "total_pages": 3,
+  "current_page": 1,
+  "page_size": 50,
+  "has_next": true,
+  "has_previous": false,
+  "filters": {
+    "action_required": true,
+    "exchange": "NSE",
+    "start_date": "2025-01-01",
+    "end_date": "2025-12-31",
+    "symbol": null
+  }
+}
+```
+
+**Example with Symbol Filter:**
+```bash
+curl -X GET "http://localhost:5002/api/admin/corporate-actions?symbol=INFY&page=1&page_size=20" \
+  -H "Authorization: Bearer <token>"
+```
+
+**Error Responses:**
+
+**400 Bad Request - Invalid Exchange:**
+```json
+{
+  "detail": "Exchange must be either 'NSE' or 'BSE'"
+}
+```
+
+**400 Bad Request - Invalid Date Format:**
+```json
+{
+  "detail": "Invalid start_date format. Use YYYY-MM-DD"
+}
+```
+
+**401 Unauthorized:**
+```json
+{
+  "detail": "Not authenticated"
+}
+```
+
+**403 Forbidden:**
+```json
+{
+  "detail": "Admin or Verifier role required"
+}
+```
+
+**500 Internal Server Error:**
+```json
+{
+  "detail": "Failed to fetch corporate actions: <error details>"
+}
+```
+
+**Notes:**
+- Results are ordered by `ex_date` (descending), then by `created_at` (descending)
+- Only corporate actions with `action_required = true` are returned
+- Symbol search is case-insensitive and supports partial matching
+- Date filters are inclusive (>= start_date and <= end_date)
+- Pagination metadata includes `has_next` and `has_previous` for easy navigation
+
+---
+
+## 📈 Stock Price Data Management (Admin/Verifier)
+
+### 23. Refresh Stock Price Data
+
+**Endpoint:** `POST /api/admin/refresh-stock-price`
+
+**Authorization:** Admin or Verifier role required
+
+**Description:** Refreshes stock price data for a specific security ID by fetching fresh data from Dhan API for the period 2015-01-01 to today. It deletes existing records for the security in this date range and inserts new data.
+
+**Request Body:**
+```json
+{
+  "securityid": 12345
+}
+```
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Example Request:**
+```bash
+curl -X POST "http://localhost:5002/api/admin/refresh-stock-price" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"securityid": 12345}'
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "securityid": 12345,
+  "symbol": "RELIANCE",
+  "isin": "INE002A01018",
+  "exchange": "NSE",
+  "records_fetched": 1500,
+  "from_date": "2015-01-01",
+  "to_date": "2025-11-20",
+  "message": "Successfully refreshed stock price data for RELIANCE (Security ID: 12345). Fetched 1500 records.",
+  "error": null
+}
+```
+
+**Error Responses:**
+
+**400 Bad Request - Invalid Security ID:**
+```json
+{
+  "detail": "Invalid securityid: must be a positive integer"
+}
+```
+
+**401 Unauthorized:**
+```json
+{
+  "detail": "Not authenticated"
+}
+```
+
+**403 Forbidden:**
+```json
+{
+  "detail": "Admin or Verifier role required"
+}
+```
+
+**500 Internal Server Error - Helper Module Unavailable:**
+```json
+{
+  "detail": "Stock price helper module is not available"
+}
+```
+
+**500 Internal Server Error - Refresh Failed:**
+```json
+{
+  "detail": "Failed to refresh stock price data: <error details>"
+}
+```
+
+**Notes:**
+- The endpoint fetches data from 2015-01-01 to the current date
+- Existing records for the security ID in this date range are deleted before inserting new data
+- The operation may take several seconds to complete depending on the amount of historical data
+- All operations are logged with user information for audit purposes
+
+---
+
 ## 📊 Statistics
 
-### 20. Get Verification Statistics
+### 22. Get Verification Statistics
 
 **Endpoint:** `GET /api/admin/stats`
 

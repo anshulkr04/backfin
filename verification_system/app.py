@@ -101,6 +101,12 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8)
     name: str = Field(min_length=2)
 
+class CreateAdminRequest(BaseModel):
+    """Request model for creating admin user (requires existing admin authentication)"""
+    email: EmailStr
+    password: str = Field(min_length=8)
+    name: str = Field(min_length=2)
+
 class LoginRequest(BaseModel):
     """Request model for verifier login"""
     email: EmailStr
@@ -247,6 +253,83 @@ async def register(request: RegisterRequest, supabase=Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Registration failed: {str(e)}"
+        )
+
+
+@app.post(f"{settings.API_PREFIX}/auth/create-admin", response_model=AuthToken)
+async def create_admin(request: CreateAdminRequest, supabase=Depends(get_db)):
+    """
+    Create a new admin user account
+    Note: In production, you should add authentication to restrict who can create admin accounts
+    """
+    try:
+        # Check if email already exists
+        existing = supabase.table("admin_users").select("email").eq("email", request.email).execute()
+        
+        if existing.data and len(existing.data) > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        # Hash password
+        password_hash = get_password_hash(request.password)
+        
+        # Create admin user
+        user_data = {
+            "email": request.email,
+            "password_hash": password_hash,
+            "name": request.name,
+            "is_active": True,
+            "is_verified": True,
+            "role": "admin"  # Set role as admin
+        }
+        
+        result = supabase.table("admin_users").insert(user_data).execute()
+        
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create admin user"
+            )
+        
+        user = result.data[0]
+        logger.info(f"✅ Created new admin user: {user['email']}")
+        
+        # Generate access token with admin role
+        access_token = create_access_token({
+            "sub": user["email"], 
+            "user_id": user["id"],
+            "role": "admin"
+        })
+        
+        # Create session
+        session_data = {
+            "user_id": user["id"],
+            "session_token": access_token,
+            "expires_at": (datetime.utcnow() + timedelta(hours=8)).isoformat(),
+            "is_active": True
+        }
+        
+        supabase.table("admin_sessions").insert(session_data).execute()
+        
+        return AuthToken(
+            access_token=access_token,
+            token_type="bearer",
+            user={
+                "id": user["id"],
+                "email": user["email"],
+                "name": user["name"]
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin creation error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create admin user: {str(e)}"
         )
 
 

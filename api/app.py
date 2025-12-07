@@ -3078,27 +3078,63 @@ def insert_new_announcement():
 
         logger.info(f"Broadcasting: {new_announcement}")
         socketio.emit('new_announcement', new_announcement, room='all')
+        
+        # Queue notifications for users in their watchlist
         isin = data.get('isin')
         category = data.get('category')
         corp_id = data.get('corp_id')
-        user_ids = get_all_users(isin, category)
-        for user_id in user_ids:
-            response = supabase.table('UserData').select('emailData').eq('UserID', user_id).single().execute()
-            if response.data:
-                email_data = response.data['emailData'] or []
-                if corp_id not in email_data:
-                    email_data.append(corp_id)
-
-                    supabase.table("UserData").update({"emailData": email_data}).eq("UserID", user_id).execute()
-
-                    print("corp_id added successfully.")
-                else:
-                    print("corp_id already present.")
-            else:
-                print("UserID not found.")
-
+        symbol = data.get('symbol')
+        company_name = data.get('companyname')
         
-        return jsonify({'message': 'Test announcement sent successfully!', 'status': 'success'}), 200
+        # Get matching users from watchlist
+        isin_users = get_users_by_isin(isin) if isin else []
+        category_users = get_user_by_category(category) if category else []
+        all_users = list(set(isin_users) | set(category_users))
+        
+        # Queue notifications (batch insert for efficiency)
+        if all_users:
+            notification_records = []
+            for user_id in all_users:
+                # Determine match reason for analytics
+                is_isin_match = user_id in isin_users
+                is_category_match = user_id in category_users
+                
+                if is_isin_match and is_category_match:
+                    matched_by = 'both'
+                elif is_isin_match:
+                    matched_by = 'isin'
+                else:
+                    matched_by = 'category'
+                
+                notification_records.append({
+                    'user_id': user_id,
+                    'corp_id': corp_id,
+                    'isin': isin,
+                    'symbol': symbol,
+                    'company_name': company_name,
+                    'category': category,
+                    'matched_by': matched_by,
+                    'notification_date': dt.date.today().isoformat()
+                })
+            
+            # Batch insert into notification queue
+            try:
+                # Use upsert to handle duplicates gracefully
+                supabase.table('user_notification_queue').upsert(
+                    notification_records,
+                    on_conflict='user_id,corp_id,notification_date'
+                ).execute()
+                logger.info(f"✅ Queued {len(notification_records)} notifications for {len(all_users)} users")
+            except Exception as queue_error:
+                # Log error but don't fail the entire request
+                logger.error(f"❌ Failed to queue notifications: {queue_error}")
+                # Continue execution - WebSocket broadcast already succeeded
+        
+        return jsonify({
+            'message': 'Announcement broadcast and queued successfully!', 
+            'status': 'success',
+            'users_notified': len(all_users) if all_users else 0
+        }), 200
 
     except Exception as e:
         logger.error(f"Error: {str(e)}")

@@ -27,8 +27,8 @@ API_PREFIX = "/api/admin"
 timestamp = int(time.time())
 random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
 TEST_USER = {
-    "email": f"test_{timestamp}_{random_suffix}@backfin.com",
-    "password": f"TestPass{timestamp}@{random_suffix}",
+    "email": f"anshul@backfin.com",
+    "password": f"anshul@04",
     "name": "Test API User"
 }
 
