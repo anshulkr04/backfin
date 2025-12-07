@@ -2106,10 +2106,10 @@ async def generate_content(
         
         # Define response schema
         class AIOutput(BaseModel):
-            category: str = Field(description="The most specific category")
-            headline: str = Field(description="Concise informative headline")
-            ai_summary: str = Field(description="Comprehensive narrative report")
-            sentiment: str = Field(description="Market sentiment (Positive, Negative, or Neutral)")
+            category: str = Field(description=category_prompt)
+            headline: str = Field(description=headline_prompt)
+            ai_summary: str = Field(description=all_prompt)
+            sentiment: str = Field(description=sentiment_prompt)
         
         # Generate content
         logger.info(f"🤖 Generating AI content with {model_to_use}")
