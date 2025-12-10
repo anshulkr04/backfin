@@ -194,6 +194,7 @@ Investor Presentation: The release of official presentations/decks for investors
 Disambiguation: Even if it highlights financial results, if the document is a slide deck/presentation, it is categorized here, NOT as Financial Results.
 Procedural/Administrative: The default category for filings without new, material impact. (Format 3).
 Disambiguation: Includes: all newspaper advertisements; all notices regarding Trading Window closure and opening; all press releases that summarize other substantive announcements (like financial results); notices of meetings for Financial Results; non-CEO/MD KMP changes; routine compliance reports; and any announcement that does not clearly fit another specific category.
+Disambiguation: Includes: ESG rating updates; all newspaper advertisements; all notices regarding Trading Window closure and opening; all press releases that summarize other substantive announcements (like financial results); notices of meetings for Financial Results; non-CEO/MD KMP changes; routine compliance reports; and any announcement that does not clearly fit another specific category.
 Agreements/MoUs: For material formal business pacts that can impact revenue or operations. (Format 1)
 Annual Report: Contains the full Annual Report document, including audited financials. (Format 1)
 Anti-dumping Duty: Updates on import tariffs on the company's products. (Format 1)
@@ -202,7 +203,7 @@ Buyback: A company repurchasing its own shares. (Notice: Format 2; Approval: For
 Change in Address: (Format 3)
 Change in KMP: Appointment of a new CEO or Managing Director ONLY. (Format 1)
 Change in MOA: Modifications to the company's charter. (Notice: Format 2; Approval: Format 1)
-Clarifications/Confirmations: Addressing market rumors or news. (Format 1)
+Clarifications/Confirmations: Addressing market rumors or news. (Format 1)Official company responses to stock exchange queries regarding media reports, market rumors, or unusual spikes in share price/volume.
 Closure of Factory: Shutting down a significant production facility. (Format 1)
 Concall Transcript: Contains the verbatim transcript of an earnings/investor call. (Format 1)
 Consolidation of Shares: A reverse stock split. (Notice: Format 2; Approval: Format 1)
@@ -213,7 +214,7 @@ Delisting: Removal of shares from an exchange. (Notice: Format 2; Approval: Form
 Demerger: Separating a business unit. (Notice: Format 2; Approval: Format 1)
 Demise of KMP: Announcement of the death of Key Management Personnel. (Format 1)
 Disruption of Operations: Significant interruptions (fire, flood, strike). (Format 1)
-Divestitures: Selling assets or subsidiaries. (Notice: Format 2; Approval: Format 1)
+Divestitures: Selling assets or subsidiaries. (Notice: Format 2; Approval: Format 1)The sale, disposal, or spinning off of a business unit, subsidiary, or major asset (e.g., selling a non-core division).
 DRHP: Filing of Draft Red Herring Prospectus for an IPO. (Format 1)
 Expansion: Significant capacity increase, new plants, or major CAPEX. (Format 1)
 Fundraise - Preferential Issue: Raising capital from select investors. (Notice: Format 2; Approval: Format 1)
@@ -227,13 +228,13 @@ Interest Rates Updates: Changes in interest rates offered/payable. (Format 1)
 Investor/Analyst Meet: Intimation or summary of meetings. (Usually Format 3).
 Joint Ventures: Creating a new entity with partners. (Format 1)
 Litigation & Notices: Updates on significant legal cases with material financial impact. (Format 1)
-Mergers/Acquisitions: (Notice: Format 2; Approval: Format 1)
+Mergers/Acquisitions: (Notice: Format 2; Approval: Format 1)Transactions where two companies combine into a new entity (Merger) or one company purchases another (Acquisition).
 Name Change: (Format 3)
 New Order: Announcing the company has WON or RECEIVED a significant new contract. (Format 1)
 New Product: Launch of a new product/service line. (Format 1)
 One Time Settlement (OTS): Resolving dues with lenders. (Format 1)
 Open Offer: A mandatory or voluntary offer to buy shares. (Format 1)
-Operational Update: Key performance metrics released outside formal results. (Format 1)
+Operational Update: Key performance metrics released outside formal results. (Format 1)Voluntary release of key business metrics (e.g., monthly sales volume, AUM, production data) released outside the formal quarterly financial results cycle.
 PLI Scheme: Updates regarding Production Linked Incentive schemes. (Format 1)
 Reduction in Share Capital: Decreasing authorized or paid-up capital. (Notice: Format 2; Approval: Format 1)
 Regulatory Approvals/Orders: Receiving specific non-pharma, non-legal approvals. (Format 1)
