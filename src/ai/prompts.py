@@ -104,8 +104,28 @@ State only the chosen category name."
 """
 
 headline_prompt = """
-Determine the Core Subject: What is the document fundamentally about? (e.g., monthly performance update, annual results, strategic overview).
-Identify the Single Most Important Outcome: From all the data you extracted, what is the single most critical, data-rich takeaway? This will form your headline. It could be a standout growth metric, a key profitability number, or a significant operational figure.
+Role: You are a Senior Financial Analyst focused on institutional-grade summaries.
+
+Task: Analyze the provided corporate announcement and identify the single most important quantitative outcome (e.g., growth rate, profit figure, AUM, premium, margin, or other key KPI).
+
+Output Requirement:
+
+Generate one data-rich headline only.
+
+The headline must clearly state the metric, magnitude, time period, and comparison (YoY/QoQ, if applicable).
+
+Prioritize the most material financial or operational result from the document.
+
+Do not include explanations, bullet points, categories, or formatting beyond the headline itself.
+
+Style Guidance:
+
+Concise, factual, numbers-first
+
+Suitable for institutional investors
+
+Example Output:
+“Q1-FY2026 New Business Premium Rises 6.5% YoY to ₹40.12 Cr; AUM at ₹3,093.59 Cr”
 """
 
 all_prompt = """
@@ -192,7 +212,7 @@ Financial Results: (EXTREMELY STRICT) Use ONLY for the formal, regulatory filing
 Disambiguation: A press release, investor presentation, or any other summary document about financial results is NOT categorized as Financial Results. A notice of a results meeting is Procedural/Administrative.
 Investor Presentation: The release of official presentations/decks for investors. (Format 1).
 Disambiguation: Even if it highlights financial results, if the document is a slide deck/presentation, it is categorized here, NOT as Financial Results.
-Procedural/Administrative: The default category for filings without new, material impact. (Format 3).
+Procedural/Administrative: The default category for filings without new, material impact. (Format 3).SEBI SAST disclosures.
 Disambiguation: Includes: all newspaper advertisements; all notices regarding Trading Window closure and opening; all press releases that summarize other substantive announcements (like financial results); notices of meetings for Financial Results; non-CEO/MD KMP changes; routine compliance reports; and any announcement that does not clearly fit another specific category.
 Disambiguation: Includes: ESG rating updates; all newspaper advertisements; all notices regarding Trading Window closure and opening; all press releases that summarize other substantive announcements (like financial results); notices of meetings for Financial Results; non-CEO/MD KMP changes; routine compliance reports; and any announcement that does not clearly fit another specific category.
 Agreements/MoUs: For material formal business pacts that can impact revenue or operations. (Format 1)
@@ -228,7 +248,7 @@ Interest Rates Updates: Changes in interest rates offered/payable. (Format 1)
 Investor/Analyst Meet: Intimation or summary of meetings. (Usually Format 3).
 Joint Ventures: Creating a new entity with partners. (Format 1)
 Litigation & Notices: Updates on significant legal cases with material financial impact. (Format 1)
-Mergers/Acquisitions: (Notice: Format 2; Approval: Format 1)Transactions where two companies combine into a new entity (Merger) or one company purchases another (Acquisition).
+Mergers/Acquisitions: (Notice: Format 2; Approval: Format 1)Transactions where two companies combine into a new entity (Merger) or one company purchases another (Acquisition). SEBI SAST disclosures are not covered here.
 Name Change: (Format 3)
 New Order: Announcing the company has WON or RECEIVED a significant new contract. (Format 1)
 New Product: Launch of a new product/service line. (Format 1)
@@ -256,6 +276,7 @@ Read the PDF and generate a detailed summary in **fully structured Markdown form
 8.  The output should be **clean, copy-paste ready** for any Markdown editor and visually well-formatted.
 9.  Ensure the summary covers all key details, metrics, and actions mentioned in the PDF.
 10. Maintain clear formatting and layout for easy readability and professional presentation.
+11. You only have to generate the structured narrative part of the output. Do not include category or headline in your response.
 
 **Example of desired format for the 'summary' field content:**
 
