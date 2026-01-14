@@ -813,6 +813,96 @@ The API implements multiple fallback mechanisms to ensure reliability:
 - Fallback mechanisms prevent API downtime
 
 
+### Financial Results
+
+Retrieve verified financial results with comprehensive filtering options. Returns structured financial data including revenue, profit, EPS, and growth metrics.
+
+**Authentication:** No authentication required.
+
+**Endpoint:** `GET /api/financial_results`
+
+**Query Parameters:**
+- `start_date` (optional): Filter results from this date (format: YYYY-MM-DD)
+- `end_date` (optional): Filter results until this date (format: YYYY-MM-DD)
+- `company_id` (optional): Filter by specific company ID
+- `symbol` (optional): Filter by stock symbol (e.g., RELIANCE, TCS)
+- `isin` (optional): Filter by ISIN code
+- `verified` (optional): Show only verified results (default: true, set to false for unverified)
+- `page` (optional): Page number for pagination (default: 1)
+- `page_size` (optional): Number of results per page (default: 20, max: 100)
+
+**Examples:**
+
+```bash
+# Get verified financial results for a specific company
+curl -X GET "https://fin.anshulkr.com/api/financial_results?symbol=RELIANCE&verified=true"
+
+# Get financial results by date range
+curl -X GET "https://fin.anshulkr.com/api/financial_results?start_date=2025-01-01&end_date=2025-03-31"
+
+# Get results by ISIN
+curl -X GET "https://fin.anshulkr.com/api/financial_results?isin=INE002A01018"
+
+# Get all results including unverified with pagination
+curl -X GET "https://fin.anshulkr.com/api/financial_results?verified=false&page=2&page_size=50"
+
+# Combined filters
+curl -X GET "https://fin.anshulkr.com/api/financial_results?symbol=TCS&start_date=2024-04-01&end_date=2025-03-31&verified=true"
+```
+
+**Response Format:**
+
+```json
+{
+  "count": 25,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 2,
+  "results": [
+    {
+      "id": "fr-12345",
+      "corp_id": "corp-67890",
+      "companyname": "Reliance Industries Limited",
+      "symbol": "RELIANCE",
+      "isin": "INE002A01018",
+      "date": "2025-04-15T00:00:00.000Z",
+      "revenue": 250000.50,
+      "revenue_growth": 12.5,
+      "profit": 45000.25,
+      "profit_growth": 15.3,
+      "eps": 75.50,
+      "eps_growth": 18.2,
+      "verified": "true",
+      "verified_at": "2025-04-16T10:30:00.000Z",
+      "verified_by": "admin@example.com",
+      "created_at": "2025-04-15T18:00:00.000Z",
+      "updated_at": "2025-04-16T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+**Auto-Verification:**
+- Financial results are automatically verified when their parent corporate filing is verified through the verification system
+- Unverified results can be accessed by setting `verified=false`
+- Verification status is tracked with timestamp and admin user details
+
+**Error Responses:**
+
+```json
+{
+  "error": "Invalid date format. Use YYYY-MM-DD"
+}
+```
+
+```json
+{
+  "error": "Page size cannot exceed 100"
+}
+```
+
+---
+
 ### Bulk and Block Deals
 
 Retrieve bulk and block deals from NSE and BSE with comprehensive filtering options.

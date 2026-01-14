@@ -651,6 +651,8 @@ Authorization: Bearer <access_token>
 
 **Endpoint:** `POST /api/admin/announcements/{corp_id}/verify`
 
+**Description:** Mark announcement as verified. **Automatically verifies associated financial results.**
+
 **Headers:**
 ```
 Authorization: Bearer <access_token>
@@ -674,9 +676,13 @@ Authorization: Bearer <access_token>
 }
 ```
 
+**Note:** When an announcement is verified, any associated financial results are automatically verified with the same timestamp and verifier.
+
 ### 10. Unverify Announcement
 
 **Endpoint:** `POST /api/admin/announcements/{corp_id}/unverify`
+
+**Description:** Mark announcement as unverified (for corrections). **Automatically unverifies associated financial results.**
 
 **Headers:**
 ```
@@ -692,11 +698,160 @@ Authorization: Bearer <access_token>
 }
 ```
 
+**Note:** When an announcement is unverified, any associated financial results are automatically unverified.
+
+---
+
+## 💰 Financial Results Management
+
+### 11. Get Financial Result by Corp ID
+
+**Endpoint:** `GET /api/admin/financial-results/{corp_id}`
+
+**Description:** Fetch financial result data for a specific announcement
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (200):**
+```json
+{
+  "financial_result": {
+    "id": "uuid",
+    "corp_id": "550e8400-e29b-41d4-a716-446655440000",
+    "company_id": 12345,
+    "isin": "INE002A01018",
+    "period": "Q3 FY24",
+    "sales_current": "₹2,50,000 Cr",
+    "sales_previous_year": "₹2,00,000 Cr",
+    "pat_current": "₹15,000 Cr",
+    "pat_previous": "₹12,000 Cr",
+    "sales_yoy": "25% YoY",
+    "pat_yoy": "25% YoY",
+    "fileurl": "https://...",
+    "verified": "true",
+    "verified_at": "2026-01-14T10:30:00Z",
+    "verified_by": "admin-uuid"
+  }
+}
+```
+
+**Response (404) - No Financial Results:**
+```json
+{
+  "financial_result": null,
+  "message": "No financial results found for this announcement"
+}
+```
+
+### 12. Create Financial Result
+
+**Endpoint:** `POST /api/admin/financial-results`
+
+**Description:** Create a new financial result entry for an announcement
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Request Body:**
+```json
+{
+  "corp_id": "550e8400-e29b-41d4-a716-446655440000",
+  "period": "Q3 FY24",
+  "sales_current": "₹2,50,000 Cr",
+  "sales_previous_year": "₹2,00,000 Cr",
+  "pat_current": "₹15,000 Cr",
+  "pat_previous": "₹12,000 Cr",
+  "sales_yoy": "25% YoY",
+  "pat_yoy": "25% YoY"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "financial_result": {
+    "id": "uuid",
+    "corp_id": "550e8400-e29b-41d4-a716-446655440000",
+    "company_id": 12345,
+    "period": "Q3 FY24",
+    "sales_current": "₹2,50,000 Cr",
+    "verified": "false"
+  }
+}
+```
+
+### 13. Update Financial Result
+
+**Endpoint:** `PATCH /api/admin/financial-results/{id}`
+
+**Description:** Update specific fields of a financial result
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Request Body (all fields optional):**
+```json
+{
+  "period": "Q3 FY24",
+  "sales_current": "₹2,51,000 Cr",
+  "sales_previous_year": "₹2,00,000 Cr",
+  "pat_current": "₹15,200 Cr",
+  "pat_previous": "₹12,000 Cr",
+  "sales_yoy": "25.5% YoY",
+  "pat_yoy": "26.7% YoY"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "financial_result_id": "uuid",
+  "updated": {
+    "id": "uuid",
+    "sales_current": "₹2,51,000 Cr",
+    "pat_current": "₹15,200 Cr"
+  }
+}
+```
+
+**Note:** All updates are logged in the `verification_audit_log` table for audit trail.
+
+### 14. Delete Financial Result
+
+**Endpoint:** `DELETE /api/admin/financial-results/{id}`
+
+**Description:** Delete a financial result entry (Admin only)
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Financial result deleted successfully",
+  "deleted_id": "uuid"
+}
+```
+
+**Authorization:** Requires admin role.
+
 ---
 
 ## 🔍 Review Queue (Admin Only)
 
-### 11. Send Verified Announcement to Review
+### 15. Send Verified Announcement to Review
 
 **Endpoint:** `POST /api/admin/announcements/{corp_id}/send-to-review`
 
