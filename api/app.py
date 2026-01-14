@@ -1733,7 +1733,7 @@ def get_corporate_actions(current_user):
 @app.route('/api/corporate_filings', methods=['GET', 'OPTIONS'])
 # @auth_required
 def get_corporate_filings():
-    """Endpoint to get corporate filings with server-side pagination"""
+    """Endpoint to get corporate filings with server-side pagination and duplicate filtering"""
     if request.method == 'OPTIONS':
         return _handle_options()
         
@@ -1744,6 +1744,8 @@ def get_corporate_filings():
         category = request.args.get('category', '')
         symbol = request.args.get('symbol', '')
         isin = request.args.get('isin', '')
+        # NEW: Parameter to include duplicates (default: exclude)
+        include_duplicates = request.args.get('include_duplicates', 'false').lower() == 'true'
         
         # Pagination parameters
         page = request.args.get('page', '1')
@@ -1845,6 +1847,11 @@ def get_corporate_filings():
             query = query.neq('category', 'Procedural/Administrative')
 
         query = query.neq('category' , 'Error')
+        
+        # NEW: Exclude duplicate announcements by default (unless explicitly included)
+        if not include_duplicates:
+            query = query.or_('is_duplicate.is.false,is_duplicate.is.null')
+            logger.debug("Filtering out duplicate announcements")
 
         # Execute query with pagination
         try:
@@ -1880,6 +1887,10 @@ def get_corporate_filings():
             if not category_list or "Procedural/Administrative" not in category_list:
                 count_query = count_query.neq('category', 'Procedural/Administrative')
             count_query = count_query.neq('category', 'Error')
+            
+            # NEW: Exclude duplicates from count as well
+            if not include_duplicates:
+                count_query = count_query.or_('is_duplicate.is.false,is_duplicate.is.null')
             
             # Get total count
             count_response = count_query.execute()

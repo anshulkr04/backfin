@@ -40,6 +40,7 @@ sys.path.insert(0, str(project_root))
 
 from src.ai.prompts import *
 from src.services.investor_analyzer import uploadInvestor
+from src.utils.pdf_hash_utils import calculate_pdf_hash, check_pdf_duplicate, process_pdf_for_duplicates
 import fcntl  
 import contextlib
 import sqlite3
@@ -939,14 +940,16 @@ class BseScraper:
                 return []  # Return empty list after all retries fail
 
     def process_pdf(self, pdf_file, max_pages=200):
-        """Download and process PDF with error handling"""
+        """Download and process PDF with error handling and hash calculation"""
         if not pdf_file:
             logger.error("No PDF file specified")
-            return "Error", "No PDF file specified", "", "", [], [], None, "Neutral"
+            return "Error", "No PDF file specified", "", "", [], [], None, "Neutral", None, None
             
         # Use the temp directory for downloads
         filepath = os.path.join(self.temp_dir, pdf_file.split("/")[-1])
         num_pages = None
+        pdf_hash = None
+        pdf_size = None
         
         try:
             url = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{pdf_file}"
@@ -965,10 +968,10 @@ class BseScraper:
                     logger.warning(f"PDF download timed out (attempt {attempt}/{self.max_retries})")
                 except requests.exceptions.HTTPError as e:
                     logger.error(f"HTTP error downloading PDF: {e}")
-                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], [], None, "Neutral"
+                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], [], None, "Neutral", None, None
                 except requests.exceptions.RequestException as e:
                     logger.error(f"Error downloading PDF (attempt {attempt}/{self.max_retries}): {e}")
-                    return "Error", f"Failed to download PDF: {str(e)}", "", "", [], [], None, "Neutral"
+                    return "Error", f"Failed to download PDF: {str(e)}", "", "", [], [], None, "Neutral", None, None
 
                 if attempt < self.max_retries:
                     wait_time = 5  # Fixed 5-second wait as requested
@@ -976,33 +979,40 @@ class BseScraper:
                     time.sleep(wait_time)
                 else:
                     logger.error("Failed to download PDF after all retries")
-                    return "Error", "Failed to download PDF after multiple attempts", "", "", [], [], None, "Neutral"
+                    return "Error", "Failed to download PDF after multiple attempts", "", "", [], [], None, "Neutral", None, None
                     
             # Process the PDF if download was successful
             if os.path.exists(filepath):
-                # Get page count first
+                # Calculate PDF hash first (before any processing)
+                pdf_hash, pdf_size = calculate_pdf_hash(filepath)
+                if pdf_hash:
+                    logger.info(f"✅ Calculated PDF hash: {pdf_hash[:16]}... (size: {pdf_size} bytes)")
+                else:
+                    logger.warning("⚠️  Failed to calculate PDF hash, continuing without duplicate detection")
+                
+                # Get page count
                 num_pages = get_pdf_page_count(filepath)
                 
                 # # Check page limit before AI processing
                 # if num_pages and num_pages > max_pages:
                 #     logger.warning(f"PDF has too many pages ({num_pages}), skipping AI processing")
-                #     return "Procedural/Administrative", f"PDF too large ({num_pages} pages)", "", "", [], [], num_pages, "Neutral"
+                #     return "Procedural/Administrative", f"PDF too large ({num_pages} pages)", "", "", [], [], num_pages, "Neutral", pdf_hash, pdf_size
                 
                 category, ai_summary, headline, financial_data, individual_investor_list, company_investor_list, sentiment = self.ai_process(filepath)
                 
                 if category == "Error":
                     logger.error(f"AI processing error: {ai_summary}")
-                    return "Error", ai_summary, "", "", [], [], num_pages, "Neutral"
+                    return "Error", ai_summary, "", "", [], [], num_pages, "Neutral", pdf_hash, pdf_size
                 
                 ai_summary = remove_markdown_tags(ai_summary)
-                return category, ai_summary, headline, financial_data, individual_investor_list, company_investor_list, num_pages, sentiment
+                return category, ai_summary, headline, financial_data, individual_investor_list, company_investor_list, num_pages, sentiment, pdf_hash, pdf_size
             else:
                 logger.error("PDF file not found after download attempt")
-                return "Error", "PDF file not found after download attempt", "", "", [], [], None, "Neutral"
+                return "Error", "PDF file not found after download attempt", "", "", [], [], None, "Neutral", None, None
                 
         except Exception as e:
             logger.error(f"Unexpected error processing PDF: {e}")
-            return "Error", f"Unexpected error: {str(e)}", "", "", [], [], None, "Neutral"
+            return "Error", f"Unexpected error: {str(e)}", "", "", [], [], None, "Neutral", None, None
         finally:
             # Clean up even if an error occurred
             if os.path.exists(filepath):
@@ -1268,6 +1278,8 @@ class BseScraper:
             company_investor_list = []
             num_pages = None
             sentiment = "Neutral"
+            pdf_hash = None
+            pdf_size = None
 
             # Check for negative keywords
             if check_for_negative_keywords(bse_summary):
@@ -1277,7 +1289,7 @@ class BseScraper:
 
             elif check_for_pdf(pdf_file):
                 logger.info(f"Processing PDF: {pdf_file}")
-                category, ai_summary, headline, findata, individual_investor_list, company_investor_list, num_pages, sentiment = self.process_pdf(pdf_file)
+                category, ai_summary, headline, findata, individual_investor_list, company_investor_list, num_pages, sentiment, pdf_hash, pdf_size = self.process_pdf(pdf_file)
                 if ai_summary:
                     ai_summary = remove_markdown_tags(ai_summary)
                     ai_summary = clean_summary(ai_summary)
@@ -1371,6 +1383,26 @@ class BseScraper:
             # Create file URL
             file_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{pdf_file}" if pdf_file else None
 
+            # Check for PDF duplicates if we have hash
+            is_duplicate = False
+            original_corp_id = None
+            original_newsid = None
+            
+            if pdf_hash and isin and supabase:
+                try:
+                    is_dup, original_data = check_pdf_duplicate(supabase, isin, pdf_hash, symbol)
+                    if is_dup and original_data:
+                        is_duplicate = True
+                        original_corp_id = original_data.get('original_corp_id')
+                        original_newsid = original_data.get('original_newsid')
+                        logger.warning(
+                            f"🔍 DUPLICATE PDF DETECTED for {symbol} (ISIN: {isin}): "
+                            f"Original announcement {original_newsid} (corp_id: {original_corp_id})"
+                        )
+                except Exception as e:
+                    logger.error(f"Error checking PDF duplicate: {e}")
+                    # Continue processing even if duplicate check fails
+
             # Prepare data for upload
             data = {
                 "corp_id": corp_id,
@@ -1385,7 +1417,13 @@ class BseScraper:
                 "symbol": symbol,
                 "sentiment": sentiment,
                 "headline": headline,
-                "company_id": company_id
+                "company_id": company_id,
+                # Add PDF hash fields for duplicate tracking
+                "pdf_hash": pdf_hash,
+                "pdf_size_bytes": pdf_size,
+                "is_duplicate": is_duplicate,
+                "original_announcement_id": original_corp_id,
+                "duplicate_of_newsid": original_newsid
             }
             logger.info(f"Prepared data for corp_id {corp_id}: {data}")
 
@@ -1452,6 +1490,28 @@ class BseScraper:
                         response = supabase.table("corporatefilings").insert(data).execute()
                         logger.info(f"Supabase response: data={response.data}")
                         logger.info(f"Inserted data to Supabase for {scrip_id} (attempt {attempt})")
+                        
+                        # Register PDF hash in tracking table if this is a new unique PDF
+                        if pdf_hash and not is_duplicate:
+                            try:
+                                from src.utils.pdf_hash_utils import register_pdf_hash
+                                hash_data = {
+                                    'corp_id': corp_id,
+                                    'isin': isin,
+                                    'symbol': symbol,
+                                    'companyname': company_name,
+                                    'date': date,
+                                    'newsid': newsid
+                                }
+                                register_success = register_pdf_hash(supabase, hash_data, pdf_hash, pdf_size)
+                                if register_success:
+                                    logger.info(f"✅ Registered new PDF hash for {symbol}")
+                                else:
+                                    logger.warning(f"⚠️  Failed to register PDF hash (non-critical)")
+                            except Exception as hash_err:
+                                logger.error(f"Error registering PDF hash: {hash_err}")
+                                # Non-critical error, continue processing
+                        
                         if newsid:
                             update_announcement_checkpoint(
                                 newsid=newsid,
