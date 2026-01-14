@@ -748,6 +748,7 @@ async def get_unverified_announcements(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     category: Optional[str] = None,
+    include_financial_data: bool = True,
     current_user: TokenData = Depends(get_current_user),
     supabase=Depends(get_db)
 ):
@@ -801,14 +802,27 @@ async def get_unverified_announcements(
         
         result = query.execute()
         
+        # Fetch financial results if requested
+        announcements = result.data
+        if include_financial_data and announcements:
+            corp_ids = [ann['corp_id'] for ann in announcements]
+            fin_results = supabase.table("financial_results").select("*").in_("corp_id", corp_ids).execute()
+            
+            # Create lookup map
+            fin_map = {fr['corp_id']: fr for fr in fin_results.data}
+            
+            # Attach financial data to announcements
+            for ann in announcements:
+                ann['financial_result'] = fin_map.get(ann['corp_id'])
+        
         total_count = result.count if hasattr(result, 'count') else 0
         total_pages = (total_count + page_size - 1) // page_size if total_count else 0
         
         logger.info(f"Found {len(result.data)} announcements (page {page}/{total_pages}, total: {total_count})")
         
         return {
-            "announcements": result.data,
-            "count": len(result.data),
+            "announcements": announcements,
+            "count": len(announcements),
             "total_count": total_count,
             "total_pages": total_pages,
             "current_page": page,
@@ -835,6 +849,7 @@ async def get_financial_results(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     category: Optional[str] = None,
+    include_financial_data: bool = True,
     current_user: TokenData = Depends(get_current_user),
     supabase=Depends(get_db)
 ):
@@ -886,14 +901,27 @@ async def get_financial_results(
         
         result = query.execute()
         
+        # Fetch financial results if requested
+        announcements = result.data
+        if include_financial_data and announcements:
+            corp_ids = [ann['corp_id'] for ann in announcements]
+            fin_results = supabase.table("financial_results").select("*").in_("corp_id", corp_ids).execute()
+            
+            # Create lookup map
+            fin_map = {fr['corp_id']: fr for fr in fin_results.data}
+            
+            # Attach financial data to announcements
+            for ann in announcements:
+                ann['financial_result'] = fin_map.get(ann['corp_id'])
+        
         total_count = result.count if hasattr(result, 'count') else 0
         total_pages = (total_count + page_size - 1) // page_size if total_count else 0
         
         logger.info(f"Found {len(result.data)} Financial Results (page {page}/{total_pages}, total: {total_count})")
         
         return {
-            "announcements": result.data,
-            "count": len(result.data),
+            "announcements": announcements,
+            "count": len(announcements),
             "total_count": total_count,
             "total_pages": total_pages,
             "current_page": page,
@@ -920,6 +948,7 @@ async def get_non_financial_results(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     category: Optional[str] = None,
+    include_financial_data: bool = False,
     current_user: TokenData = Depends(get_current_user),
     supabase=Depends(get_db)
 ):
@@ -971,14 +1000,27 @@ async def get_non_financial_results(
         
         result = query.execute()
         
+        # Fetch financial results if requested (unlikely for non-financial, but supported)
+        announcements = result.data
+        if include_financial_data and announcements:
+            corp_ids = [ann['corp_id'] for ann in announcements]
+            fin_results = supabase.table("financial_results").select("*").in_("corp_id", corp_ids).execute()
+            
+            # Create lookup map
+            fin_map = {fr['corp_id']: fr for fr in fin_results.data}
+            
+            # Attach financial data to announcements
+            for ann in announcements:
+                ann['financial_result'] = fin_map.get(ann['corp_id'])
+        
         total_count = result.count if hasattr(result, 'count') else 0
         total_pages = (total_count + page_size - 1) // page_size if total_count else 0
         
         logger.info(f"Found {len(result.data)} non-Financial Results (page {page}/{total_pages}, total: {total_count})")
         
         return {
-            "announcements": result.data,
-            "count": len(result.data),
+            "announcements": announcements,
+            "count": len(announcements),
             "total_count": total_count,
             "total_pages": total_pages,
             "current_page": page,
@@ -1003,8 +1045,9 @@ async def get_announcement(
     current_user: TokenData = Depends(get_current_user),
     supabase=Depends(get_db)
 ):
-    """Get a specific announcement by corp_id"""
+    """Get a specific announcement by corp_id with financial results"""
     try:
+        # Get announcement
         result = supabase.table("corporatefilings")\
             .select("*")\
             .eq("corp_id", corp_id)\
@@ -1017,7 +1060,21 @@ async def get_announcement(
                 detail=f"Announcement with corp_id {corp_id} not found"
             )
         
-        return result.data
+        announcement_data = result.data
+        
+        # Fetch associated financial results
+        try:
+            financial_result = supabase.table("financial_results")\
+                .select("*")\
+                .eq("corp_id", corp_id)\
+                .execute()
+            
+            announcement_data['financial_result'] = financial_result.data[0] if financial_result.data else None
+        except Exception as e:
+            logger.warning(f"Could not fetch financial results for {corp_id}: {e}")
+            announcement_data['financial_result'] = None
+        
+        return announcement_data
         
     except HTTPException:
         raise
@@ -1040,6 +1097,7 @@ class AnnouncementUpdate(BaseModel):
     headline: Optional[str] = None
     category: Optional[str] = None
     ai_summary: Optional[str] = None
+    sentiment: Optional[str] = None
     # Add other fields as needed
 
 
@@ -1095,6 +1153,29 @@ class VerifyRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class FinancialResultUpdate(BaseModel):
+    """Model for updating financial results"""
+    period: Optional[str] = None
+    sales_current: Optional[str] = None
+    sales_previous_year: Optional[str] = None
+    pat_current: Optional[str] = None
+    pat_previous: Optional[str] = None
+    sales_yoy: Optional[str] = None
+    pat_yoy: Optional[str] = None
+
+
+class FinancialResultCreate(BaseModel):
+    """Model for creating financial results"""
+    corp_id: str
+    period: str
+    sales_current: Optional[str] = None
+    sales_previous_year: Optional[str] = None
+    pat_current: Optional[str] = None
+    pat_previous: Optional[str] = None
+    sales_yoy: Optional[str] = None
+    pat_yoy: Optional[str] = None
+
+
 @app.post(f"{settings.API_PREFIX}/announcements/{{corp_id}}/verify")
 async def verify_announcement(
     corp_id: str,
@@ -1102,14 +1183,17 @@ async def verify_announcement(
     current_user: TokenData = Depends(get_current_user),
     supabase=Depends(get_db)
 ):
-    """Mark announcement as verified"""
+    """Mark announcement as verified and auto-verify associated financial results"""
     try:
         logger.info(f"Verifying announcement {corp_id} by user {current_user.user_id}")
         
+        verification_time = datetime.now(timezone.utc).isoformat()
+        
+        # Verify the announcement
         result = supabase.table("corporatefilings")\
             .update({
                 "verified": True,
-                "verified_at": datetime.utcnow().isoformat(),
+                "verified_at": verification_time,
                 "verified_by": current_user.user_id
             })\
             .eq("corp_id", corp_id)\
@@ -1120,6 +1204,22 @@ async def verify_announcement(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Announcement with corp_id {corp_id} not found"
             )
+        
+        # Also verify associated financial results
+        try:
+            fin_result = supabase.table("financial_results")\
+                .update({
+                    "verified": 'true',
+                    "verified_at": verification_time,
+                    "verified_by": current_user.user_id
+                })\
+                .eq("corp_id", corp_id)\
+                .execute()
+            
+            if fin_result.data:
+                logger.info(f"✅ Also verified {len(fin_result.data)} financial result(s) for {corp_id}")
+        except Exception as fin_err:
+            logger.warning(f"Could not verify financial results for {corp_id}: {fin_err}")
         
         logger.info(f"✅ Successfully verified announcement {corp_id}")
         
@@ -1147,10 +1247,11 @@ async def unverify_announcement(
     current_user: TokenData = Depends(get_current_user),
     supabase=Depends(get_db)
 ):
-    """Mark announcement as unverified (for corrections)"""
+    """Mark announcement as unverified (for corrections) and auto-unverify financial results"""
     try:
         logger.info(f"Unmarking verification for {corp_id}")
         
+        # Unverify the announcement
         result = supabase.table("corporatefilings")\
             .update({
                 "verified": False,
@@ -1170,6 +1271,22 @@ async def unverify_announcement(
                 detail=f"Announcement with corp_id {corp_id} not found"
             )
         
+        # Also unverify associated financial results
+        try:
+            fin_result = supabase.table("financial_results")\
+                .update({
+                    "verified": 'false',
+                    "verified_at": None,
+                    "verified_by": None
+                })\
+                .eq("corp_id", corp_id)\
+                .execute()
+            
+            if fin_result.data:
+                logger.info(f"⚠️ Also unverified {len(fin_result.data)} financial result(s) for {corp_id}")
+        except Exception as fin_err:
+            logger.warning(f"Could not unverify financial results for {corp_id}: {fin_err}")
+        
         return {
             "success": True,
             "corp_id": corp_id,
@@ -1183,6 +1300,241 @@ async def unverify_announcement(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to unverify announcement: {str(e)}"
+        )
+
+
+# ============================================================================
+# Financial Results Endpoints
+# ============================================================================
+
+@app.get(f"{settings.API_PREFIX}/financial-results/{{corp_id}}")
+async def get_financial_result(
+    corp_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    supabase=Depends(get_db)
+):
+    """Get financial result for a specific announcement"""
+    try:
+        result = supabase.table("financial_results")\
+            .select("*")\
+            .eq("corp_id", corp_id)\
+            .execute()
+        
+        if not result.data or len(result.data) == 0:
+            return {
+                "financial_result": None,
+                "message": "No financial results found for this announcement"
+            }
+        
+        return {
+            "financial_result": result.data[0]
+        }
+        
+    except Exception as e:
+        logger.error(f"Get financial result error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch financial result: {str(e)}"
+        )
+
+
+@app.post(f"{settings.API_PREFIX}/financial-results")
+async def create_financial_result(
+    data: FinancialResultCreate,
+    current_user: TokenData = Depends(get_current_user),
+    supabase=Depends(get_db)
+):
+    """Create a new financial result entry"""
+    try:
+        # Verify announcement exists
+        announcement = supabase.table("corporatefilings")\
+            .select("corp_id, isin, symbol, company_id")\
+            .eq("corp_id", data.corp_id)\
+            .single()\
+            .execute()
+        
+        if not announcement.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Announcement with corp_id {data.corp_id} not found"
+            )
+        
+        # Prepare financial data
+        financial_data = {
+            "corp_id": data.corp_id,
+            "company_id": announcement.data.get("company_id"),
+            "period": data.period,
+            "sales_current": data.sales_current or "",
+            "sales_previous_year": data.sales_previous_year or "",
+            "pat_current": data.pat_current or "",
+            "pat_previous": data.pat_previous or "",
+            "sales_yoy": data.sales_yoy or "",
+            "pat_yoy": data.pat_yoy or "",
+            "isin": announcement.data.get("isin"),
+            "verified": "false"
+        }
+        
+        # Insert financial result
+        result = supabase.table("financial_results")\
+            .insert(financial_data)\
+            .execute()
+        
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create financial result"
+            )
+        
+        logger.info(f"Created financial result for announcement {data.corp_id}")
+        
+        return {
+            "success": True,
+            "financial_result": result.data[0]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Create financial result error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create financial result: {str(e)}"
+        )
+
+
+@app.patch(f"{settings.API_PREFIX}/financial-results/{{financial_result_id}}")
+async def update_financial_result(
+    financial_result_id: str,
+    update: FinancialResultUpdate,
+    current_user: TokenData = Depends(get_current_user),
+    supabase=Depends(get_db)
+):
+    """Update financial result fields"""
+    try:
+        # Build update dict excluding None values
+        update_data = {k: v for k, v in update.dict().items() if v is not None}
+        
+        if not update_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No fields to update"
+            )
+        
+        logger.info(f"Updating financial result {financial_result_id}: {update_data}")
+        
+        # Get current financial result to log changes
+        current = supabase.table("financial_results")\
+            .select("*")\
+            .eq("id", financial_result_id)\
+            .single()\
+            .execute()
+        
+        if not current.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Financial result with id {financial_result_id} not found"
+            )
+        
+        # Update financial result
+        result = supabase.table("financial_results")\
+            .update(update_data)\
+            .eq("id", financial_result_id)\
+            .execute()
+        
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Financial result with id {financial_result_id} not found"
+            )
+        
+        # Log audit trail
+        try:
+            audit_entry = {
+                "corp_id": current.data.get("corp_id"),
+                "user_id": current_user.user_id,
+                "action": "updated_financial_result",
+                "old_values": {k: current.data.get(k) for k in update_data.keys()},
+                "new_values": update_data,
+                "notes": f"Updated financial result {financial_result_id}",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            supabase.table("verification_audit_log").insert(audit_entry).execute()
+        except Exception as audit_err:
+            logger.warning(f"Failed to create audit log: {audit_err}")
+        
+        return {
+            "success": True,
+            "financial_result_id": financial_result_id,
+            "updated": result.data[0]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Update financial result error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update financial result: {str(e)}"
+        )
+
+
+@app.delete(f"{settings.API_PREFIX}/financial-results/{{financial_result_id}}")
+async def delete_financial_result(
+    financial_result_id: str,
+    current_user: TokenData = Depends(require_admin),
+    supabase=Depends(get_db)
+):
+    """Delete a financial result entry (Admin only)"""
+    try:
+        # Get financial result before deletion for audit
+        financial_result = supabase.table("financial_results")\
+            .select("*")\
+            .eq("id", financial_result_id)\
+            .single()\
+            .execute()
+        
+        if not financial_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Financial result with id {financial_result_id} not found"
+            )
+        
+        # Delete financial result
+        result = supabase.table("financial_results")\
+            .delete()\
+            .eq("id", financial_result_id)\
+            .execute()
+        
+        # Log audit trail
+        try:
+            audit_entry = {
+                "corp_id": financial_result.data.get("corp_id"),
+                "user_id": current_user.user_id,
+                "action": "deleted_financial_result",
+                "old_values": financial_result.data,
+                "new_values": {},
+                "notes": f"Deleted financial result {financial_result_id}",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            supabase.table("verification_audit_log").insert(audit_entry).execute()
+        except Exception as audit_err:
+            logger.warning(f"Failed to create audit log: {audit_err}")
+        
+        logger.info(f"Deleted financial result {financial_result_id}")
+        
+        return {
+            "success": True,
+            "message": "Financial result deleted successfully",
+            "deleted_id": financial_result_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete financial result error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete financial result: {str(e)}"
         )
 
 

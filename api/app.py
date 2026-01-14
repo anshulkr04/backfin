@@ -1970,6 +1970,187 @@ def get_filing_by_id(corp_id):
         return jsonify({'message': 'No filing found'}), 404
     return jsonify(response.data[0]), 200
 
+
+@app.route('/api/financial_results', methods=['GET', 'OPTIONS'])
+def get_financial_results():
+    """
+    Endpoint to get verified financial results with comprehensive filters
+    
+    Query Parameters:
+    - start_date (str): Start date filter (YYYY-MM-DD format)
+    - end_date (str): End date filter (YYYY-MM-DD format)
+    - company_id (int): Filter by company ID
+    - symbol (str): Filter by stock symbol
+    - isin (str): Filter by ISIN code
+    - verified (bool): Filter by verification status (default: true, only show verified)
+    - page (int): Page number for pagination (default: 1)
+    - page_size (int): Results per page (default: 20, max: 100)
+    """
+    if request.method == 'OPTIONS':
+        return _handle_options()
+    
+    try:
+        # Get query parameters
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        company_id = request.args.get('company_id', '')
+        symbol = request.args.get('symbol', '')
+        isin = request.args.get('isin', '')
+        # Default to showing only verified results
+        verified = request.args.get('verified', 'true').lower() == 'true'
+        
+        # Pagination parameters
+        page = request.args.get('page', '1')
+        page_size = request.args.get('page_size', '20')
+        
+        # Validate and parse pagination parameters
+        try:
+            page = int(page)
+            if page < 1:
+                page = 1
+        except (ValueError, TypeError):
+            page = 1
+        
+        try:
+            page_size = int(page_size)
+            if page_size < 1:
+                page_size = 20
+            elif page_size > 100:
+                page_size = 100
+        except (ValueError, TypeError):
+            page_size = 20
+        
+        logger.info(f"Financial results request: start_date={start_date}, end_date={end_date}, company_id={company_id}, symbol={symbol}, isin={isin}, verified={verified}, page={page}, page_size={page_size}")
+        
+        if not supabase_connected:
+            logger.error("Database service unavailable")
+            return jsonify({
+                'message': 'Database service unavailable. Please try again later.',
+                'status': 'error'
+            }), 503
+        
+        # Build query with JOIN to corporatefilings for date filtering
+        query = supabase.table("financial_results").select("""
+            id,
+            corp_id,
+            company_id,
+            isin,
+            period,
+            sales_current,
+            sales_previous_year,
+            pat_current,
+            pat_previous,
+            sales_yoy,
+            pat_yoy,
+            fileurl,
+            verified,
+            verified_at,
+            verified_by,
+            corporatefilings!left(
+                date,
+                companyname,
+                headline,
+                category,
+                ai_summary,
+                symbol
+            )
+        """, count="exact")
+        
+        # Apply verified filter (default: only show verified)
+        verified_value = 'true' if verified else 'false'
+        query = query.eq("verified", verified_value)
+        
+        # Apply company filters
+        if company_id:
+            try:
+                company_id_int = int(company_id)
+                query = query.eq("company_id", company_id_int)
+            except ValueError:
+                logger.warning(f"Invalid company_id: {company_id}")
+        
+        # Note: symbol and isin filtering happens after fetch since they're in joined table
+        
+        if isin:
+            query = query.eq("isin", isin.strip().upper())
+        
+        # Execute count query first
+        try:
+            count_response = query.execute()
+            total_count = count_response.count if hasattr(count_response, 'count') else 0
+        except Exception as count_err:
+            logger.error(f"Error getting count: {count_err}")
+            total_count = 0
+        
+        # Calculate pagination
+        total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+        from_index = (page - 1) * page_size
+        to_index = from_index + page_size - 1
+        
+        # Apply pagination and ordering
+        query = query.order("id", desc=True).range(from_index, to_index)
+        
+        # Execute paginated query
+        response = query.execute()
+        
+        results = response.data if response.data else []
+        
+        # Filter by symbol and/or date if specified (since we can't directly filter on joined table)
+        if symbol or start_date or end_date:
+            filtered_results = []
+            for result in results:
+                filing = result.get('corporatefilings')
+                
+                # Symbol filter
+                if symbol and filing:
+                    filing_symbol = filing.get('symbol', '')
+                    if filing_symbol.upper() != symbol.strip().upper():
+                        continue
+                
+                # Date filters
+                if filing and filing.get('date'):
+                    filing_date = filing['date']
+                    # Simple string comparison works for ISO dates
+                    if start_date and filing_date < start_date:
+                        continue
+                    if end_date and filing_date > end_date:
+                        continue
+                
+                filtered_results.append(result)
+            results = filtered_results
+        
+        result_count = len(results)
+        
+        logger.info(f"Retrieved {result_count} financial results (page {page}/{total_pages}, total: {total_count})")
+        
+        return jsonify({
+            'count': result_count,
+            'total_count': total_count,
+            'total_pages': total_pages,
+            'current_page': page,
+            'page_size': page_size,
+            'has_next': page < total_pages,
+            'has_previous': page > 1,
+            'financial_results': results
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Error in get_financial_results: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+        return jsonify({
+            'count': 0,
+            'total_count': 0,
+            'total_pages': 0,
+            'current_page': 1,
+            'page_size': 20,
+            'has_next': False,
+            'has_previous': False,
+            'financial_results': [],
+            'error': 'Server error'
+        }), 200
+
+
 CATEGORY_COLUMNS = [
     "Financial Results",
     "Investor Presentation",
