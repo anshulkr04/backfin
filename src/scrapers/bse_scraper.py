@@ -1601,9 +1601,23 @@ class BseScraper:
                     else:
                         logger.info("No investor data to upload.")
 
-                # Upload financial data only if we have meaningful data
+                # Upload financial data only if we have meaningful data AND the corporatefilings row exists
                 if any([period, sales_current, sales_previous_year, pat_current, pat_previous_year]):
-                    safely_upload_financial_data(supabase, financial_data, symbol, isin, self.max_retries)
+                    # Only insert financial data if corporatefilings insert succeeded or row already exists
+                    if inserted:
+                        safely_upload_financial_data(supabase, financial_data, symbol, isin, self.max_retries)
+                    else:
+                        # Verify corp_id exists before attempting financial data upload
+                        try:
+                            verify_result = supabase.table("corporatefilings").select("corp_id").eq("corp_id", corp_id).limit(1).execute()
+                            if verify_result.data and len(verify_result.data) > 0:
+                                logger.info(f"Verified corp_id {corp_id} exists in corporatefilings, uploading financial data")
+                                safely_upload_financial_data(supabase, financial_data, symbol, isin, self.max_retries)
+                            else:
+                                logger.warning(f"Skipping financial data upload - corp_id {corp_id} not found in corporatefilings")
+                        except Exception as verify_err:
+                            logger.error(f"Error verifying corp_id existence: {verify_err}")
+                            logger.warning(f"Skipping financial data upload due to verification error")
 
             else:
                 logger.warning("Supabase not connected, skipping database upload")

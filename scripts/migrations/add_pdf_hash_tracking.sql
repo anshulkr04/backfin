@@ -316,40 +316,21 @@ COMMENT ON FUNCTION update_duplicate_stats IS 'Update daily duplicate detection 
 
 
 -- =====================================================
--- 10. Add RLS (Row Level Security) policies if needed
+-- 10. DISABLE RLS (Row Level Security) - Make Unrestricted
 -- =====================================================
 
--- Enable RLS on new tables
-ALTER TABLE announcement_pdf_hashes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE duplicate_detection_stats ENABLE ROW LEVEL SECURITY;
+-- DISABLE RLS on new tables to allow unrestricted access
+ALTER TABLE announcement_pdf_hashes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE duplicate_detection_stats DISABLE ROW LEVEL SECURITY;
 
--- Policy: Allow service role full access
-CREATE POLICY "Service role has full access to pdf_hashes"
-    ON announcement_pdf_hashes
-    FOR ALL
-    TO service_role
-    USING (true)
-    WITH CHECK (true);
+-- Drop any existing policies (in case they were created before)
+DROP POLICY IF EXISTS "Service role has full access to pdf_hashes" ON announcement_pdf_hashes;
+DROP POLICY IF EXISTS "Service role has full access to duplicate_stats" ON duplicate_detection_stats;
+DROP POLICY IF EXISTS "Authenticated users can read pdf_hashes" ON announcement_pdf_hashes;
+DROP POLICY IF EXISTS "Authenticated users can read duplicate_stats" ON duplicate_detection_stats;
 
-CREATE POLICY "Service role has full access to duplicate_stats"
-    ON duplicate_detection_stats
-    FOR ALL
-    TO service_role
-    USING (true)
-    WITH CHECK (true);
-
--- Policy: Authenticated users can read (for analytics/admin dashboards)
-CREATE POLICY "Authenticated users can read pdf_hashes"
-    ON announcement_pdf_hashes
-    FOR SELECT
-    TO authenticated
-    USING (true);
-
-CREATE POLICY "Authenticated users can read duplicate_stats"
-    ON duplicate_detection_stats
-    FOR SELECT
-    TO authenticated
-    USING (true);
+-- Note: Tables are now accessible without RLS restrictions
+-- All authenticated and anonymous users can read/write to these tables
 
 
 -- =====================================================

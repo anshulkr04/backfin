@@ -62,6 +62,7 @@ sys.path.insert(0, str(project_root))
 
 from src.ai.prompts import *
 from src.services.investor_analyzer import uploadInvestor
+from src.utils.pdf_hash_utils import calculate_pdf_hash, check_pdf_duplicate, register_pdf_hash
 
 # Import Redis queue functionality
 try:
@@ -757,13 +758,15 @@ class NseScraper:
             return "Error", f"Error processing file: {str(e)}", "", "", [], [], "Neutral"
 
     def process_pdf(self, url, max_pages=200):
-        """Download and process PDF with error handling"""
+        """Download and process PDF with error handling and hash calculation"""
         if not url:
             logger.error("No PDF file specified")
-            return "Error", "No PDF file specified", "", "", [], [], "Neutral"
+            return "Error", "No PDF file specified", "", "", [], [], "Neutral", None, None
             
         # Use the temp directory for downloads
         filepath = os.path.join(self.temp_dir, url.split("/")[-1])
+        pdf_hash = None
+        pdf_size = None
         
         try:
             # Download with retries
@@ -780,7 +783,7 @@ class NseScraper:
                     logger.warning(f"PDF download timed out (attempt {attempt}/{self.max_retries})")
                 except requests.exceptions.HTTPError as e:
                     logger.error(f"HTTP error downloading PDF: {e}")
-                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], [], "Neutral"
+                    return "Error", f"Failed to download PDF: HTTP error {e.response.status_code}", "", "", [], [], "Neutral", None, None
                 except requests.exceptions.RequestException as e:
                     logger.error(f"Error downloading PDF (attempt {attempt}/{self.max_retries}): {e}")
                 
@@ -790,33 +793,40 @@ class NseScraper:
                     time.sleep(wait_time)
                 else:
                     logger.error("Failed to download PDF after all retries")
-                    return "Error", "Failed to download PDF after multiple attempts", "", "", [], [], "Neutral"
+                    return "Error", "Failed to download PDF after multiple attempts", "", "", [], [], "Neutral", None, None
                     
             # Process the PDF if download was successful
             if os.path.exists(filepath):
+                # Calculate PDF hash first (before any processing)
+                pdf_hash, pdf_size = calculate_pdf_hash(filepath)
+                if pdf_hash:
+                    logger.info(f"✅ Calculated PDF hash: {pdf_hash[:16]}... (size: {pdf_size} bytes)")
+                else:
+                    logger.warning("⚠️  Failed to calculate PDF hash, continuing without duplicate detection")
+                
                 # Check page count
                 page_count = get_pdf_page_count(filepath)
                 if page_count is not None and page_count > max_pages:
                     logger.warning(f"PDF has {page_count} pages, exceeding {max_pages} page limit. Skipping AI processing.")
-                    return "Procedural/Administrative", f"PDF too large ({page_count} pages)", "", "", [], [], "Neutral"
+                    return "Procedural/Administrative", f"PDF too large ({page_count} pages)", "", "", [], [], "Neutral", pdf_hash, pdf_size
                 elif page_count is None and PDF_SUPPORT:
                     logger.warning("Could not determine PDF page count, proceeding with AI processing")
 
                 category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment = self.ai_process(filepath)
                 if category == "Error":
                     logger.error(f"AI processing error: {ai_summary}")
-                    return "Error", ai_summary, "", "", [], [], "Neutral"
+                    return "Error", ai_summary, "", "", [], [], "Neutral", pdf_hash, pdf_size
                 
                 if ai_summary:
                     ai_summary = remove_markdown_tags(ai_summary)
-                return category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment
+                return category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment, pdf_hash, pdf_size
             else:
                 logger.error("PDF file not found after download attempt")
-                return "Error", "PDF file not found after download attempt", "", "", [], [], "Neutral"
+                return "Error", "PDF file not found after download attempt", "", "", [], [], "Neutral", None, None
                 
         except Exception as e:
             logger.error(f"Unexpected error processing PDF: {e}")
-            return "Error", f"Unexpected error: {str(e)}", "", "", [], [], "Neutral"
+            return "Error", f"Unexpected error: {str(e)}", "", "", [], [], "Neutral", pdf_hash, pdf_size
         finally:
             # Clean up even if an error occurred
             if os.path.exists(filepath):
@@ -915,6 +925,13 @@ class NseScraper:
                 else:
                     logger.warning(f"Invalid ISIN format: {isin}")
             
+            # Initialize PDF hash variables
+            pdf_hash = None
+            pdf_size = None
+            is_duplicate = False
+            original_corp_id = None
+            original_newsid = None
+
             if check_for_negative_keywords(summary):
                 logger.info(f"Negative keyword found in announcement - skipping processing")
                 ai_summary = "Please refer to the original document provided."  
@@ -924,16 +941,23 @@ class NseScraper:
                 if newnsecode_exists:  # FIXED: Now this will work correctly
                     logger.info(f"Processing PDF: {url}")
                     try:
-                        # FIXED: Expect 7 values from process_pdf, with proper error handling
+                        # Expect 9 values from process_pdf (with pdf_hash and pdf_size)
                         result = self.process_pdf(url)
-                        if len(result) == 7:
-                            category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment = result
+                        if len(result) == 9:
+                            category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment, pdf_hash, pdf_size = result
                             if ai_summary and category != "Error":
                                 ai_summary = remove_markdown_tags(ai_summary)
                                 if ai_summary:  # Check again after removing markdown
                                     ai_summary = clean_summary(ai_summary)
+                        elif len(result) == 7:
+                            # Fallback for older return format
+                            category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment = result
+                            if ai_summary and category != "Error":
+                                ai_summary = remove_markdown_tags(ai_summary)
+                                if ai_summary:
+                                    ai_summary = clean_summary(ai_summary)
                         else:
-                            logger.error(f"process_pdf returned {len(result)} values, expected 7")
+                            logger.error(f"process_pdf returned {len(result)} values, expected 9")
                             # Keep default values, don't reassign sentiment
                     except Exception as e:
                         logger.error(f"Error processing PDF: {e}")
@@ -944,7 +968,22 @@ class NseScraper:
             
             corp_id = str(uuid.uuid4())  # Generate a unique ID for the announcement
 
-            
+            # Check for PDF duplicates if we have hash
+            if pdf_hash and isin and supabase:
+                try:
+                    is_dup, original_data = check_pdf_duplicate(supabase, isin, pdf_hash, symbol)
+                    if is_dup and original_data:
+                        is_duplicate = True
+                        original_corp_id = original_data.get('original_corp_id')
+                        original_newsid = original_data.get('original_newsid')
+                        logger.warning(
+                            f"🔍 DUPLICATE PDF DETECTED for {symbol} (ISIN: {isin}): "
+                            f"Original announcement {original_newsid} (corp_id: {original_corp_id})"
+                        )
+                except Exception as e:
+                    logger.error(f"Error checking PDF duplicate: {e}")
+                    # Continue processing even if duplicate check fails
+
             # Prepare data for upload - sentiment is guaranteed to be initialized here
             data = {
                 "corp_id": corp_id,
@@ -959,7 +998,13 @@ class NseScraper:
                 "symbol": symbol,
                 "headline": headline,
                 "sentiment": sentiment,
-                "company_id": company_id
+                "company_id": company_id,
+                # Add PDF hash fields for duplicate tracking
+                "pdf_hash": pdf_hash,
+                "pdf_size_bytes": pdf_size,
+                "is_duplicate": is_duplicate,
+                "original_announcement_id": original_corp_id,
+                "duplicate_of_newsid": original_newsid
             }
             
             # Check if category is "Error" - if so, skip upload and mark for retry
@@ -1025,12 +1070,35 @@ class NseScraper:
 
             
             # Only upload to Supabase if we have a connection
+            inserted = False
             if supabase:
                 # Upload to Supabase with retries
                 for attempt in range(1, self.max_retries + 1):
                     try:
                         response = supabase.table("corporatefilings").insert(data).execute()
                         logger.info(f"Data uploaded to Supabase for {symbol} (ISIN: {isin})")
+                        inserted = True  # Mark as successfully inserted
+                        
+                        # Register PDF hash in tracking table if this is a new unique PDF
+                        if pdf_hash and not is_duplicate:
+                            try:
+                                hash_data = {
+                                    'corp_id': corp_id,
+                                    'isin': isin,
+                                    'symbol': symbol,
+                                    'companyname': company_name,
+                                    'date': date,
+                                    'newsid': None  # NSE doesn't have newsid
+                                }
+                                register_success = register_pdf_hash(supabase, hash_data, pdf_hash, pdf_size)
+                                if register_success:
+                                    logger.info(f"✅ Registered new PDF hash for {symbol}")
+                                else:
+                                    logger.warning(f"⚠️  Failed to register PDF hash (non-critical)")
+                            except Exception as hash_err:
+                                logger.error(f"Error registering PDF hash: {hash_err}")
+                                # Non-critical error, continue processing
+                        
                         if (individual_investor_list or company_investor_list) and supabase:
                             try:
                                 uploadInvestor(individual_investor_list, company_investor_list, corp_id=corp_id)
@@ -1038,7 +1106,14 @@ class NseScraper:
                                 logger.error(f"Error uploading investor data: {e}")
                         break
                     except Exception as e:
-                        logger.error(f"Error uploading to Supabase (attempt {attempt}/{self.max_retries}): {e}")
+                        err_text = str(e)
+                        logger.error(f"Error uploading to Supabase (attempt {attempt}/{self.max_retries}): {err_text}")
+                        
+                        # If duplicate key, assume row exists
+                        if "duplicate key" in err_text or "23505" in err_text:
+                            logger.warning(f"Duplicate key for corp_id {corp_id} - assuming row already exists")
+                            inserted = True
+                            break
                         
                         if attempt < self.max_retries:
                             wait_time = 5  # Fixed 5-second wait for consistency
@@ -1047,9 +1122,22 @@ class NseScraper:
                         else:
                             logger.error(f"Failed to upload after {self.max_retries} attempts")
                 
-                # Upload financial data only if we have meaningful data
+                # Upload financial data only if we have meaningful data AND corporatefilings exists
                 if any([period, sales_current, sales_previous_year, pat_current, pat_previous_year]):
-                    safely_upload_financial_data(supabase, financial_data, symbol, isin, self.max_retries)
+                    if inserted:
+                        safely_upload_financial_data(supabase, financial_data, symbol, isin, self.max_retries)
+                    else:
+                        # Verify corp_id exists before attempting financial data upload
+                        try:
+                            verify_result = supabase.table("corporatefilings").select("corp_id").eq("corp_id", corp_id).limit(1).execute()
+                            if verify_result.data and len(verify_result.data) > 0:
+                                logger.info(f"Verified corp_id {corp_id} exists in corporatefilings, uploading financial data")
+                                safely_upload_financial_data(supabase, financial_data, symbol, isin, self.max_retries)
+                            else:
+                                logger.warning(f"Skipping financial data upload - corp_id {corp_id} not found in corporatefilings")
+                        except Exception as verify_err:
+                            logger.error(f"Error verifying corp_id existence: {verify_err}")
+                            logger.warning(f"Skipping financial data upload due to verification error")
 
             else:
                 logger.warning("Supabase not connected, skipping database upload")

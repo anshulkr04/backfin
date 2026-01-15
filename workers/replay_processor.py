@@ -385,13 +385,32 @@ def safely_upload_financial_data(supabase, financial_data, symbol, isin, max_ret
                 return True
         else:
             # No existing record, insert new one
+            # First verify corp_id exists in corporatefilings to avoid FK constraint violation
+            corp_id = financial_data.get("corp_id")
+            if corp_id:
+                try:
+                    corp_check = supabase.table("corporatefilings").select("corp_id").eq("corp_id", corp_id).limit(1).execute()
+                    if not corp_check.data or len(corp_check.data) == 0:
+                        logger.error(f"corp_id {corp_id} not found in corporatefilings - skipping financial data insert")
+                        return False
+                except Exception as check_err:
+                    logger.error(f"Error verifying corp_id existence: {check_err}")
+                    return False
+            
             for attempt in range(1, max_retries + 1):
                 try:
                     insert_result = supabase.table("financial_results").insert(financial_data).execute()
                     logger.info(f"Inserted new financial data for {symbol} (ISIN: {isin})")
                     return True
                 except Exception as e:
-                    logger.error(f"Error inserting financial data (attempt {attempt}/{max_retries}): {e}")
+                    err_text = str(e)
+                    logger.error(f"Error inserting financial data (attempt {attempt}/{max_retries}): {err_text}")
+                    
+                    # If FK constraint violation, don't retry
+                    if "23503" in err_text or "violates foreign key constraint" in err_text:
+                        logger.error(f"Foreign key constraint violation - corp_id {corp_id} not in corporatefilings")
+                        return False
+                    
                     if attempt < max_retries:
                         time.sleep(5)
                     else:

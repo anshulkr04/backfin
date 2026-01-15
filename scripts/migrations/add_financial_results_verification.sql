@@ -12,6 +12,21 @@ ADD COLUMN IF NOT EXISTS verified_by UUID;
 ALTER TABLE financial_results 
 ALTER COLUMN verified SET DEFAULT 'false';
 
+-- Add foreign key constraint to corporatefilings (REQUIRED for PostgREST JOINs)
+DO $$
+BEGIN
+    -- Add FK from financial_results.corp_id -> corporatefilings.corp_id
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'fk_financial_results_corp_id' 
+        AND table_name = 'financial_results'
+    ) THEN
+        ALTER TABLE financial_results
+        ADD CONSTRAINT fk_financial_results_corp_id 
+        FOREIGN KEY (corp_id) REFERENCES corporatefilings(corp_id) ON DELETE CASCADE;
+    END IF;
+END $$;
+
 -- Add foreign key constraint to admin_users if the table exists
 DO $$
 BEGIN
