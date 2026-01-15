@@ -18,6 +18,8 @@ import sys
 import json
 import requests
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+load_dotenv()
 
 # Configuration
 MAIN_API_URL = "https://api.marketwire.ai"
