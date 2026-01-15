@@ -8,10 +8,12 @@ import os
 import sys
 from datetime import datetime
 from supabase import create_client
+from dotenv import load_dotenv
+load_dotenv()
 
 # Supabase connection
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL2")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY2")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     print("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY environment variables")
