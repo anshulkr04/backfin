@@ -681,32 +681,40 @@ class EphemeralAIWorker:
             original_announcement_id = None
             
             try:
-                pdf_hash = calculate_pdf_hash(filepath)
-                pdf_size_bytes = os.path.getsize(filepath)
+                # calculate_pdf_hash returns (hash_string, file_size) tuple
+                hash_result = calculate_pdf_hash(filepath)
+                if hash_result and hash_result[0]:
+                    pdf_hash = hash_result[0]
+                    pdf_size_bytes = hash_result[1]
+                else:
+                    pdf_size_bytes = os.path.getsize(filepath)
                 logger.info(f"📋 Calculated PDF hash: {pdf_hash} (size: {pdf_size_bytes} bytes)")
                 
                 # Check if this PDF has been seen before
-                try:
-                    from supabase import create_client
-                    supabase_url = os.getenv('SUPABASE_URL2')
-                    supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
-                    if supabase_url and supabase_key:
-                        supabase = create_client(supabase_url, supabase_key)
-                        
-                        # Extract ISIN and symbol for duplicate check
-                        isin = announcement_data.get('ISIN', 'N/A')
-                        symbol = extract_symbol(announcement_data.get('NSURL'))
-                        
-                        duplicate_result = check_pdf_duplicate(supabase, isin, pdf_hash, symbol)
-                        is_duplicate = duplicate_result['is_duplicate']
-                        original_announcement_id = duplicate_result.get('original_corp_id')
-                        
-                        if is_duplicate:
-                            logger.warning(f"⚠️ Duplicate PDF detected! Hash: {pdf_hash}, Original: {original_announcement_id}")
-                        else:
-                            logger.info(f"✅ New PDF detected (not a duplicate)")
-                except Exception as dup_check_error:
-                    logger.warning(f"⚠️ Could not check for duplicate PDF: {dup_check_error}")
+                if pdf_hash:
+                    try:
+                        from supabase import create_client
+                        supabase_url = os.getenv('SUPABASE_URL2')
+                        supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+                        if supabase_url and supabase_key:
+                            supabase = create_client(supabase_url, supabase_key)
+                            
+                            # Extract ISIN and symbol for duplicate check
+                            isin = announcement_data.get('ISIN', 'N/A')
+                            symbol = extract_symbol(announcement_data.get('NSURL'))
+                            
+                            # check_pdf_duplicate returns (is_duplicate: bool, original_data: dict or None)
+                            is_dup, original_data = check_pdf_duplicate(supabase, isin, pdf_hash, symbol)
+                            is_duplicate = is_dup
+                            if original_data:
+                                original_announcement_id = original_data.get('original_corp_id')
+                            
+                            if is_duplicate:
+                                logger.warning(f"⚠️ Duplicate PDF detected! Hash: {pdf_hash}, Original: {original_announcement_id}")
+                            else:
+                                logger.info(f"✅ New PDF detected (not a duplicate)")
+                    except Exception as dup_check_error:
+                        logger.warning(f"⚠️ Could not check for duplicate PDF: {dup_check_error}")
             except Exception as hash_error:
                 logger.error(f"❌ Failed to calculate PDF hash: {hash_error}")
 
@@ -951,14 +959,20 @@ class EphemeralAIWorker:
                     supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
                     if supabase_url and supabase_key:
                         supabase = create_client(supabase_url, supabase_key)
+                        # register_pdf_hash expects (supabase, announcement_data_dict, pdf_hash, pdf_size)
+                        announcement_dict = {
+                            'corp_id': job.corp_id,
+                            'isin': isin,
+                            'symbol': symbol,
+                            'companyname': companyname,
+                            'date': announcement_data.get('DT_TM'),
+                            'newsid': announcement_data.get('NEWSID') or announcement_data.get('newsid', '')
+                        }
                         register_pdf_hash(
-                            supabase=supabase,
-                            isin=isin,
-                            pdf_hash=pdf_hash,
-                            pdf_size_bytes=pdf_size_bytes,
-                            original_corp_id=job.corp_id,
-                            symbol=symbol,
-                            company_name=companyname
+                            supabase,
+                            announcement_dict,
+                            pdf_hash,
+                            pdf_size_bytes
                         )
                         logger.info(f"✅ Registered PDF hash for {isin}: {pdf_hash}")
                 except Exception as reg_error:
