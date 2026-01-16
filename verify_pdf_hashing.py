@@ -5,6 +5,8 @@ Quick test to verify PDF hashing is working after container rebuild
 import os
 from supabase import create_client
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+load_dotenv()
 
 def test_pdf_hashing():
     print("🔍 Testing PDF Hashing Functionality")
