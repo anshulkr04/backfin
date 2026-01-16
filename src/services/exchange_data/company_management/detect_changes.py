@@ -51,6 +51,9 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL2")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
+print(SUPABASE_KEY)
+print(SUPABASE_URL)
+
 # File paths for temporary data
 NSE_FILE = "NSE_EQ_instruments.csv"
 BSE_FILE = "BSE_EQ_instruments.csv"

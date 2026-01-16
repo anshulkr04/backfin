@@ -41,6 +41,7 @@ pytest-asyncio==0.24.0
 
 # System Utilities
 schedule==1.2.2
+apscheduler==3.10.4
 click==8.2.0
 
 # Additional utilities

@@ -40,7 +40,7 @@ sys.path.insert(0, str(project_root))
 
 from src.ai.prompts import *
 from src.services.investor_analyzer import uploadInvestor
-from src.utils.pdf_hash_utils import calculate_pdf_hash, check_pdf_duplicate, process_pdf_for_duplicates
+from src.utils.pdf_hash_utils import calculate_pdf_hash, check_pdf_duplicate, process_pdf_for_duplicates, register_pdf_hash
 import fcntl  
 import contextlib
 import sqlite3
@@ -1494,7 +1494,6 @@ class BseScraper:
                         # Register PDF hash in tracking table if this is a new unique PDF
                         if pdf_hash and not is_duplicate:
                             try:
-                                from src.utils.pdf_hash_utils import register_pdf_hash
                                 hash_data = {
                                     'corp_id': corp_id,
                                     'isin': isin,
