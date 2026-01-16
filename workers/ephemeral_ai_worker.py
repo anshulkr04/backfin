@@ -31,6 +31,7 @@ from src.queue.redis_client import RedisConfig, QueueNames
 from src.queue.job_types import deserialize_job, AIProcessingJob, SupabaseUploadJob, serialize_job
 from src.ai.prompts import invalid_value
 from src.ai.helper_functions import check_markdown_tables
+from src.utils.pdf_hash_utils import calculate_pdf_hash, check_pdf_duplicate, register_pdf_hash
 
 # --- Timeout utility ---
 class TimeoutError(Exception):
@@ -671,11 +672,50 @@ class EphemeralAIWorker:
                 filepath = self.download_pdf_file(pdf_url)
             except Exception as e:
                 logger.error(f"Failed to download PDF: {e}")
-                return "Error", f"Failed to download PDF: {str(e)}", "", "", [], [], "Neutral"
+                return "Error", f"Failed to download PDF: {str(e)}", "", "", [], [], "Neutral", None, None, False, None
+
+            # Calculate PDF hash and check for duplicates
+            pdf_hash = None
+            pdf_size_bytes = None
+            is_duplicate = False
+            original_announcement_id = None
+            
+            try:
+                pdf_hash = calculate_pdf_hash(filepath)
+                pdf_size_bytes = os.path.getsize(filepath)
+                logger.info(f"📋 Calculated PDF hash: {pdf_hash} (size: {pdf_size_bytes} bytes)")
+                
+                # Check if this PDF has been seen before
+                try:
+                    from supabase import create_client
+                    supabase_url = os.getenv('SUPABASE_URL2')
+                    supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+                    if supabase_url and supabase_key:
+                        supabase = create_client(supabase_url, supabase_key)
+                        
+                        # Extract ISIN and symbol for duplicate check
+                        isin = announcement_data.get('ISIN', 'N/A')
+                        symbol = extract_symbol(announcement_data.get('NSURL'))
+                        
+                        duplicate_result = check_pdf_duplicate(supabase, isin, pdf_hash, symbol)
+                        is_duplicate = duplicate_result['is_duplicate']
+                        original_announcement_id = duplicate_result.get('original_corp_id')
+                        
+                        if is_duplicate:
+                            logger.warning(f"⚠️ Duplicate PDF detected! Hash: {pdf_hash}, Original: {original_announcement_id}")
+                        else:
+                            logger.info(f"✅ New PDF detected (not a duplicate)")
+                except Exception as dup_check_error:
+                    logger.warning(f"⚠️ Could not check for duplicate PDF: {dup_check_error}")
+            except Exception as hash_error:
+                logger.error(f"❌ Failed to calculate PDF hash: {hash_error}")
 
             try:
                 result = self.ai_process_pdf(filepath,original_summary)
                 logger.info(f"🎯 AI processing result for {job.job_id}: {result[0] if result else 'None'}")
+                # Add PDF hash info to result tuple
+                if result and len(result) == 7:
+                    result = result + (pdf_hash, pdf_size_bytes, is_duplicate, original_announcement_id)
                 return result
             finally:
                 try:
@@ -842,7 +882,16 @@ class EphemeralAIWorker:
 
         # If we reach here, result variable holds the successful AI output
         try:
-            category, summary, headline, findata, individual_investor_list, company_investor_list, sentiment = result
+            # Unpack with optional PDF hash fields
+            if len(result) == 11:
+                category, summary, headline, findata, individual_investor_list, company_investor_list, sentiment, pdf_hash, pdf_size_bytes, is_duplicate, original_announcement_id = result
+            else:
+                # Fallback for old format without PDF hash
+                category, summary, headline, findata, individual_investor_list, company_investor_list, sentiment = result
+                pdf_hash = None
+                pdf_size_bytes = None
+                is_duplicate = False
+                original_announcement_id = None
 
             if category == "Error":
                 logger.error(f"❌ Final category is 'Error' for corp_id {job.corp_id}; not uploading.")
@@ -887,8 +936,33 @@ class EphemeralAIWorker:
                     or announcement_data.get('SUB')
                     or announcement_data.get('MORE')
                     or ""
-                )
+                ),
+                "pdf_hash": pdf_hash,
+                "pdf_size_bytes": pdf_size_bytes,
+                "is_duplicate": is_duplicate,
+                "original_announcement_id": original_announcement_id
             }
+            
+            # Register PDF hash in database if we have a valid hash
+            if pdf_hash and isin and not is_duplicate:
+                try:
+                    from supabase import create_client
+                    supabase_url = os.getenv('SUPABASE_URL2')
+                    supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+                    if supabase_url and supabase_key:
+                        supabase = create_client(supabase_url, supabase_key)
+                        register_pdf_hash(
+                            supabase=supabase,
+                            isin=isin,
+                            pdf_hash=pdf_hash,
+                            pdf_size_bytes=pdf_size_bytes,
+                            original_corp_id=job.corp_id,
+                            symbol=symbol,
+                            company_name=companyname
+                        )
+                        logger.info(f"✅ Registered PDF hash for {isin}: {pdf_hash}")
+                except Exception as reg_error:
+                    logger.warning(f"⚠️ Failed to register PDF hash: {reg_error}")
 
             supabase_job = SupabaseUploadJob(
                 job_id=f"{job.job_id}_upload",

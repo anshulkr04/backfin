@@ -247,7 +247,11 @@ class EphemeralSupabaseWorkerV2:
                 "symbol": processed_data.get("symbol"),
                 "sentiment": processed_data.get("sentiment"),
                 "headline": processed_data.get("headline"),
-                "company_id": processed_data.get("company_id")
+                "company_id": processed_data.get("company_id"),
+                "pdf_hash": processed_data.get("pdf_hash"),
+                "pdf_size_bytes": processed_data.get("pdf_size_bytes"),
+                "is_duplicate": processed_data.get("is_duplicate", False),
+                "original_announcement_id": processed_data.get("original_announcement_id")
             }
 
             def supabase_insert_table(table_name: str, payload: dict):
