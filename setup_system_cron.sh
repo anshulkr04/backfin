@@ -21,9 +21,12 @@ echo "📦 Installing Python dependencies..."
 pip3 install apscheduler python-dotenv supabase pandas requests selenium webdriver-manager
 
 # Install Chrome/Chromium for BSE scraper
-echo "🌐 Installing Chrome/Chromium for Selenium..."
+echo "🌐 Installing Chromium for Selenium..."
 apt-get update
-apt-get install -y chromium chromium-driver wget unzip
+apt-get install -y chromium-browser chromium-chromedriver wget unzip
+
+# Set ChromeDriver path
+export CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # Create log directory
 mkdir -p /var/log/backfin
