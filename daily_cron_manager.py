@@ -3,8 +3,9 @@
 Daily Data Collection and Notification Cron Manager
 
 This script manages scheduled tasks for:
-1. Daily data collection (Corporate Actions, Deals, Insider Trading) at 7:00 PM
-2. Daily watchlist digest emails to users at 12:00 AM (midnight)
+1. Daily data collection (Corporate Actions, Deals) at 7:00 PM
+2. Hourly insider trading data collection (every hour)
+3. Daily watchlist digest emails to users at 12:00 AM (midnight)
 
 The script uses APScheduler to run these tasks reliably with proper error handling,
 logging, and retry mechanisms.
@@ -178,10 +179,10 @@ def run_watchlist_digest():
         raise
 
 
-def run_all_data_collections():
-    """Run all data collection jobs sequentially at 7:00 PM"""
+def run_daily_data_collections():
+    """Run corporate actions and deals collection jobs sequentially at 7:00 PM"""
     logger.info("\n" + "=" * 80)
-    logger.info("🚀 STARTING ALL DATA COLLECTIONS (7:00 PM)")
+    logger.info("🚀 STARTING DAILY DATA COLLECTIONS (7:00 PM)")
     logger.info("=" * 80)
     
     start_time = datetime.now()
@@ -189,15 +190,13 @@ def run_all_data_collections():
     # Track success/failure
     results = {
         'corporate_actions': False,
-        'deals': False,
-        'insider_trading': False
+        'deals': False
     }
     
-    # Run each collection job
+    # Run each collection job (insider trading runs separately every hour)
     jobs = [
         ('corporate_actions', run_corporate_actions_collection),
-        ('deals', run_deals_collection),
-        ('insider_trading', run_insider_trading_collection)
+        ('deals', run_deals_collection)
     ]
     
     for job_name, job_func in jobs:
@@ -213,14 +212,13 @@ def run_all_data_collections():
     duration = (end_time - start_time).total_seconds()
     
     logger.info("\n" + "=" * 80)
-    logger.info("📊 DATA COLLECTION SUMMARY")
+    logger.info("📊 DAILY DATA COLLECTION SUMMARY")
     logger.info("=" * 80)
     logger.info(f"Start Time:          {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"End Time:            {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"Duration:            {duration:.1f} seconds")
     logger.info(f"Corporate Actions:   {'✅ Success' if results['corporate_actions'] else '❌ Failed'}")
     logger.info(f"Deals:               {'✅ Success' if results['deals'] else '❌ Failed'}")
-    logger.info(f"Insider Trading:     {'✅ Success' if results['insider_trading'] else '❌ Failed'}")
     logger.info("=" * 80)
 
 
@@ -248,18 +246,33 @@ def create_scheduler():
     scheduler.add_listener(job_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
     
     # ========================================
-    # DATA COLLECTION JOB - 7:00 PM Daily
+    # DAILY DATA COLLECTION - 7:00 PM Daily
+    # (Corporate Actions and Deals only)
     # ========================================
     scheduler.add_job(
-        run_all_data_collections,
+        run_daily_data_collections,
         trigger=CronTrigger(hour=19, minute=0),  # 7:00 PM
-        id='data_collection',
-        name='Daily Data Collection (Corporate Actions, Deals, Insider Trading)',
+        id='daily_data_collection',
+        name='Daily Data Collection (Corporate Actions, Deals)',
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=3600  # Allow 1 hour grace period if missed
     )
-    logger.info("✓ Scheduled: Data Collection at 7:00 PM daily")
+    logger.info("✓ Scheduled: Corporate Actions & Deals at 7:00 PM daily")
+    
+    # ========================================
+    # INSIDER TRADING - Every Hour
+    # ========================================
+    scheduler.add_job(
+        run_insider_trading_collection,
+        trigger=CronTrigger(minute=0),  # Every hour at :00
+        id='hourly_insider_trading',
+        name='Hourly Insider Trading Collection',
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=300  # Allow 5 minute grace period if missed
+    )
+    logger.info("✓ Scheduled: Insider Trading every hour at :00")
     
     # ========================================
     # WATCHLIST DIGEST - 12:00 AM Daily
@@ -291,7 +304,7 @@ def test_job(job_name: str):
         'deals': run_deals_collection,
         'insider_trading': run_insider_trading_collection,
         'watchlist_digest': run_watchlist_digest,
-        'all_data': run_all_data_collections
+        'daily_data': run_daily_data_collections
     }
     
     if job_name not in jobs:
@@ -326,10 +339,11 @@ Examples:
   python3 daily_cron_manager.py --test deals
   python3 daily_cron_manager.py --test insider_trading
   python3 daily_cron_manager.py --test watchlist_digest
-  python3 daily_cron_manager.py --test all_data
+  python3 daily_cron_manager.py --test daily_data
 
 Schedule:
-  - Data Collection: 7:00 PM daily (Corporate Actions, Deals, Insider Trading)
+  - Corporate Actions & Deals: 7:00 PM daily
+  - Insider Trading: Every hour (on the hour)
   - Watchlist Digest: 12:00 AM daily (Midnight)
         """
     )
@@ -337,7 +351,7 @@ Schedule:
     parser.add_argument(
         '--test',
         type=str,
-        choices=['corporate_actions', 'deals', 'insider_trading', 'watchlist_digest', 'all_data'],
+        choices=['corporate_actions', 'deals', 'insider_trading', 'watchlist_digest', 'daily_data'],
         help='Test a specific job by running it immediately'
     )
     
@@ -355,12 +369,11 @@ Schedule:
     logger.info("Starting scheduled jobs...")
     logger.info("")
     logger.info("Schedule:")
-    logger.info("  📊 Data Collection:     7:00 PM daily")
-    logger.info("     - Corporate Actions")
-    logger.info("     - Bulk/Block Deals")
-    logger.info("     - Insider Trading")
+    logger.info("  📊 Corporate Actions & Deals: 7:00 PM daily")
     logger.info("")
-    logger.info("  📧 Watchlist Digest:    12:00 AM daily")
+    logger.info("  🔍 Insider Trading:           Every hour at :00")
+    logger.info("")
+    logger.info("  📧 Watchlist Digest:          12:00 AM daily")
     logger.info("")
     logger.info("=" * 80)
     logger.info("")
