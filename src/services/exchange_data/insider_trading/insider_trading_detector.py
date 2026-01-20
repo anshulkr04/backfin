@@ -351,6 +351,7 @@ class BSEInsiderScraper:
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option("useAutomationExtension", False)
@@ -363,10 +364,20 @@ class BSEInsiderScraper:
         }
         chrome_options.add_experimental_option("prefs", prefs)
         
-        self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=chrome_options
-        )
+        # Use system chromedriver if available (Docker), otherwise use ChromeDriverManager
+        chromedriver_path = os.environ.get('CHROMEDRIVER_PATH')
+        if chromedriver_path and os.path.exists(chromedriver_path):
+            logger.info(f"BSE: Using system ChromeDriver from {chromedriver_path}")
+            self.driver = webdriver.Chrome(
+                service=Service(chromedriver_path),
+                options=chrome_options
+            )
+        else:
+            logger.info("BSE: Using ChromeDriverManager to download driver")
+            self.driver = webdriver.Chrome(
+                service=Service(ChromeDriverManager().install()),
+                options=chrome_options
+            )
     
     def enable_chrome_downloads(self):
         """Enable downloads in headless mode"""
