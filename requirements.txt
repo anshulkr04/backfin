@@ -9,6 +9,7 @@ psutil==5.9.6
 
 # HTTP and Async
 httpx==0.28.1
+httpcore==1.0.7
 aiohttp==3.11.18
 requests==2.32.3
 
