@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
+# Eventlet monkey patching MUST be done before any other imports
+import eventlet
+eventlet.monkey_patch()
+
 from flask import Flask, request, jsonify
 import os
-from gevent import monkey
+# from gevent import monkey
 # monkey.patch_all()
 import sys
 from functools import wraps
