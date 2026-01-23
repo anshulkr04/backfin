@@ -7,6 +7,7 @@ Robust Ephemeral Supabase Worker (v2)
 - Requeue sweeper for stuck jobs (PROCESSING_META_HASH + PROCESSING_PAYLOAD_HASH)
 - Retries + dead-letter handling
 - Detailed timing and exception logging
+- Telegram notifications for watchlist users
 """
 
 import os
@@ -38,6 +39,7 @@ PROCESSING_PAYLOAD_HASH = "processing_payload"
 JOB_RETRIES_HASH = "processing_retries"
 FAILED_QUEUE = QueueNames.FAILED_JOBS
 INVESTOR_QUEUE = QueueNames.INVESTOR_PROCESSING
+TELEGRAM_QUEUE = QueueNames.TELEGRAM_NOTIFICATIONS
 
 BRPOP_TIMEOUT = 3            # seconds waiting for a job
 JOB_TIMEOUT = 60             # per-job child hard timeout (seconds)
@@ -88,6 +90,51 @@ def _send_to_api_if_needed(data):
                 logger.error(f"API returned error: {res.status_code}, {res.text}")
         except Exception as e:
             logger.error(f"Error sending to API: {e}")
+
+
+def _queue_telegram_notification(data, redis_host=None, redis_port=None):
+    """Queue a Telegram notification for announcement"""
+    try:
+        category = data.get("category")
+        # Skip non-material categories
+        if category in (None, "Procedural/Administrative", "Error"):
+            logger.info("Skipping Telegram notification for non-material category")
+            return
+        
+        isin = data.get("isin")
+        if not isin:
+            logger.info("Skipping Telegram notification: no ISIN")
+            return
+        
+        # Create notification job payload
+        telegram_job = {
+            'job_id': f"telegram_{data.get('corp_id')}_{int(time.time())}",
+            'notification_type': 'announcement',
+            'isin': isin,
+            'company_name': data.get('companyname', ''),
+            'symbol': data.get('symbol', ''),
+            'category': category,
+            'summary': data.get('ai_summary', '') or data.get('summary', ''),
+            'headline': data.get('headline', ''),
+            'sentiment': data.get('sentiment', ''),
+            'date': data.get('date', ''),
+            'file_url': data.get('fileurl', ''),
+            'corp_id': data.get('corp_id'),
+            'created_at': datetime.utcnow().isoformat()
+        }
+        
+        # Connect to Redis and queue the job
+        host = redis_host or os.getenv('REDIS_HOST', 'redis')
+        port = redis_port or int(os.getenv('REDIS_PORT', 6379))
+        
+        r = redis.Redis(host=host, port=port, decode_responses=True)
+        r.lpush(TELEGRAM_QUEUE, json.dumps(telegram_job))
+        r.close()
+        
+        logger.info(f"Queued Telegram notification for {data.get('companyname')} ({isin})")
+        
+    except Exception as e:
+        logger.error(f"Error queuing Telegram notification: {e}")
 
 
 class EphemeralSupabaseWorkerV2:
@@ -337,6 +384,12 @@ class EphemeralSupabaseWorkerV2:
                             logger.warning(f"Child: Failed to update announcement count: {e}")
                         # Send to API for websocket broadcast if needed
                         _send_to_api_if_needed(upload_data)
+                        
+                        # Queue Telegram notification for watchlist users
+                        try:
+                            _queue_telegram_notification(upload_data)
+                        except Exception as e:
+                            logger.warning(f"Child: Failed to queue Telegram notification: {e}")
 
             except Exception as e:
                 logger.exception(f"Child: Error during existence check/insert: {e}")

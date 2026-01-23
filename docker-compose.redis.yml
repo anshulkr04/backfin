@@ -164,6 +164,44 @@ services:
   #   restart: unless-stopped
   #   command: python services/database_cleaner.py
 
+  # Telegram Bot Service - handles user subscription commands
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.telegram-bot
+    container_name: backfin-telegram-bot
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    env_file:
+      - .env
+    networks:
+      - backfin_network
+    restart: unless-stopped
+    command: python src/services/telegram/telegram_bot.py
+
+  # Telegram Notification Worker - sends notifications from queue
+  telegram-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.telegram-worker
+    container_name: backfin-telegram-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    env_file:
+      - .env
+    networks:
+      - backfin_network
+    restart: unless-stopped
+    command: python workers/telegram_notification_worker.py
+
 volumes:
   redis_data:
     driver: local

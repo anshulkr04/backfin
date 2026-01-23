@@ -941,24 +941,111 @@ class NseScraper:
                 if newnsecode_exists:  # FIXED: Now this will work correctly
                     logger.info(f"Processing PDF: {url}")
                     try:
-                        # Expect 9 values from process_pdf (with pdf_hash and pdf_size)
-                        result = self.process_pdf(url)
-                        if len(result) == 9:
-                            category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment, pdf_hash, pdf_size = result
-                            if ai_summary and category != "Error":
-                                ai_summary = remove_markdown_tags(ai_summary)
-                                if ai_summary:  # Check again after removing markdown
-                                    ai_summary = clean_summary(ai_summary)
-                        elif len(result) == 7:
-                            # Fallback for older return format
-                            category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment = result
-                            if ai_summary and category != "Error":
-                                ai_summary = remove_markdown_tags(ai_summary)
-                                if ai_summary:
-                                    ai_summary = clean_summary(ai_summary)
-                        else:
-                            logger.error(f"process_pdf returned {len(result)} values, expected 9")
-                            # Keep default values, don't reassign sentiment
+                        # STEP 1: Download PDF and calculate hash FIRST (before AI processing)
+                        filepath = os.path.join(self.temp_dir, url.split("/")[-1])
+                        pdf_downloaded = False
+                        
+                        for attempt in range(1, self.max_retries + 1):
+                            try:
+                                response = requests.get(url, timeout=self.request_timeout, headers=self.headers)
+                                response.raise_for_status()
+                                with open(filepath, "wb") as file:
+                                    file.write(response.content)
+                                pdf_downloaded = True
+                                logger.info(f"Downloaded PDF for hash check: {filepath}")
+                                break
+                            except Exception as dl_err:
+                                if attempt < self.max_retries:
+                                    time.sleep(5)
+                                else:
+                                    logger.error(f"Failed to download PDF for hash check: {dl_err}")
+                        
+                        if pdf_downloaded and os.path.exists(filepath):
+                            # STEP 2: Calculate hash
+                            pdf_hash, pdf_size = calculate_pdf_hash(filepath)
+                            
+                            # STEP 3: Check for duplicate BEFORE AI processing
+                            if pdf_hash and isin and supabase:
+                                is_dup, original_data = check_pdf_duplicate(supabase, isin, pdf_hash, symbol)
+                                if is_dup and original_data:
+                                    is_duplicate = True
+                                    original_corp_id = original_data.get('original_corp_id')
+                                    original_newsid = original_data.get('original_newsid')
+                                    logger.warning(
+                                        f"🔍 DUPLICATE PDF DETECTED for {symbol} (ISIN: {isin}): "
+                                        f"Skipping AI processing! Original: {original_corp_id}"
+                                    )
+                                    
+                                    # Fetch original's category/headline/sentiment to copy
+                                    try:
+                                        orig_result = supabase.table("corporatefilings")\
+                                            .select("category, headline, ai_summary, sentiment")\
+                                            .eq("corp_id", original_corp_id)\
+                                            .limit(1)\
+                                            .execute()
+                                        if orig_result.data:
+                                            orig = orig_result.data[0]
+                                            category = orig.get('category', 'Procedural/Administrative')
+                                            headline = orig.get('headline', '')
+                                            ai_summary = orig.get('ai_summary', '')
+                                            sentiment = orig.get('sentiment', 'Neutral')
+                                            logger.info(f"📋 Copied from original: category={category}")
+                                    except Exception as fetch_err:
+                                        logger.warning(f"Could not fetch original data: {fetch_err}")
+                                    
+                                    # Clean up temp file
+                                    try:
+                                        os.remove(filepath)
+                                    except:
+                                        pass
+                                else:
+                                    # STEP 4: Not a duplicate - register hash BEFORE AI processing
+                                    logger.info(f"✅ New unique PDF - registering hash before AI processing")
+                                    try:
+                                        hash_data = {
+                                            'corp_id': str(uuid.uuid4()),  # Temp corp_id, will be replaced
+                                            'isin': isin,
+                                            'symbol': symbol,
+                                            'companyname': company_name,
+                                            'date': date,
+                                            'newsid': None
+                                        }
+                                        register_pdf_hash(supabase, hash_data, pdf_hash, pdf_size)
+                                        logger.info(f"📝 Pre-registered PDF hash for {symbol}")
+                                    except Exception as pre_reg_err:
+                                        logger.warning(f"Could not pre-register hash: {pre_reg_err}")
+                                    
+                                    # STEP 5: Now do AI processing
+                                    try:
+                                        page_count = get_pdf_page_count(filepath)
+                                        if page_count is not None and page_count > 200:
+                                            logger.warning(f"PDF has {page_count} pages, skipping AI")
+                                            category = "Procedural/Administrative"
+                                            ai_summary = f"PDF too large ({page_count} pages)"
+                                        else:
+                                            category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment = self.ai_process(filepath)
+                                            if ai_summary and category != "Error":
+                                                ai_summary = remove_markdown_tags(ai_summary)
+                                                if ai_summary:
+                                                    ai_summary = clean_summary(ai_summary)
+                                    finally:
+                                        # Clean up temp file
+                                        try:
+                                            if os.path.exists(filepath):
+                                                os.remove(filepath)
+                                        except:
+                                            pass
+                            else:
+                                # No hash or no supabase - fall back to normal processing
+                                result = self.process_pdf(url)
+                                if len(result) >= 7:
+                                    category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment = result[:7]
+                                    if len(result) >= 9:
+                                        pdf_hash, pdf_size = result[7], result[8]
+                                    if ai_summary and category != "Error":
+                                        ai_summary = remove_markdown_tags(ai_summary)
+                                        if ai_summary:
+                                            ai_summary = clean_summary(ai_summary)
                     except Exception as e:
                         logger.error(f"Error processing PDF: {e}")
                         # Keep default values including sentiment = "Neutral"
@@ -968,8 +1055,9 @@ class NseScraper:
             
             corp_id = str(uuid.uuid4())  # Generate a unique ID for the announcement
 
-            # Check for PDF duplicates if we have hash
-            if pdf_hash and isin and supabase:
+            # Note: Duplicate check now happens BEFORE AI processing above
+            # This section is only for edge cases where hash wasn't checked earlier
+            if pdf_hash and isin and supabase and not is_duplicate:
                 try:
                     is_dup, original_data = check_pdf_duplicate(supabase, isin, pdf_hash, symbol)
                     if is_dup and original_data:
@@ -977,7 +1065,7 @@ class NseScraper:
                         original_corp_id = original_data.get('original_corp_id')
                         original_newsid = original_data.get('original_newsid')
                         logger.warning(
-                            f"🔍 DUPLICATE PDF DETECTED for {symbol} (ISIN: {isin}): "
+                            f"🔍 DUPLICATE PDF DETECTED (late check) for {symbol} (ISIN: {isin}): "
                             f"Original announcement {original_newsid} (corp_id: {original_corp_id})"
                         )
                 except Exception as e:
@@ -1079,25 +1167,9 @@ class NseScraper:
                         logger.info(f"Data uploaded to Supabase for {symbol} (ISIN: {isin})")
                         inserted = True  # Mark as successfully inserted
                         
-                        # Register PDF hash in tracking table if this is a new unique PDF
-                        if pdf_hash and not is_duplicate:
-                            try:
-                                hash_data = {
-                                    'corp_id': corp_id,
-                                    'isin': isin,
-                                    'symbol': symbol,
-                                    'companyname': company_name,
-                                    'date': date,
-                                    'newsid': None  # NSE doesn't have newsid
-                                }
-                                register_success = register_pdf_hash(supabase, hash_data, pdf_hash, pdf_size)
-                                if register_success:
-                                    logger.info(f"✅ Registered new PDF hash for {symbol}")
-                                else:
-                                    logger.warning(f"⚠️  Failed to register PDF hash (non-critical)")
-                            except Exception as hash_err:
-                                logger.error(f"Error registering PDF hash: {hash_err}")
-                                # Non-critical error, continue processing
+                        # Note: PDF hash registration now happens BEFORE AI processing
+                        # This prevents race conditions and ensures duplicates are detected early
+                        # The hash is pre-registered in the PDF processing section above
                         
                         if (individual_investor_list or company_investor_list) and supabase:
                             try:

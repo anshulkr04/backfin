@@ -710,9 +710,58 @@ class EphemeralAIWorker:
                                 original_announcement_id = original_data.get('original_corp_id')
                             
                             if is_duplicate:
-                                logger.warning(f"⚠️ Duplicate PDF detected! Hash: {pdf_hash}, Original: {original_announcement_id}")
+                                logger.warning(f"⚠️ DUPLICATE PDF DETECTED! Hash: {pdf_hash}, Original: {original_announcement_id}")
+                                logger.info(f"⏭️ SKIPPING AI PROCESSING - using original announcement data")
+                                
+                                # Fetch original announcement data to copy category/headline/sentiment
+                                try:
+                                    original_result = supabase.table("corporatefilings")\
+                                        .select("category, headline, ai_summary, sentiment")\
+                                        .eq("corp_id", original_announcement_id)\
+                                        .limit(1)\
+                                        .execute()
+                                    
+                                    if original_result.data:
+                                        orig = original_result.data[0]
+                                        dup_category = orig.get('category', 'Procedural/Administrative')
+                                        dup_headline = orig.get('headline', '')
+                                        dup_summary = orig.get('ai_summary', '')
+                                        dup_sentiment = orig.get('sentiment', 'Neutral')
+                                        
+                                        logger.info(f"📋 Copied from original: category={dup_category}, headline={dup_headline[:50] if dup_headline else 'N/A'}...")
+                                        
+                                        # Clean up temp file before returning
+                                        try:
+                                            if os.path.exists(filepath):
+                                                os.unlink(filepath)
+                                        except:
+                                            pass
+                                        
+                                        # Return duplicate result (skipping AI processing)
+                                        return (dup_category, dup_summary, dup_headline, "", [], [], dup_sentiment, 
+                                                pdf_hash, pdf_size_bytes, True, original_announcement_id)
+                                    else:
+                                        logger.warning(f"⚠️ Could not fetch original announcement {original_announcement_id}, proceeding with AI")
+                                except Exception as fetch_err:
+                                    logger.warning(f"⚠️ Error fetching original announcement: {fetch_err}, proceeding with AI")
                             else:
-                                logger.info(f"✅ New PDF detected (not a duplicate)")
+                                logger.info(f"✅ New unique PDF detected (not a duplicate)")
+                                
+                                # REGISTER THE HASH IMMEDIATELY for new PDFs (before AI processing)
+                                # This prevents race conditions where same PDF arrives twice quickly
+                                try:
+                                    announcement_dict = {
+                                        'corp_id': job.corp_id,
+                                        'isin': isin,
+                                        'symbol': symbol,
+                                        'companyname': announcement_data.get('SLONGNAME') or announcement_data.get('SC_FULLNAME') or '',
+                                        'date': announcement_data.get('DT_TM'),
+                                        'newsid': announcement_data.get('NEWSID') or announcement_data.get('newsid', '')
+                                    }
+                                    register_pdf_hash(supabase, announcement_dict, pdf_hash, pdf_size_bytes)
+                                    logger.info(f"📝 Pre-registered PDF hash for {symbol} BEFORE AI processing")
+                                except Exception as pre_reg_err:
+                                    logger.warning(f"⚠️ Could not pre-register PDF hash: {pre_reg_err}")
                     except Exception as dup_check_error:
                         logger.warning(f"⚠️ Could not check for duplicate PDF: {dup_check_error}")
             except Exception as hash_error:
@@ -951,32 +1000,8 @@ class EphemeralAIWorker:
                 "original_announcement_id": original_announcement_id
             }
             
-            # Register PDF hash in database if we have a valid hash
-            if pdf_hash and isin and not is_duplicate:
-                try:
-                    from supabase import create_client
-                    supabase_url = os.getenv('SUPABASE_URL2')
-                    supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
-                    if supabase_url and supabase_key:
-                        supabase = create_client(supabase_url, supabase_key)
-                        # register_pdf_hash expects (supabase, announcement_data_dict, pdf_hash, pdf_size)
-                        announcement_dict = {
-                            'corp_id': job.corp_id,
-                            'isin': isin,
-                            'symbol': symbol,
-                            'companyname': companyname,
-                            'date': announcement_data.get('DT_TM'),
-                            'newsid': announcement_data.get('NEWSID') or announcement_data.get('newsid', '')
-                        }
-                        register_pdf_hash(
-                            supabase,
-                            announcement_dict,
-                            pdf_hash,
-                            pdf_size_bytes
-                        )
-                        logger.info(f"✅ Registered PDF hash for {isin}: {pdf_hash}")
-                except Exception as reg_error:
-                    logger.warning(f"⚠️ Failed to register PDF hash: {reg_error}")
+            # Note: PDF hash registration now happens BEFORE AI processing (in process_ai_job)
+            # This prevents race conditions and ensures duplicates are detected early
 
             supabase_job = SupabaseUploadJob(
                 job_id=f"{job.job_id}_upload",

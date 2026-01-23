@@ -74,11 +74,19 @@ CREATE INDEX IF NOT EXISTS idx_corporatefilings_is_duplicate ON corporatefilings
 CREATE INDEX IF NOT EXISTS idx_corporatefilings_original_announcement_id ON corporatefilings(original_announcement_id);
 CREATE INDEX IF NOT EXISTS idx_corporatefilings_isin_pdf_hash ON corporatefilings(isin, pdf_hash) WHERE pdf_hash IS NOT NULL;
 
--- Add foreign key constraint for original announcement reference
-ALTER TABLE public.corporatefilings
-ADD CONSTRAINT corporatefilings_original_announcement_fkey 
-    FOREIGN KEY (original_announcement_id) 
-    REFERENCES public.corporatefilings(corp_id) ON DELETE SET NULL;
+-- Add foreign key constraint for original announcement reference (if not exists)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'corporatefilings_original_announcement_fkey'
+    ) THEN
+        ALTER TABLE public.corporatefilings
+        ADD CONSTRAINT corporatefilings_original_announcement_fkey 
+            FOREIGN KEY (original_announcement_id) 
+            REFERENCES public.corporatefilings(corp_id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- Add comments
 COMMENT ON COLUMN corporatefilings.pdf_hash IS 'SHA-256 hash of the PDF file for duplicate detection';

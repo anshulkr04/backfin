@@ -1289,27 +1289,136 @@ class BseScraper:
 
             elif check_for_pdf(pdf_file):
                 logger.info(f"Processing PDF: {pdf_file}")
-                category, ai_summary, headline, findata, individual_investor_list, company_investor_list, num_pages, sentiment, pdf_hash, pdf_size = self.process_pdf(pdf_file)
-                if ai_summary:
-                    ai_summary = remove_markdown_tags(ai_summary)
-                    ai_summary = clean_summary(ai_summary)
-                    # Mark PDF downloaded info into local DB (use newsid if present)
-                    if pdf_file and newsid:
-                        now_ts = datetime.now(timezone.utc).isoformat()
-                        # Update announcements table (newsid)
-                        update_announcement_checkpoint(
-                            newsid=newsid,
-                            db_path=LOCAL_DB_PATH,
-                            downloaded_pdf_file=pdf_file,
-                            pdf_pages=num_pages,
-                            pdf_downloaded_at=now_ts
-                        )
-                        # Mark local corporatefilings using corp_id (now defined earlier)
+                
+                # STEP 1: Download PDF and calculate hash FIRST (before AI processing)
+                url = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{pdf_file}"
+                filepath = os.path.join(self.temp_dir, pdf_file.split("/")[-1])
+                pdf_downloaded = False
+                
+                for attempt in range(1, self.max_retries + 1):
+                    try:
+                        response = requests.get(url, timeout=self.request_timeout, headers=self.headers)
+                        response.raise_for_status()
+                        with open(filepath, "wb") as file:
+                            file.write(response.content)
+                        pdf_downloaded = True
+                        logger.info(f"Downloaded PDF for hash check: {filepath}")
+                        break
+                    except Exception as dl_err:
+                        if attempt < self.max_retries:
+                            time.sleep(5)
+                        else:
+                            logger.error(f"Failed to download PDF for hash check: {dl_err}")
+                
+                # Get ISIN early for duplicate check
+                early_isin = self.get_isin(scrip_id)
+                
+                if pdf_downloaded and os.path.exists(filepath):
+                    # STEP 2: Calculate hash
+                    pdf_hash, pdf_size = calculate_pdf_hash(filepath)
+                    num_pages = get_pdf_page_count(filepath)
+                    
+                    # STEP 3: Check for duplicate BEFORE AI processing
+                    skip_ai_for_duplicate = False
+                    if pdf_hash and early_isin and early_isin != "N/A" and supabase:
+                        is_dup, original_data = check_pdf_duplicate(supabase, early_isin, pdf_hash, symbol)
+                        if is_dup and original_data:
+                            skip_ai_for_duplicate = True
+                            original_corp_id_check = original_data.get('original_corp_id')
+                            logger.warning(
+                                f"🔍 DUPLICATE PDF DETECTED for {symbol} (ISIN: {early_isin}): "
+                                f"Skipping AI processing! Original: {original_corp_id_check}"
+                            )
+                            
+                            # Fetch original's category/headline/sentiment to copy
+                            try:
+                                orig_result = supabase.table("corporatefilings")\
+                                    .select("category, headline, ai_summary, sentiment")\
+                                    .eq("corp_id", original_corp_id_check)\
+                                    .limit(1)\
+                                    .execute()
+                                if orig_result.data:
+                                    orig = orig_result.data[0]
+                                    category = orig.get('category', 'Procedural/Administrative')
+                                    headline = orig.get('headline', '')
+                                    ai_summary = orig.get('ai_summary', '')
+                                    sentiment = orig.get('sentiment', 'Neutral')
+                                    logger.info(f"📋 Copied from original: category={category}")
+                            except Exception as fetch_err:
+                                logger.warning(f"Could not fetch original data: {fetch_err}")
+                            
+                            # Clean up temp file
+                            try:
+                                os.remove(filepath)
+                            except:
+                                pass
+                        else:
+                            # STEP 4: Not a duplicate - register hash BEFORE AI processing
+                            logger.info(f"✅ New unique PDF - registering hash before AI processing")
+                            try:
+                                hash_data = {
+                                    'corp_id': corp_id,
+                                    'isin': early_isin,
+                                    'symbol': symbol,
+                                    'companyname': company_name,
+                                    'date': date,
+                                    'newsid': newsid
+                                }
+                                register_pdf_hash(supabase, hash_data, pdf_hash, pdf_size)
+                                logger.info(f"📝 Pre-registered PDF hash for {symbol}")
+                            except Exception as pre_reg_err:
+                                logger.warning(f"Could not pre-register hash: {pre_reg_err}")
+                    
+                    # STEP 5: Do AI processing only if NOT a duplicate
+                    if not skip_ai_for_duplicate:
                         try:
-                            mark_local_pdf_downloaded(corp_id=corp_id, downloaded_pdf_file=pdf_file, pdf_pages=num_pages, downloaded_at=now_ts)
-                            logger.info(f"Marked local corporatefiling {corp_id} as PDF downloaded")
-                        except Exception as e:
-                            logger.error(f"Failed to mark local PDF downloaded for corp_id {corp_id}: {e}")
+                            category, ai_summary, headline, findata, individual_investor_list, company_investor_list, sentiment = self.ai_process(filepath)
+                            if ai_summary:
+                                ai_summary = remove_markdown_tags(ai_summary)
+                                ai_summary = clean_summary(ai_summary)
+                        finally:
+                            # Clean up temp file
+                            try:
+                                if os.path.exists(filepath):
+                                    os.remove(filepath)
+                            except:
+                                pass
+                        
+                        # Mark PDF downloaded info into local DB
+                        if pdf_file and newsid:
+                            now_ts = datetime.now(timezone.utc).isoformat()
+                            update_announcement_checkpoint(
+                                newsid=newsid,
+                                db_path=LOCAL_DB_PATH,
+                                downloaded_pdf_file=pdf_file,
+                                pdf_pages=num_pages,
+                                pdf_downloaded_at=now_ts
+                            )
+                            try:
+                                mark_local_pdf_downloaded(corp_id=corp_id, downloaded_pdf_file=pdf_file, pdf_pages=num_pages, downloaded_at=now_ts)
+                                logger.info(f"Marked local corporatefiling {corp_id} as PDF downloaded")
+                            except Exception as e:
+                                logger.error(f"Failed to mark local PDF downloaded for corp_id {corp_id}: {e}")
+                else:
+                    # PDF download failed - fall back to original process_pdf
+                    category, ai_summary, headline, findata, individual_investor_list, company_investor_list, num_pages, sentiment, pdf_hash, pdf_size = self.process_pdf(pdf_file)
+                    if ai_summary:
+                        ai_summary = remove_markdown_tags(ai_summary)
+                        ai_summary = clean_summary(ai_summary)
+                        if pdf_file and newsid:
+                            now_ts = datetime.now(timezone.utc).isoformat()
+                            update_announcement_checkpoint(
+                                newsid=newsid,
+                                db_path=LOCAL_DB_PATH,
+                                downloaded_pdf_file=pdf_file,
+                                pdf_pages=num_pages,
+                                pdf_downloaded_at=now_ts
+                            )
+                            try:
+                                mark_local_pdf_downloaded(corp_id=corp_id, downloaded_pdf_file=pdf_file, pdf_pages=num_pages, downloaded_at=now_ts)
+                                logger.info(f"Marked local corporatefiling {corp_id} as PDF downloaded")
+                            except Exception as e:
+                                logger.error(f"Failed to mark local PDF downloaded for corp_id {corp_id}: {e}")
 
             # After AI processed (if ai_summary available and not error)
             if newsid:
@@ -1491,25 +1600,9 @@ class BseScraper:
                         logger.info(f"Supabase response: data={response.data}")
                         logger.info(f"Inserted data to Supabase for {scrip_id} (attempt {attempt})")
                         
-                        # Register PDF hash in tracking table if this is a new unique PDF
-                        if pdf_hash and not is_duplicate:
-                            try:
-                                hash_data = {
-                                    'corp_id': corp_id,
-                                    'isin': isin,
-                                    'symbol': symbol,
-                                    'companyname': company_name,
-                                    'date': date,
-                                    'newsid': newsid
-                                }
-                                register_success = register_pdf_hash(supabase, hash_data, pdf_hash, pdf_size)
-                                if register_success:
-                                    logger.info(f"✅ Registered new PDF hash for {symbol}")
-                                else:
-                                    logger.warning(f"⚠️  Failed to register PDF hash (non-critical)")
-                            except Exception as hash_err:
-                                logger.error(f"Error registering PDF hash: {hash_err}")
-                                # Non-critical error, continue processing
+                        # Note: PDF hash registration now happens BEFORE AI processing
+                        # This prevents race conditions and ensures duplicates are detected early
+                        # The hash is pre-registered in the PDF processing section above
                         
                         if newsid:
                             update_announcement_checkpoint(

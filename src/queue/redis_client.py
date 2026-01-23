@@ -93,6 +93,10 @@ class QueueNames:
     HIGH_PRIORITY = "backfin:queue:high_priority"
     RETRY_QUEUE = "backfin:queue:retry"
     
+    # Telegram notification queue
+    TELEGRAM_NOTIFICATIONS = "backfin:queue:telegram_notifications"
+    TELEGRAM_FAILED = "backfin:queue:telegram_failed"
+    
     @classmethod
     def all_queues(cls):
         """Get all queue names"""

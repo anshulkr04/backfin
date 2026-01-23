@@ -47,3 +47,6 @@ click==8.2.0
 # Additional utilities
 gunicorn==23.0.0
 typing-extensions==4.13.2
+
+# Telegram Bot
+python-telegram-bot==21.0
