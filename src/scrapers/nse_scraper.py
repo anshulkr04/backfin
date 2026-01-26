@@ -1167,9 +1167,31 @@ class NseScraper:
                         logger.info(f"Data uploaded to Supabase for {symbol} (ISIN: {isin})")
                         inserted = True  # Mark as successfully inserted
                         
-                        # Note: PDF hash registration now happens BEFORE AI processing
-                        # This prevents race conditions and ensures duplicates are detected early
-                        # The hash is pre-registered in the PDF processing section above
+                        # FALLBACK: Register PDF hash if not already registered
+                        # This handles cases where isin was not available during early hash check
+                        if pdf_hash and isin and not is_duplicate:
+                            try:
+                                # Check if hash already exists
+                                existing_check = supabase.table('announcement_pdf_hashes')\
+                                    .select('pdf_hash')\
+                                    .eq('isin', isin)\
+                                    .eq('pdf_hash', pdf_hash)\
+                                    .limit(1)\
+                                    .execute()
+                                
+                                if not existing_check.data or len(existing_check.data) == 0:
+                                    hash_data = {
+                                        'corp_id': corp_id,
+                                        'isin': isin,
+                                        'symbol': symbol,
+                                        'companyname': company_name,
+                                        'date': date,
+                                        'newsid': None
+                                    }
+                                    register_pdf_hash(supabase, hash_data, pdf_hash, pdf_size)
+                                    logger.info(f"📝 Fallback: Registered PDF hash for {symbol} after insert")
+                            except Exception as hash_reg_err:
+                                logger.warning(f"Could not register hash in fallback: {hash_reg_err}")
                         
                         if (individual_investor_list or company_investor_list) and supabase:
                             try:
