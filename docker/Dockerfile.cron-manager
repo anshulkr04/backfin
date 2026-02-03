@@ -26,8 +26,8 @@ ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 COPY requirements.scrapers.txt .
 RUN pip install --no-cache-dir -r requirements.scrapers.txt
 
-# Install additional dependencies for cron manager
-RUN pip install --no-cache-dir apscheduler
+# Install additional dependencies for cron manager (selenium, webdriver-manager, apscheduler)
+RUN pip install --no-cache-dir apscheduler selenium webdriver-manager resend
 
 # Copy application code
 COPY . .

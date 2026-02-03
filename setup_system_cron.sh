@@ -43,24 +43,33 @@ echo "📝 Creating cron wrapper scripts..."
 cat > /usr/local/bin/backfin-daily-data <<'EOF'
 #!/bin/bash
 cd /root/backfin
+source .env 2>/dev/null || true
+export PYTHONPATH=/root/backfin
 export CHROMEDRIVER_PATH=/usr/bin/chromedriver
-/usr/bin/python3 daily_cron_manager.py --test corporate_actions >> /var/log/backfin/daily-data.log 2>&1
-/usr/bin/python3 daily_cron_manager.py --test deals >> /var/log/backfin/daily-data.log 2>&1
+source .venv/bin/activate 2>/dev/null || true
+python3 daily_cron_manager.py --test corporate_actions >> /var/log/backfin/daily-data.log 2>&1
+python3 daily_cron_manager.py --test deals >> /var/log/backfin/daily-data.log 2>&1
 EOF
 
 # 2. Insider Trading (every hour)
 cat > /usr/local/bin/backfin-insider-trading <<'EOF'
 #!/bin/bash
 cd /root/backfin
+source .env 2>/dev/null || true
+export PYTHONPATH=/root/backfin
 export CHROMEDRIVER_PATH=/usr/bin/chromedriver
-/usr/bin/python3 daily_cron_manager.py --test insider_trading >> /var/log/backfin/insider-trading.log 2>&1
+source .venv/bin/activate 2>/dev/null || true
+python3 daily_cron_manager.py --test insider_trading >> /var/log/backfin/insider-trading.log 2>&1
 EOF
 
 # 3. Watchlist Digest (midnight)
 cat > /usr/local/bin/backfin-watchlist-digest <<'EOF'
 #!/bin/bash
 cd /root/backfin
-/usr/bin/python3 daily_cron_manager.py --test watchlist_digest >> /var/log/backfin/watchlist-digest.log 2>&1
+source .env 2>/dev/null || true
+export PYTHONPATH=/root/backfin
+source .venv/bin/activate 2>/dev/null || true
+python3 daily_cron_manager.py --test watchlist_digest >> /var/log/backfin/watchlist-digest.log 2>&1
 EOF
 
 # Make scripts executable

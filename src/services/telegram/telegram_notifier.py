@@ -194,9 +194,9 @@ class TelegramNotifier:
             message_parts.append(f"📄 <a href='{file_url}'>View Document</a>")
         
         if corp_id:
-            # Link to Backfin for detailed view
-            backfin_url = f"https://backfin.in/announcement/{corp_id}"
-            message_parts.append(f"🔗 <a href='{backfin_url}'>View on Backfin</a>")
+            # Link to ScreenAlpha for detailed view
+            screenalpha_url = f"https://screenalpha.in/announcement/{corp_id}"
+            message_parts.append(f"🔗 <a href='{screenalpha_url}'>View on ScreenAlpha</a>")
         
         return "\n".join(message_parts)
     

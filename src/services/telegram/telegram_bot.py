@@ -57,7 +57,7 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 SUPABASE_URL = os.getenv('SUPABASE_URL2')
 SUPABASE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 VERIFICATION_CODE_EXPIRY_MINUTES = 10
-BOT_NAME = os.getenv('TELEGRAM_BOT_NAME', 'BackfinBot')
+BOT_NAME = os.getenv('TELEGRAM_BOT_NAME', 'ScreenAlphaBot')
 
 
 class TelegramBotService:
@@ -207,7 +207,7 @@ class TelegramBotService:
             watchlist_count = await self.get_user_watchlist_count(existing['user_id'])
             await update.message.reply_text(
                 f"👋 Welcome back, {user.first_name}!\n\n"
-                f"✅ You're already subscribed to Backfin notifications.\n"
+                f"✅ You're already subscribed to ScreenAlpha notifications.\n"
                 f"📊 Tracking: {watchlist_count} companies in your watchlist\n\n"
                 f"Commands:\n"
                 f"/status - Check subscription status\n"
@@ -218,9 +218,9 @@ class TelegramBotService:
             return
         
         welcome_message = (
-            f"👋 Welcome to <b>Backfin Alerts</b>, {user.first_name}!\n\n"
+            f"👋 Welcome to <b>ScreenAlpha Alerts</b>, {user.first_name}!\n\n"
             f"🔔 Get instant notifications when companies in your watchlist make announcements.\n\n"
-            f"To get started, I need to link your Telegram to your Backfin account.\n\n"
+            f"To get started, I need to link your Telegram to your ScreenAlpha account.\n\n"
             f"Please enter your <b>registered email address</b>:"
         )
         
@@ -338,20 +338,20 @@ class TelegramBotService:
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command"""
         help_text = (
-            "🔔 <b>Backfin Alerts Bot</b>\n\n"
-            "Get instant Telegram notifications when companies in your Backfin watchlist make announcements.\n\n"
+            "🔔 <b>ScreenAlpha Alerts Bot</b>\n\n"
+            "Get instant Telegram notifications when companies in your ScreenAlpha watchlist make announcements.\n\n"
             "<b>Commands:</b>\n"
-            "/start - Link your Telegram to Backfin account\n"
+            "/start - Link your Telegram to ScreenAlpha account\n"
             "/subscribe - Reactivate notifications\n"
             "/unsubscribe - Pause notifications\n"
             "/status - Check your subscription status\n"
             "/help - Show this help message\n\n"
             "<b>How it works:</b>\n"
-            "1. Create your watchlist at backfin.in\n"
+            "1. Create your watchlist at screenalpha.in\n"
             "2. Link your Telegram here (one-time setup)\n"
             "3. Get instant alerts for your watchlist companies!\n\n"
-            "💡 Manage your watchlist at backfin.in\n"
-            "📧 Need help? Contact support@backfin.in"
+            "💡 Manage your watchlist at screenalpha.in\n"
+            "📧 Need help? Contact support@screenalpha.in"
         )
         
         await update.message.reply_text(help_text, parse_mode=ParseMode.HTML)
@@ -423,8 +423,8 @@ class TelegramBotService:
             if not user:
                 await update.message.reply_text(
                     "❌ No account found with this email.\n\n"
-                    "Please make sure you're using the email registered with Backfin, "
-                    "or sign up at backfin.in first."
+                    "Please make sure you're using the email registered with ScreenAlpha, "
+                    "or sign up at screenalpha.in first."
                 )
                 return
             
@@ -454,11 +454,11 @@ class TelegramBotService:
                 
                 await update.message.reply_text(
                     f"✅ <b>Successfully subscribed!</b>\n\n"
-                    f"Your Telegram is now linked to your Backfin account.\n\n"
+                    f"Your Telegram is now linked to your ScreenAlpha account.\n\n"
                     f"📊 Currently tracking: <b>{watchlist_count}</b> companies\n\n"
                     f"You'll receive instant notifications when companies in your "
                     f"watchlist make announcements.\n\n"
-                    f"💡 Tip: Add more companies to your watchlist at backfin.in",
+                    f"💡 Tip: Add more companies to your watchlist at screenalpha.in",
                     parse_mode=ParseMode.HTML
                 )
             else:

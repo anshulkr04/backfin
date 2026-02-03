@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public.user_telegram_subscriptions (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     CONSTRAINT user_telegram_subscriptions_pkey PRIMARY KEY (id),
-    CONSTRAINT user_telegram_subscriptions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.UserData(UserID) ON DELETE CASCADE
+    CONSTRAINT user_telegram_subscriptions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public."UserData"("UserID") ON DELETE CASCADE
 );
 
 -- Index for fast lookups
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS public.telegram_notification_log (
     sent_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
     CONSTRAINT telegram_notification_log_pkey PRIMARY KEY (id),
-    CONSTRAINT telegram_notification_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.UserData(UserID) ON DELETE SET NULL,
+    CONSTRAINT telegram_notification_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES public."UserData"("UserID") ON DELETE SET NULL,
     CONSTRAINT telegram_notification_log_corp_id_fkey FOREIGN KEY (corp_id) REFERENCES public.corporatefilings(corp_id) ON DELETE SET NULL
 );
 
