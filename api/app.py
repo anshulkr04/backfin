@@ -3792,13 +3792,9 @@ if __name__ == '__main__':
     logger.info(f"Debug Mode: {'ENABLED' if DEBUG_MODE else 'DISABLED'}")
     logger.info(f"Supabase Connection: {'Successful' if supabase_connected else 'FAILED'}")
     
-    # Start scrapers
-    prod = os.getenv('PROD')
-    if prod == 'TRUE':
-        logger.info("Production environment detected, starting scrapers...")
-        start_scrapers_safely()
-    else:
-        logger.info("Development environment detected, scrapers will not start automatically")
+    # Scrapers now run as separate Docker containers (backfin-bse-scraper, backfin-nse-scraper)
+    # No need to start them from within the API
+    logger.info("Scrapers run as separate containers, skipping in-process scraper startup")
     
     # Small delay to let threads initialize
     time.sleep(2)
@@ -3809,8 +3805,6 @@ if __name__ == '__main__':
 # Also start scrapers when module is imported (for Gunicorn)
 else:
     # This runs when imported by Gunicorn
-    logger.info("Module imported by WSGI server, initializing scrapers...")
-    prod = os.getenv('PROD')
-    if prod == 'TRUE':
-        logger.info("Production environment detected, starting scrapers...")
-        start_scrapers_safely()
+    # Scrapers now run as separate Docker containers
+    logger.info("Module imported by WSGI server")
+    logger.info("Scrapers run as separate containers, skipping in-process scraper startup")
