@@ -2,6 +2,8 @@ FROM python:3.10-slim
 
 # Prevent tzdata interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
+# Set PYTHONPATH so 'from src.xxx import' works correctly
+ENV PYTHONPATH=/app
 
 WORKDIR /app
 

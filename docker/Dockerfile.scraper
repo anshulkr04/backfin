@@ -4,6 +4,8 @@ WORKDIR /app
 
 # Set timezone to Asia/Kolkata
 ENV TZ=Asia/Kolkata
+# Set PYTHONPATH so 'from src.xxx import' works correctly
+ENV PYTHONPATH=/app
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Install system dependencies for web scraping
