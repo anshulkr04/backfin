@@ -157,7 +157,7 @@ def process_announcement(supabase, announcement: dict, gemma_api_key: str = None
 
 def run_backfill(
     limit: int = 100,
-    delay: float = 2.0,
+    delay: float = 40.0,
     start_date: str = None,
     end_date: str = None,
     gemma_api_key: str = None,
@@ -168,7 +168,7 @@ def run_backfill(
     
     Args:
         limit: Maximum number of announcements to process
-        delay: Delay between API calls in seconds
+        delay: Delay between API calls in seconds (default 40s for Gemma rate limits)
         start_date: Optional start date filter
         end_date: Optional end date filter
         gemma_api_key: Optional API key for Gemma
@@ -299,8 +299,8 @@ def main():
     parser.add_argument(
         "--delay", "-d",
         type=float,
-        default=2.0,
-        help="Delay between API calls in seconds (default: 2.0)"
+        default=40.0,
+        help="Delay between API calls in seconds (default: 40.0 for Gemma rate limits)"
     )
     
     parser.add_argument(

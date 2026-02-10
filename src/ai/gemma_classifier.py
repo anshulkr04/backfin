@@ -217,16 +217,18 @@ class GemmaClassifier:
     Classifier using Google's Gemma 3 27B model for corporate announcement classification.
     """
     
-    def __init__(self, api_key: Optional[str] = None, rate_limit_delay: float = 2.0):
+    def __init__(self, api_key: Optional[str] = None, rate_limit_delay: float = 35.0, max_retries: int = 3):
         """
         Initialize the Gemma classifier.
         
         Args:
             api_key: Google AI API key. If not provided, will use GEMMA_API_KEY env var.
-            rate_limit_delay: Delay between API calls to avoid rate limiting.
+            rate_limit_delay: Delay between API calls to avoid rate limiting (default 35s for Gemma quota).
+            max_retries: Maximum number of retries on rate limit errors.
         """
         self.api_key = api_key or os.getenv('GEMMA_API_KEY') or os.getenv('GEMINI_API_KEY')
         self.rate_limit_delay = rate_limit_delay
+        self.max_retries = max_retries
         self.last_request_time = 0
         self.client = None
         
@@ -301,9 +303,32 @@ class GemmaClassifier:
             logger.error(f"Error in Gemma classification: {e}")
             return {"category": "Error", "confidence": "low", "error": str(e)}
     
+    def _delete_uploaded_file(self, uploaded_file) -> None:
+        """Safely delete an uploaded file from Gemma API."""
+        if uploaded_file:
+            try:
+                self.client.files.delete(name=uploaded_file.name)
+                logger.info(f"🗑️ Deleted uploaded file from Gemma: {uploaded_file.name}")
+            except Exception as e:
+                logger.warning(f"Failed to delete uploaded file {uploaded_file.name}: {e}")
+    
+    def _extract_retry_delay(self, error_message: str) -> float:
+        """Extract retry delay from rate limit error message."""
+        import re
+        # Look for patterns like "Please retry in 30.336432292s" or "retryDelay': '30s'"
+        patterns = [
+            r'retry in ([\d.]+)s',
+            r'retryDelay[\'"]?\s*:\s*[\'"]?([\d.]+)s?[\'"]?'
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, error_message, re.IGNORECASE)
+            if match:
+                return float(match.group(1)) + 5  # Add 5 second buffer
+        return 35.0  # Default to 35 seconds
+    
     def classify_pdf(self, filepath: str) -> Dict[str, Any]:
         """
-        Classify a PDF file using Gemma 3 27B.
+        Classify a PDF file using Gemma 3 27B with retry logic.
         
         Args:
             filepath: Path to the PDF file.
@@ -320,50 +345,80 @@ class GemmaClassifier:
             return {"category": "Error", "confidence": "low", "error": "File not found"}
         
         uploaded_file = None
-        try:
-            self._rate_limit()
+        last_error = None
+        
+        for attempt in range(self.max_retries):
+            try:
+                self._rate_limit()
+                
+                # Upload the file to Gemini/Gemma API (only on first attempt or if previous upload failed)
+                if uploaded_file is None:
+                    logger.info(f"📤 Uploading PDF to Gemma: {filepath} (attempt {attempt + 1}/{self.max_retries})")
+                    uploaded_file = self.client.files.upload(file=filepath)
+                
+                # Generate classification
+                logger.info("🤖 Generating Gemma classification...")
+                response = self.client.models.generate_content(
+                    model="gemma-3-27b-it",
+                    contents=[GEMMA_CLASSIFICATION_PROMPT, uploaded_file],
+                )
+                
+                if not hasattr(response, 'text'):
+                    logger.error("Gemma response missing text attribute")
+                    # Delete uploaded file before returning
+                    self._delete_uploaded_file(uploaded_file)
+                    return {"category": "Error", "confidence": "low", "error": "Invalid response format"}
+                
+                # Parse the JSON response
+                response_text = response.text.strip()
+                
+                # Handle potential markdown code blocks
+                if response_text.startswith("```"):
+                    lines = response_text.split('\n')
+                    response_text = '\n'.join(lines[1:-1] if lines[-1] == '```' else lines[1:])
+                
+                result = json.loads(response_text)
+                
+                logger.info(f"✅ Gemma PDF classification: {result.get('category')} (confidence: {result.get('confidence')})")
+                
+                # Cleanup uploaded file after successful classification
+                self._delete_uploaded_file(uploaded_file)
+                
+                return result
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse Gemma JSON response: {e}")
+                self._delete_uploaded_file(uploaded_file)
+                return {"category": "Error", "confidence": "low", "error": f"JSON parse error: {e}"}
             
-            # Upload the file to Gemini/Gemma API
-            logger.info(f"📤 Uploading PDF to Gemma: {filepath}")
-            uploaded_file = self.client.files.upload(file=filepath)
-            
-            # Generate classification
-            logger.info("🤖 Generating Gemma classification...")
-            response = self.client.models.generate_content(
-                model="gemma-3-27b-it",
-                contents=[GEMMA_CLASSIFICATION_PROMPT, uploaded_file],
-            )
-            
-            if not hasattr(response, 'text'):
-                logger.error("Gemma response missing text attribute")
-                return {"category": "Error", "confidence": "low", "error": "Invalid response format"}
-            
-            # Parse the JSON response
-            response_text = response.text.strip()
-            
-            # Handle potential markdown code blocks
-            if response_text.startswith("```"):
-                lines = response_text.split('\n')
-                response_text = '\n'.join(lines[1:-1] if lines[-1] == '```' else lines[1:])
-            
-            result = json.loads(response_text)
-            
-            logger.info(f"✅ Gemma PDF classification: {result.get('category')} (confidence: {result.get('confidence')})")
-            return result
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemma JSON response: {e}")
-            return {"category": "Error", "confidence": "low", "error": f"JSON parse error: {e}"}
-        except Exception as e:
-            logger.error(f"Error in Gemma PDF classification: {e}")
-            return {"category": "Error", "confidence": "low", "error": str(e)}
-        finally:
-            # Cleanup uploaded file
-            if uploaded_file:
-                try:
-                    self.client.files.delete(name=uploaded_file.name)
-                except Exception as e:
-                    logger.warning(f"Failed to delete uploaded file: {e}")
+            except Exception as e:
+                error_str = str(e)
+                last_error = error_str
+                
+                # Check if it's a rate limit error (429)
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower():
+                    retry_delay = self._extract_retry_delay(error_str)
+                    logger.warning(f"⏳ Rate limit hit (attempt {attempt + 1}/{self.max_retries}). Waiting {retry_delay:.1f}s before retry...")
+                    
+                    # Delete uploaded file before retry to avoid stale references
+                    self._delete_uploaded_file(uploaded_file)
+                    uploaded_file = None
+                    
+                    if attempt < self.max_retries - 1:
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        logger.error(f"Max retries ({self.max_retries}) exceeded for rate limit")
+                        return {"category": "Error", "confidence": "low", "error": f"Rate limit exceeded after {self.max_retries} retries"}
+                else:
+                    # Non-rate-limit error, don't retry
+                    logger.error(f"Error in Gemma PDF classification: {e}")
+                    self._delete_uploaded_file(uploaded_file)
+                    return {"category": "Error", "confidence": "low", "error": error_str}
+        
+        # Should not reach here, but just in case
+        self._delete_uploaded_file(uploaded_file)
+        return {"category": "Error", "confidence": "low", "error": f"Classification failed: {last_error}"}
     
     def classify_pdf_from_url(self, pdf_url: str) -> Dict[str, Any]:
         """
@@ -403,7 +458,13 @@ class GemmaClassifier:
             logger.info(f"✅ Downloaded PDF to: {filepath} (size: {len(response.content)} bytes)")
             
             # Classify the PDF
-            return self.classify_pdf(filepath)
+            result = self.classify_pdf(filepath)
+            
+            # Explicitly delete local file after classification
+            self._cleanup_local_file(filepath)
+            filepath = None  # Mark as cleaned up
+            
+            return result
             
         except requests.RequestException as e:
             logger.error(f"Failed to download PDF: {e}")
@@ -412,12 +473,17 @@ class GemmaClassifier:
             logger.error(f"Error in Gemma PDF URL classification: {e}")
             return {"category": "Error", "confidence": "low", "error": str(e)}
         finally:
-            # Cleanup temp file
-            if filepath and os.path.exists(filepath):
-                try:
-                    os.unlink(filepath)
-                except Exception:
-                    pass
+            # Cleanup temp file (in case of exceptions)
+            self._cleanup_local_file(filepath)
+    
+    def _cleanup_local_file(self, filepath: Optional[str]) -> None:
+        """Safely delete a local temporary file."""
+        if filepath and os.path.exists(filepath):
+            try:
+                os.unlink(filepath)
+                logger.info(f"🗑️ Deleted local temp file: {filepath}")
+            except Exception as e:
+                logger.warning(f"Failed to delete local file {filepath}: {e}")
 
 
 def store_classification_comparison(
