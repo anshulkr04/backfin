@@ -390,6 +390,37 @@ class EphemeralSupabaseWorkerV2:
                             _queue_telegram_notification(upload_data)
                         except Exception as e:
                             logger.warning(f"Child: Failed to queue Telegram notification: {e}")
+                        
+                        # Store Gemma classification comparison (AFTER main insert succeeds)
+                        # This avoids FK violation since corp_id now exists in corporatefilings
+                        gemma_result = processed_data.get("gemma_classification_result")
+                        if gemma_result:
+                            try:
+                                comparison_data = {
+                                    "corp_id": job.corp_id,
+                                    "pdf_url": gemma_result.get("pdf_url"),
+                                    "pdf_hash": gemma_result.get("pdf_hash"),
+                                    "gemini_category": gemma_result.get("gemini_category"),
+                                    "gemma_category": gemma_result.get("gemma_category"),
+                                    "gemma_confidence": gemma_result.get("gemma_confidence"),
+                                    "summary": gemma_result.get("summary"),
+                                    "isin": gemma_result.get("isin"),
+                                    "symbol": gemma_result.get("symbol"),
+                                    "company_name": gemma_result.get("company_name")
+                                }
+                                
+                                resp = supabase.table("classification_comparison").insert(comparison_data).execute()
+                                
+                                if hasattr(resp, "data") and resp.data:
+                                    gemini_cat = gemma_result.get("gemini_category", "")
+                                    gemma_cat = gemma_result.get("gemma_category", "")
+                                    match_status = "✅ MATCH" if gemini_cat.lower().strip() == gemma_cat.lower().strip() else "❌ MISMATCH"
+                                    logger.info(f"Child: Stored Gemma comparison: {match_status} - Gemini: {gemini_cat} | Gemma: {gemma_cat}")
+                                else:
+                                    logger.warning("Child: Failed to store Gemma comparison - no data returned")
+                            except Exception as gemma_err:
+                                # Don't fail the main job if Gemma storage fails
+                                logger.warning(f"Child: Failed to store Gemma comparison: {gemma_err}")
 
             except Exception as e:
                 logger.exception(f"Child: Error during existence check/insert: {e}")
