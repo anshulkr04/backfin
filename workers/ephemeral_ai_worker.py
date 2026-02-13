@@ -32,7 +32,6 @@ from src.queue.job_types import deserialize_job, AIProcessingJob, SupabaseUpload
 from src.ai.prompts import invalid_value
 from src.ai.helper_functions import check_markdown_tables
 from src.utils.pdf_hash_utils import calculate_pdf_hash, check_pdf_duplicate, register_pdf_hash
-from src.ai.gemma_classifier import GemmaClassifier
 
 # --- Timeout utility ---
 class TimeoutError(Exception):
@@ -1003,44 +1002,6 @@ class EphemeralAIWorker:
             
             # Note: PDF hash registration now happens BEFORE AI processing (in process_ai_job)
             # This prevents race conditions and ensures duplicates are detected early
-
-            # Run parallel Gemma classification for comparison (non-blocking, best-effort)
-            # NOTE: We do NOT store the result here - it's passed through to Supabase worker
-            # to avoid FK violation (corp_id must exist in corporatefilings first)
-            gemma_classification_result = None
-            if fileurl and not is_duplicate:
-                try:
-                    from src.ai.gemma_classifier import GemmaClassifier
-                    
-                    classifier = GemmaClassifier()
-                    if classifier.client:
-                        gemma_result = classifier.classify_pdf_from_url(fileurl)
-                        
-                        if gemma_result.get("category") and gemma_result.get("category") != "Error":
-                            gemma_classification_result = {
-                                "gemma_category": gemma_result.get("category"),
-                                "gemma_confidence": gemma_result.get("confidence", "low"),
-                                "gemini_category": category,
-                                "pdf_url": fileurl,
-                                "pdf_hash": pdf_hash,
-                                "isin": isin,
-                                "symbol": symbol,
-                                "company_name": companyname,
-                                "summary": summary
-                            }
-                            match_status = "✅ MATCH" if category.lower().strip() == gemma_result.get("category", "").lower().strip() else "❌ MISMATCH"
-                            logger.info(f"📊 Gemma classification: {match_status} - Gemini: {category} | Gemma: {gemma_result.get('category')}")
-                        else:
-                            logger.warning(f"⚠️ Gemma classification failed: {gemma_result.get('error', 'Unknown error')}")
-                    else:
-                        logger.debug("Skipping Gemma comparison - classifier not initialized")
-                except Exception as gemma_error:
-                    # Don't fail the main job if Gemma classification fails
-                    logger.warning(f"⚠️ Gemma parallel classification failed (non-blocking): {gemma_error}")
-            
-            # Add Gemma result to processed_data for Supabase worker to store
-            if gemma_classification_result:
-                processed_data["gemma_classification_result"] = gemma_classification_result
 
             supabase_job = SupabaseUploadJob(
                 job_id=f"{job.job_id}_upload",

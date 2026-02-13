@@ -217,13 +217,13 @@ class GemmaClassifier:
     Classifier using Google's Gemma 3 27B model for corporate announcement classification.
     """
     
-    def __init__(self, api_key: Optional[str] = None, rate_limit_delay: float = 35.0, max_retries: int = 3):
+    def __init__(self, api_key: Optional[str] = None, rate_limit_delay: float = 2.0, max_retries: int = 3):
         """
         Initialize the Gemma classifier.
         
         Args:
             api_key: Google AI API key. If not provided, will use GEMMA_API_KEY env var.
-            rate_limit_delay: Delay between API calls to avoid rate limiting (default 35s for Gemma quota).
+            rate_limit_delay: Delay between API calls (default 2s).
             max_retries: Maximum number of retries on rate limit errors.
         """
         self.api_key = api_key or os.getenv('GEMMA_API_KEY') or os.getenv('GEMINI_API_KEY')
