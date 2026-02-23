@@ -9,10 +9,11 @@ DEST="$HOME/marketwire-frontend/"
 
 echo "⟳ Syncing frontend → $DEST"
 
-# Copy source files, skip node_modules and .next (they break on copy)
+# Copy source files, skip node_modules, .next, and .git (they break on copy)
 rsync -av --delete \
   --exclude 'node_modules' \
   --exclude '.next' \
+  --exclude '.git' \
   "$SRC" "$DEST"
 
 # Install dependencies fresh
