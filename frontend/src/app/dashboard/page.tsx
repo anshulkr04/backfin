@@ -10,8 +10,9 @@ import {
   type Watchlist,
 } from "@/lib/api";
 import { format, parseISO } from "date-fns";
-import { Settings, ChevronDown } from "lucide-react";
+import { Settings, ChevronDown, X } from "lucide-react";
 import Link from "next/link";
+import { AnnouncementDetail } from "@/components/announcement-detail-new";
 
 function formatTime(dateStr: string) {
   try {
@@ -30,6 +31,8 @@ export default function DashboardPage() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [selectedWatchlist, setSelectedWatchlist] = useState("all");
   const [wlOpen, setWlOpen] = useState(false);
+  const [selectedFiling, setSelectedFiling] = useState<Filing | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -108,7 +111,7 @@ export default function DashboardPage() {
         </div>
 
         <button
-          onClick={() => router.push("/dashboard/saved")}
+          onClick={() => router.push("/dashboard/watchlists")}
           className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition"
         >
           <Settings size={14} />
@@ -145,9 +148,10 @@ export default function DashboardPage() {
                 filings.map((f, idx) => (
                   <button
                     key={`${f.corp_id}-${idx}`}
-                    onClick={() =>
-                      router.push("/dashboard/market-feed")
-                    }
+                    onClick={() => {
+                      setSelectedFiling(f);
+                      setPanelOpen(true);
+                    }}
                     className="w-full text-left px-5 py-3 hover:bg-gray-50 transition"
                   >
                     <div className="flex items-start justify-between gap-4">
@@ -322,6 +326,42 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* ── Announcement Detail Side Panel ── */}
+      {/* Backdrop */}
+      <div
+        className={`fixed inset-0 bg-black/20 z-40 transition-opacity duration-300 ${
+          panelOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={() => setPanelOpen(false)}
+      />
+
+      {/* Panel */}
+      <div
+        className={`fixed top-0 right-0 h-full w-[52%] max-w-[720px] bg-white shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          panelOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {/* Panel header */}
+        <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-100 shrink-0">
+          <h3 className="text-sm font-bold text-gray-900 truncate pr-4">
+            {selectedFiling?.companyname}
+          </h3>
+          <button
+            onClick={() => setPanelOpen(false)}
+            className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-400 hover:text-gray-600"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Detail content */}
+        <div className="flex-1 overflow-y-auto">
+          {selectedFiling && (
+            <AnnouncementDetail filing={selectedFiling} />
+          )}
         </div>
       </div>
     </div>
