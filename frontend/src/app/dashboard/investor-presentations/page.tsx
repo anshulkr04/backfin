@@ -1,0 +1,84 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@/lib/auth";
+import { getCorporateFilings } from "@/lib/api";
+import type { Filing } from "@/lib/api";
+import { AnnouncementList } from "@/components/announcement-list-new";
+import { AnnouncementDetail } from "@/components/announcement-detail-new";
+import { Presentation, RefreshCcw } from "lucide-react";
+
+export default function InvestorPresentationsPage() {
+  const { token } = useAuth();
+  const [filings, setFilings] = useState<Filing[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [selected, setSelected] = useState<Filing | null>(null);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const fetchData = useCallback(
+    async (p: number, append = false) => {
+      if (!token) return;
+      if (append) setLoadingMore(true);
+      else setLoading(true);
+      try {
+        const res = await getCorporateFilings(token, {
+          start_date: today,
+          end_date: today,
+          category: "Investor Presentation",
+          page: p,
+        });
+        if (append) {
+          setFilings((prev) => [...prev, ...(res.filings ?? [])]);
+        } else {
+          setFilings(res.filings ?? []);
+        }
+        setTotalCount(res.total_count ?? 0);
+        setHasNext(res.has_next);
+        setCurrentPage(res.current_page);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [token, today]
+  );
+
+  useEffect(() => {
+    fetchData(1);
+  }, [fetchData]);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white">
+        <div className="flex items-center gap-2">
+          <Presentation size={18} className="text-violet-500" />
+          <h1 className="text-lg font-bold text-gray-900">Investor Presentations</h1>
+          <span className="text-xs text-gray-400 ml-2">{totalCount.toLocaleString()} presentations</span>
+        </div>
+        <button onClick={() => fetchData(1)} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 transition">
+          <RefreshCcw size={14} /> Refresh
+        </button>
+      </div>
+      <div className="flex flex-1 overflow-hidden">
+        <div className="w-[420px] shrink-0 border-r border-gray-100 flex flex-col overflow-hidden">
+          <AnnouncementList filings={filings} loading={loading} selectedId={selected?.corp_id ?? null} onSelect={setSelected} hasNext={hasNext} onLoadMore={() => { if (!loadingMore && hasNext) fetchData(currentPage + 1, true); }} loadingMore={loadingMore} />
+        </div>
+        <div className="flex-1 overflow-hidden">
+          {selected ? <AnnouncementDetail filing={selected} /> : (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400">
+              <Presentation size={32} className="mb-3 text-gray-300" />
+              <p className="text-sm">Select a presentation to view details</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

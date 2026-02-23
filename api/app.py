@@ -904,6 +904,45 @@ def remove_from_watchlist(current_user, watchlist_id, isin):
         return jsonify({'message': f'Failed to remove ISIN from watchlist: {str(e)}'}), 500
 
 
+@app.route('/api/watchlist/<watchlist_id>/category/<path:category>', methods=['DELETE', 'OPTIONS'])
+@auth_required
+def remove_category_from_watchlist(current_user, watchlist_id, category):
+    if request.method == 'OPTIONS':
+        return _handle_options()
+
+    user_id = current_user['UserID']
+    logger.info(f"Remove category '{category}' from watchlist {watchlist_id} for user: {user_id}")
+
+    try:
+        # Verify the watchlist belongs to the user
+        wl_check = supabase.table('watchlistnamedata').select('watchlistid') \
+            .eq('watchlistid', watchlist_id).eq('userid', user_id).execute()
+
+        if not wl_check.data:
+            return jsonify({'message': 'Watchlist not found or unauthorized!'}), 404
+
+        # Delete the category row (isin is null for category-only rows)
+        delete_response = supabase.table('watchlistdata') \
+            .delete() \
+            .eq('watchlistid', watchlist_id) \
+            .eq('userid', user_id) \
+            .eq('category', category) \
+            .is_('isin', 'null') \
+            .execute()
+
+        if (hasattr(delete_response, 'error') and delete_response.error) or not delete_response.data:
+            return jsonify({'message': 'Category not found in watchlist!'}), 404
+
+        logger.debug(f"Category '{category}' removed from watchlist {watchlist_id} for user: {user_id}")
+        return jsonify({
+            'message': 'Category removed from watchlist!',
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Remove category from watchlist error: {str(e)}")
+        return jsonify({'message': f'Failed to remove category from watchlist: {str(e)}'}), 500
+
+
 @app.route('/api/watchlist/<watchlist_id>', methods=['DELETE', 'OPTIONS'])
 @auth_required
 def delete_watchlist(current_user, watchlist_id):
