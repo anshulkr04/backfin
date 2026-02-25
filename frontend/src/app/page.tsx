@@ -116,29 +116,32 @@ export default function LandingPage() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
               </span>
-              Live — Processing 2,400+ filings daily
+              Live — 2,400+ filings processed daily
             </div>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-gray-900 leading-[1.08] tracking-tight font-[family-name:var(--font-display)]">
-              See the move<br />
-              <span className="text-orange-500">before it happens.</span>
+              You&apos;re reading filings<br />
+              <span className="text-orange-500">6 hours too late.</span>
             </h1>
-            <p className="text-lg text-gray-500 mt-6 max-w-xl mx-auto leading-relaxed font-[family-name:var(--font-display)]">
-              Every corporate filing, insider trade, and deal from India&apos;s stock exchanges — AI-classified, deduplicated, and delivered in real-time.
+            <p className="text-lg text-gray-500 mt-6 max-w-2xl mx-auto leading-relaxed font-[family-name:var(--font-display)]">
+              MarketWire delivers every NSE and BSE corporate filing — AI-summarized, classified, and in your Telegram — before the market opens tomorrow.
             </p>
             <div className="flex items-center justify-center gap-3 mt-8">
               <Link
                 href="/auth"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition text-sm"
+                className="inline-flex items-center gap-2 px-7 py-3.5 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition text-sm"
               >
-                Start Free <ArrowRight size={16} />
+                Get Real-Time Alerts Free <ArrowRight size={16} />
               </Link>
               <a
                 href="#features"
                 className="inline-flex items-center gap-2 px-6 py-3 border border-gray-200 text-gray-600 font-medium rounded-lg hover:bg-gray-50 transition text-sm"
               >
-                See Features
+                See a Live Feed →
               </a>
             </div>
+            <p className="text-xs text-gray-400 mt-4">
+              2,400+ filings processed daily · NSE + BSE · No PDF reading required
+            </p>
           </div>
 
           {/* Hero Mock — Full Dashboard */}
@@ -275,17 +278,27 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Trusted by strip */}
-          <div className="mt-16 text-center">
-            <p className="text-xs text-gray-400 uppercase tracking-widest mb-4">Covering every exchange</p>
-            <div className="flex items-center justify-center gap-8 text-gray-300 text-sm font-semibold flex-wrap">
-              <span>NSE</span>
-              <span className="w-1 h-1 rounded-full bg-gray-200" />
-              <span>BSE</span>
-              <span className="w-1 h-1 rounded-full bg-gray-200" />
-              <span>5,000+ Companies</span>
-              <span className="w-1 h-1 rounded-full bg-gray-200" />
-              <span>45+ Categories</span>
+          {/* Social Proof Bar */}
+          <div className="mt-16">
+            <div className="max-w-2xl mx-auto">
+              <p className="text-center text-sm text-gray-500 mb-5">
+                Trusted by <span className="font-semibold text-gray-900">4,200+</span> investors and analysts across India
+              </p>
+              <div className="bg-gray-50 border border-gray-100 rounded-xl px-6 py-4">
+                <p className="text-sm text-gray-700 italic leading-relaxed">
+                  &ldquo;Caught the Adani SEBI notice 3 hours before it trended on Twitter. The Telegram alert alone is worth it.&rdquo;
+                </p>
+                <p className="text-xs text-gray-400 mt-2 font-medium">— Investor & Analyst, Mumbai</p>
+              </div>
+              <div className="flex items-center justify-center gap-8 text-gray-300 text-sm font-semibold flex-wrap mt-6">
+                <span>NSE</span>
+                <span className="w-1 h-1 rounded-full bg-gray-200" />
+                <span>BSE</span>
+                <span className="w-1 h-1 rounded-full bg-gray-200" />
+                <span>5,000+ Companies</span>
+                <span className="w-1 h-1 rounded-full bg-gray-200" />
+                <span>45+ Categories</span>
+              </div>
             </div>
           </div>
         </div>
@@ -300,13 +313,13 @@ export default function LandingPage() {
                 <Zap size={12} /> AI-Powered
               </div>
               <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-4 font-[family-name:var(--font-display)]">
-                Raw filings transformed into<br />actionable intelligence
+                Stop reading 50-page PDFs.<br />Start acting in 30 seconds.
               </h2>
               <p className="text-gray-500 leading-relaxed mb-6">
-                Our AI reads every corporate filing and produces clean, structured summaries with key metrics, data tables, sentiment analysis, and strategic insights — so you don&apos;t have to read 50-page PDFs.
+                Our AI reads every BSE/NSE filing and delivers the only 3 things you actually need: what happened, whether it&apos;s bullish or bearish, and the key numbers in a table.
               </p>
               <ul className="space-y-3">
-                {["Structured tables with key transaction details", "Sentiment analysis (Positive / Negative / Neutral)", "Key investor and stakeholder identification", "45+ auto-classified announcement categories"].map((item) => (
+                {["What happened — clean, structured summary in seconds", "Bullish or bearish — instant sentiment analysis", "Key numbers — auto-extracted into data tables", "45+ categories auto-classified, zero manual work"].map((item) => (
                   <li key={item} className="flex items-center gap-2.5 text-sm text-gray-600">
                     <div className="w-5 h-5 rounded-full bg-green-50 flex items-center justify-center shrink-0">
                       <Check size={12} className="text-green-600" />
@@ -374,94 +387,131 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Mock notifications */}
-            <div className="order-2 lg:order-1 space-y-4">
-              {/* In-app notification */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-lg shadow-gray-100/50 p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
-                    <Bell size={16} className="text-orange-500" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">In-App Notifications</p>
-                    <p className="text-[10px] text-gray-400">Real-time updates in your dashboard</p>
-                  </div>
+            <div className="order-2 lg:order-1 space-y-5">
+              {/* In-app — looks like the Live Market Feed with new announcements toast */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-xl shadow-gray-200/40 overflow-hidden max-w-sm">
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+                  <Radio size={14} className="text-orange-500" />
+                  <span className="text-sm font-bold text-gray-900">Live Market Feed</span>
+                  <span className="text-[10px] text-gray-400 ml-auto">24,891</span>
                 </div>
-                {/* Mock notification pill */}
-                <div className="bg-gray-900 text-white rounded-full px-4 py-2 inline-flex items-center gap-2 text-xs font-medium mb-3">
+                {/* New announcements toast */}
+                <div className="px-4 py-2 bg-gray-900 flex items-center justify-center gap-2">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
                   </span>
-                  3 new announcements <span className="text-gray-400">↑</span>
+                  <span className="text-xs font-medium text-white">3 new announcements</span>
+                  <span className="text-gray-400 text-xs">↑</span>
                 </div>
-                <div className="space-y-2">
+                <div className="divide-y divide-gray-50">
                   {[
-                    { co: "Reliance Industries", cat: "Mergers/Acquisitions", time: "2 min ago" },
-                    { co: "Tata Motors", cat: "Expansion", time: "5 min ago" },
-                    { co: "HDFC Bank", cat: "Financial Results", time: "12 min ago" },
-                  ].map((n, i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-2 bg-orange-50/50 rounded-lg">
-                      <div>
-                        <p className="text-[11px] font-semibold text-gray-900">{n.co}</p>
-                        <p className="text-[10px] text-gray-500">{n.cat}</p>
+                    { co: "Reliance Industries Ltd", hl: "Reliance Acquires 73% Stake in Karkinos Healthcare for ₹1,200 Cr", cat: "Mergers/Acquisitions", catBg: "bg-rose-50", catText: "text-rose-700", time: " 14:32", sentiment: "Positive", sentColor: "text-green-600", sentDot: "bg-green-500", active: true },
+                    { co: "Tata Motors Ltd", hl: "Tata Motors Board Approves ₹7,500 Cr Investment in EV Gigafactory at Sanand", cat: "Expansion", catBg: "bg-emerald-100", catText: "text-emerald-800", time: " 13:18", sentiment: "Positive", sentColor: "text-green-600", sentDot: "bg-green-500", active: false },
+                    { co: "Adani Enterprises Ltd", hl: "SEBI Issues Show Cause Notice to Adani Group Over Related Party Transactions", cat: "Litigation & Notices", catBg: "bg-rose-100", catText: "text-rose-800", time: " 09:50", sentiment: "Negative", sentColor: "text-red-600", sentDot: "bg-red-500", active: false },
+                  ].map((item, i) => (
+                    <div
+                      key={i}
+                      className={`px-4 py-3 cursor-default ${item.active ? "bg-orange-50/40" : ""}`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-0.5">
+                        <span className="text-[12px] font-bold text-gray-900 truncate">{item.co}</span>
+                        <span className="text-[9px] text-gray-400 shrink-0">{item.time}</span>
                       </div>
-                      <span className="text-[10px] text-gray-400">{n.time}</span>
+                      <p className="text-[11px] text-gray-600 line-clamp-2 leading-snug mb-1.5">{item.hl}</p>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${item.catBg} ${item.catText}`}>
+                          {item.cat}
+                        </span>
+                        <span className={`flex items-center gap-1 text-[10px] font-medium ${item.sentColor}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${item.sentDot}`} />
+                          {item.sentiment}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Telegram mock */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-lg shadow-gray-100/50 p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                    <MessageCircle size={16} className="text-blue-500" />
+              {/* Telegram mock — realistic chat bubble */}
+              <div className="bg-[#0F1621] rounded-xl overflow-hidden shadow-xl shadow-gray-200/40 max-w-sm">
+                {/* Telegram header */}
+                <div className="px-4 py-2.5 flex items-center gap-3 border-b border-white/5">
+                  <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center shrink-0 overflow-hidden p-1">
+                    <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+                      <polyline points="6,20 12,20 15,12 18,26 21,16 24,22 27,14 30,20" stroke="#FFFFFF" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                    </svg>
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-gray-900">Telegram / WhatsApp</p>
-                    <p className="text-[10px] text-gray-400">Instant alerts to your phone</p>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[13px] font-semibold text-white">MarketWire Bot</span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#3B82F6"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#3B82F6"/></svg>
+                    </div>
+                    <span className="text-[10px] text-gray-400">bot · last seen just now</span>
                   </div>
                 </div>
-                <div className="bg-[#e8f5e1] rounded-lg p-3 text-[11px] text-gray-800 space-y-1 max-w-[300px]">
-                  <p className="font-bold">🚨 MarketWire Alert</p>
-                  <p><strong>Reliance Industries Ltd</strong></p>
-                  <p>Reliance Acquires 73% Stake in Karkinos Healthcare for ₹1,200 Cr</p>
-                  <p className="text-[10px] text-gray-500 mt-1">Category: Mergers/Acquisitions</p>
-                  <p className="text-[10px] text-gray-500">Sentiment: 🟢 Positive</p>
-                  <p className="text-[10px] text-blue-600 mt-1">View on MarketWire →</p>
+                {/* Chat area */}
+                <div className="px-3 py-3 space-y-2">
+                  <div className="bg-[#182533] rounded-xl rounded-tl-sm px-3.5 py-2.5 max-w-[310px] text-[12px] text-gray-200 space-y-1.5">
+                    <p className="font-semibold text-white">🛒 New Announcement</p>
+                    <p className="text-[11px] text-gray-400 leading-relaxed">
+                      🏢 <span className="text-white font-medium">Reliance Industries Ltd</span><br />
+                      📌 RELIANCE<br />
+                      📂 Mergers/Acquisitions<br />
+                      📅 22 Feb 2026
+                    </p>
+                    <p className="text-white font-medium">Reliance Acquires 73% Stake in Karkinos Healthcare for ₹1,200 Cr</p>
+                    <p className="text-gray-400 leading-relaxed text-[11px]">Entered into definitive agreement to acquire 73% controlling stake. Transaction valued at ₹1,200 Crore...</p>
+                    <p className="text-[11px]">💡 Sentiment: 📈 Positive</p>
+                    <div className="pt-1 space-y-0.5">
+                      <p className="text-[11px]">📄 <span className="text-blue-400 underline">View Document</span></p>
+                      <p className="text-[11px]">🔗 <span className="text-blue-400 underline">View on MarketWire</span></p>
+                    </div>
+                    <p className="text-[9px] text-gray-500 text-right">9:51 AM ✓✓</p>
+                  </div>
                 </div>
               </div>
 
-              {/* Email mock */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-lg shadow-gray-100/50 p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center">
-                    <Mail size={16} className="text-purple-500" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">Email Digest</p>
-                    <p className="text-[10px] text-gray-400">End-of-day summary to your inbox</p>
-                  </div>
-                </div>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
-                    <p className="text-[11px] font-semibold text-gray-900">📊 Your Daily MarketWire Digest</p>
-                    <p className="text-[10px] text-gray-400">22 Feb 2026 · 12 announcements for your watchlists</p>
-                  </div>
-                  <div className="px-4 py-2 space-y-1.5">
-                    {[
-                      { co: "Reliance Industries", hl: "Acquires Karkinos Healthcare", sent: "🟢" },
-                      { co: "Tata Motors", hl: "₹7,500 Cr EV Gigafactory", sent: "🟢" },
-                      { co: "Adani Enterprises", hl: "SEBI Show Cause Notice", sent: "🔴" },
-                    ].map((e, i) => (
-                      <div key={i} className="flex items-center justify-between py-1 border-b border-gray-50 last:border-0">
-                        <div>
-                          <span className="text-[11px] font-medium text-gray-900">{e.co}</span>
-                          <span className="text-[10px] text-gray-500 ml-2">{e.hl}</span>
-                        </div>
-                        <span className="text-[11px]">{e.sent}</span>
+              {/* Email mock — realistic inbox email */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-xl shadow-gray-200/40 overflow-hidden max-w-sm">
+                {/* Email header */}
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <div className="flex items-center gap-2.5 mb-2">
+                    <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center shrink-0 overflow-hidden p-1">
+                      <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+                        <polyline points="6,20 12,20 15,12 18,26 21,16 24,22 27,14 30,20" stroke="#FFFFFF" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[12px] font-semibold text-gray-900">MarketWire</span>
+                        <span className="text-[10px] text-gray-400">6:30 PM</span>
                       </div>
-                    ))}
+                      <p className="text-[10px] text-gray-400 truncate">to me</p>
+                    </div>
+                  </div>
+                  <p className="text-[13px] font-semibold text-gray-900">📊 Your Daily Digest — 22 Feb 2026</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">12 announcements from 3 watchlists</p>
+                </div>
+                {/* Email body */}
+                <div className="px-4 py-3 space-y-2.5">
+                  <p className="text-[11px] text-gray-600">Here&apos;s what happened with your tracked companies today:</p>
+                  {[
+                    { co: "Reliance Industries", hl: "Acquires 73% Stake in Karkinos Healthcare", sent: "Positive", sentColor: "text-green-600", sentBg: "bg-green-50", cat: "M&A" },
+                    { co: "Tata Motors", hl: "₹7,500 Cr EV Gigafactory at Sanand", sent: "Positive", sentColor: "text-green-600", sentBg: "bg-green-50", cat: "Expansion" },
+                    { co: "Adani Enterprises", hl: "SEBI Show Cause Notice — Related Party Tx", sent: "Negative", sentColor: "text-red-600", sentBg: "bg-red-50", cat: "Litigation" },
+                  ].map((e, i) => (
+                    <div key={i} className="border border-gray-100 rounded-lg p-2.5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-semibold text-gray-900">{e.co}</span>
+                        <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${e.sentBg} ${e.sentColor}`}>{e.sent}</span>
+                      </div>
+                      <p className="text-[11px] text-gray-600 leading-snug">{e.hl}</p>
+                      <span className="text-[9px] text-gray-400 mt-1 inline-block">{e.cat}</span>
+                    </div>
+                  ))}
+                  <div className="pt-2 text-center">
+                    <span className="text-[11px] text-orange-500 font-medium">View all 12 announcements on MarketWire →</span>
                   </div>
                 </div>
               </div>
@@ -469,21 +519,25 @@ export default function LandingPage() {
 
             <div className="order-1 lg:order-2">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium mb-4">
-                <Bell size={12} /> Multi-Channel Alerts
+                <Bell size={12} /> Real-Time Alerts
               </div>
               <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-4 font-[family-name:var(--font-display)]">
-                Never miss a<br />market-moving filing
+                The Adani SEBI notice dropped at 9:50 AM.<br />
+                <span className="text-blue-600">MarketWire pinged at 9:51 AM.</span>
               </h2>
+              <p className="text-gray-500 leading-relaxed mb-4">
+                The stock moved 4% by 10:15 AM. Where were you?
+              </p>
               <p className="text-gray-500 leading-relaxed mb-6">
-                Choose how you want to be notified. Get instant Telegram or WhatsApp messages the moment a filing drops, or opt for a clean end-of-day email digest. In-app notifications keep you updated right in your dashboard.
+                Get instant alerts on Telegram, WhatsApp, or email — filtered to only the companies and categories you care about.
               </p>
               <ul className="space-y-3">
                 {[
-                  "Real-time in-app notification badges",
-                  "Instant Telegram & WhatsApp messages",
-                  "End-of-day email digest with full summary",
+                  "Telegram & WhatsApp — instant, the moment a filing drops",
+                  "Email digest — clean end-of-day summary",
                   "Per-watchlist alert preferences",
                   "Filter alerts by category and sentiment",
+                  "In-app notification badges in real-time",
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-2.5 text-sm text-gray-600">
                     <div className="w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
@@ -507,17 +561,17 @@ export default function LandingPage() {
                 <Bookmark size={12} /> Save & Track
               </div>
               <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-4 font-[family-name:var(--font-display)]">
-                Save announcements,<br />track stock performance
+                Did the acquisition<br />actually move the stock?
               </h2>
               <p className="text-gray-500 leading-relaxed mb-6">
-                Bookmark any filing with a personal note. MarketWire automatically tracks the stock price from the moment you save — so you can see exactly how the market reacted over time.
+                Save any filing in one click. MarketWire tracks the stock price from that exact moment — so you know if your thesis played out, and learn to trade the next one better.
               </p>
               <ul className="space-y-3">
                 {[
-                  "One-click save with optional personal notes",
-                  "Automatic price tracking from save date",
+                  "One-click save with personal notes",
+                  "Automatic price tracking from the moment you save",
                   "Sort by latest, oldest, largest gain/loss",
-                  "Full AI summary in saved detail view",
+                  "Learn what moves the market — and what doesn't",
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-2.5 text-sm text-gray-600">
                     <div className="w-5 h-5 rounded-full bg-amber-50 flex items-center justify-center shrink-0">
@@ -593,10 +647,11 @@ export default function LandingPage() {
               <BarChart3 size={12} /> Smart Money Tracking
             </div>
             <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-3 font-[family-name:var(--font-display)]">
-              Follow the smart money
+              Mukesh Ambani just bought ₹312 Cr of Reliance.<br />
+              <span className="text-emerald-600">Did you know?</span>
             </h2>
-            <p className="text-gray-500 max-w-lg mx-auto">
-              Track insider trades, bulk deals, and block deals in real-time. See what promoters, FIIs, and institutional investors are buying and selling.
+            <p className="text-gray-500 max-w-xl mx-auto">
+              Insider trades, bulk deals, and block deals — the moves promoters and FIIs make before filings hit the news cycle.
             </p>
           </div>
 
@@ -754,18 +809,18 @@ export default function LandingPage() {
                 <List size={12} /> Watchlist Management
               </div>
               <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-4 font-[family-name:var(--font-display)]">
-                Your market,<br />your rules
+                You follow 8 pharma stocks<br />and hate reading about IT deals.
               </h2>
               <p className="text-gray-500 leading-relaxed mb-6">
-                Create unlimited watchlists, track specific companies and categories, and set per-watchlist alert preferences. Add companies with smart search — no ISIN codes required.
+                Build watchlists that match your portfolio — set alerts by company, category, and sentiment. MarketWire filters out the noise before it reaches you.
               </p>
               <ul className="space-y-3">
                 {[
-                  "Create unlimited watchlists with custom names",
+                  "Unlimited watchlists with custom names",
                   "Smart company search — type name, get results",
-                  "Track specific announcement categories per watchlist",
-                  "Set alert preferences per watchlist (Telegram / Email / None)",
-                  "View all tracked companies and categories at a glance",
+                  "Filter by announcement category per watchlist",
+                  "Set alert channel per watchlist (Telegram / Email / None)",
+                  "Only see what matters to your portfolio",
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-2.5 text-sm text-gray-600">
                     <div className="w-5 h-5 rounded-full bg-violet-50 flex items-center justify-center shrink-0">
@@ -884,19 +939,30 @@ export default function LandingPage() {
       {/* ───── CTA ───── */}
       <section className="py-20 px-6 bg-gray-900">
         <div className="max-w-3xl mx-auto text-center">
+          <p className="text-sm text-gray-500 mb-6 italic">
+            The filing dropped. The stock moved. You found out at dinner.
+          </p>
           <h2 className="text-3xl font-extrabold text-white tracking-tight mb-4 font-[family-name:var(--font-display)]">
-            Ready to see the move before it happens?
+            The next Adani SEBI notice, Reliance acquisition,<br />or HDFC earnings beat is dropping today.
           </h2>
-          <p className="text-gray-400 mb-8 max-w-md mx-auto">
-            Join thousands of investors and analysts who use MarketWire to stay ahead of India&apos;s markets.
+          <p className="text-gray-400 mb-8 max-w-lg mx-auto">
+            Are you going to read about it tomorrow on Moneycontrol, or know about it in 60 seconds?
           </p>
           <Link
             href="/auth"
             className="inline-flex items-center gap-2 px-8 py-3.5 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition text-sm"
           >
-            Get Started Free <ArrowRight size={16} />
+            Start Free — No Card Required <ArrowRight size={16} />
           </Link>
-          <p className="text-xs text-gray-500 mt-4">No credit card required · Free forever plan available</p>
+          <div className="flex items-center justify-center gap-6 mt-6 text-sm">
+            <div className="text-gray-500">
+              <span className="text-gray-300 font-medium">Free:</span> 10 alerts/day, 2 watchlists
+            </div>
+            <div className="w-px h-4 bg-gray-700" />
+            <div className="text-gray-500">
+              <span className="text-orange-400 font-medium">Pro:</span> Unlimited everything · ₹499/mo
+            </div>
+          </div>
         </div>
       </section>
 

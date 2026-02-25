@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Inter, DM_Sans } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth-provider";
-import { Analytics } from "@vercel/analytics/next";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -16,9 +15,12 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "MarketWire — See the move before it happens.",
+  title: "MarketWire",
   description:
-    "Every corporate filing, insider trade, and deal from India's stock exchanges — AI-classified, deduplicated, and delivered in real-time.",
+    "Every NSE and BSE corporate filing — AI-summarized, classified, and delivered in real-time. Stop reading 50-page PDFs.",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
@@ -30,7 +32,6 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${inter.variable} ${dmSans.variable} font-sans antialiased bg-white`}>
         <AuthProvider>{children}</AuthProvider>
-        <Analytics />
       </body>
     </html>
   );
