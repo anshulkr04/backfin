@@ -35,3 +35,6 @@ schedule==1.2.2
 
 # PDF processing
 PyPDF2==3.0.1
+
+# Article Generation (Grok)
+xai-sdk>=1.8.0

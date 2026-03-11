@@ -51,3 +51,6 @@ typing-extensions==4.13.2
 
 # Telegram Bot
 python-telegram-bot==21.0
+
+# Article Generation (Grok)
+xai-sdk>=1.8.0

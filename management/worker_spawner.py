@@ -67,6 +67,14 @@ class WorkerSpawner:
                 'cooldown': 15,
                 'max_concurrent': 1
             },
+            QueueNames.ARTICLE_GENERATION: {
+                'script': 'workers/article_generation_worker.py',
+                'redis_key': QueueNames.ARTICLE_GENERATION,
+                'redis_type': 'list',
+                'max_runtime': 600,    # 10 min max (Grok calls can be slow)
+                'cooldown': 10,
+                'max_concurrent': 1
+            },
             # delayed processor: points at actual delayed zsets (example)
             'delayed_queue_processor': {
                 'script': 'workers/delayed_queue_processor.py',

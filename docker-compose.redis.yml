@@ -201,24 +201,6 @@ services:
       - backfin_network
     restart: unless-stopped
     command: python workers/telegram_notification_worker.py
-  # Article Generation Worker
-  article-worker:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.article-worker
-    container_name: backfin-article-worker
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    env_file:
-      - .env
-    networks:
-      - backfin_network
-    restart: unless-stopped
-    command: python workers/article_generation_worker.py
 volumes:
   redis_data:
     driver: local
