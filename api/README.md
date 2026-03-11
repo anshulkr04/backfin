@@ -13,6 +13,7 @@ A comprehensive backend API for financial data management with support for user 
   - [User Management](#user-management)
   - [Watchlists](#watchlists)
   - [Corporate Filings](#corporate-filings)
+  - [Corporate Filings V2 (Authenticated)](#corporate-filings-v2-authenticated)
   - [Company Search](#company-search)
   - [Stock Price Data](#stock-price-data)
   - [Announcements](#announcements)
@@ -811,6 +812,259 @@ The API implements multiple fallback mechanisms to ensure reliability:
 - Automatic exclusion of procedural/administrative filings unless explicitly requested
 - Efficient database queries with proper indexing
 - Fallback mechanisms prevent API downtime
+
+
+### Corporate Filings V2 (Authenticated)
+
+The V2 Corporate Filings API is an authenticated version with advanced filtering: user watchlist, read/unread tracking, and market cap tiers. The original `/api/corporate_filings` endpoint remains unchanged.
+
+| Endpoint | Method | Description | Authentication |
+|----------|--------|-------------|----------------|
+| `/api/v2/corporate_filings` | GET | Get filings with watchlist, read/unread, and market cap filters | Yes |
+| `/api/v2/corporate_filings/<corp_id>` | GET | Get a single filing with read status | Yes |
+| `/api/v2/corporate_filings/mark-read` | POST | Mark filings as read | Yes |
+| `/api/v2/corporate_filings/mark-unread` | POST | Mark filings as unread | Yes |
+| `/api/v2/corporate_filings/read-status` | POST | Batch check read status for filings | Yes |
+
+#### Query Parameters (GET `/api/v2/corporate_filings`)
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `start_date` | String | No | — | Start date (YYYY-MM-DD) |
+| `end_date` | String | No | — | End date (YYYY-MM-DD) |
+| `category` | String | No | — | Comma-separated category list |
+| `symbol` | String | No | — | Comma-separated symbol list |
+| `isin` | String | No | — | Comma-separated ISIN list |
+| `watchlist` | Boolean | No | `false` | If `true`, only show filings matching the user's watchlist ISINs |
+| `read_filter` | String | No | `all` | `all`, `read`, or `unread` |
+| `marketcap` | String | No | — | Comma-separated list: `large`, `mid`, `small`, `micro`, `nano` |
+| `include_duplicates` | Boolean | No | `false` | Include duplicate filings |
+| `page` | Integer | No | `1` | Page number |
+| `page_size` | Integer | No | `15` | Results per page (max 100) |
+
+#### Market Cap Tiers
+
+| Tier | Range (₹ Crores) |
+|------|------------------|
+| `large` | > 20,000 |
+| `mid` | 5,000 – 20,000 |
+| `small` | 500 – 5,000 |
+| `micro` | 100 – 500 |
+| `nano` | < 100 |
+
+#### Examples
+
+**Basic authenticated request**
+```bash
+curl -X GET "https://fin.anshulkr.com/api/v2/corporate_filings" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+**Watchlist filings only**
+```bash
+curl -X GET "https://fin.anshulkr.com/api/v2/corporate_filings?watchlist=true" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+**Unread filings for large-cap companies**
+```bash
+curl -X GET "https://fin.anshulkr.com/api/v2/corporate_filings?read_filter=unread&marketcap=large" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+**Combined filters**
+```bash
+curl -X GET "https://fin.anshulkr.com/api/v2/corporate_filings?watchlist=true&read_filter=unread&marketcap=large,mid&category=Financial%20Results&start_date=2026-01-01&page=1&page_size=25" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+**Filter by multiple market cap tiers**
+```bash
+curl -X GET "https://fin.anshulkr.com/api/v2/corporate_filings?marketcap=small,micro,nano&category=Board%20Meeting" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+#### Response Structure (GET)
+
+```json
+{
+  "count": 15,
+  "total_count": 1240,
+  "total_pages": 83,
+  "current_page": 1,
+  "page_size": 15,
+  "has_next": true,
+  "has_previous": false,
+  "filings": [
+    {
+      "corp_id": "corp-123",
+      "securityid": "12345",
+      "summary": "Reliance Industries Ltd announces Q3 FY26 results",
+      "fileurl": "https://example.com/filing.pdf",
+      "date": "2026-01-28T14:30:00+05:30",
+      "ai_summary": "**Category:** Financial Results\n**Headline:** Q3 FY26 Results...",
+      "category": "Financial Results",
+      "isin": "INE002A01018",
+      "companyname": "Reliance Industries Limited",
+      "symbol": "RELIANCE",
+      "headline": "Reliance Industries announces Q3 FY26 results with 15% YoY growth",
+      "sentiment": "Positive",
+      "verified": true,
+      "is_read": false,
+      "investorCorp": [
+        {
+          "id": "inv-456",
+          "investor_id": "investor-789",
+          "investor_name": "Life Insurance Corporation of India",
+          "aliasBool": false,
+          "aliasName": null,
+          "verified": true,
+          "type": "institution",
+          "alias_id": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Get Filing by ID (V2)
+
+Returns a single filing with `is_read` status for the authenticated user.
+
+```bash
+curl -X GET "https://fin.anshulkr.com/api/v2/corporate_filings/corp-123" \
+  -H "Authorization: Bearer your_access_token"
+```
+
+**Response (200 OK)**
+```json
+{
+  "corp_id": "corp-123",
+  "summary": "Reliance Industries Ltd announces Q3 FY26 results",
+  "category": "Financial Results",
+  "isin": "INE002A01018",
+  "companyname": "Reliance Industries Limited",
+  "symbol": "RELIANCE",
+  "date": "2026-01-28T14:30:00+05:30",
+  "headline": "Reliance Industries announces Q3 FY26 results",
+  "sentiment": "Positive",
+  "is_read": true,
+  "investorCorp": []
+}
+```
+
+#### Mark Filings as Read
+
+Mark one or more filings as read for the current user. Idempotent — marking an already-read filing is a no-op.
+
+```bash
+curl -X POST "https://fin.anshulkr.com/api/v2/corporate_filings/mark-read" \
+  -H "Authorization: Bearer your_access_token" \
+  -H "Content-Type: application/json" \
+  -d '{"corp_ids": ["corp-123", "corp-456", "corp-789"]}'
+```
+
+**Request Body**
+```json
+{
+  "corp_ids": ["corp-123", "corp-456", "corp-789"]
+}
+```
+
+**Response (200 OK)**
+```json
+{
+  "message": "3 filings marked as read",
+  "count": 3
+}
+```
+
+**Limits:** Maximum 200 corp_ids per request.
+
+#### Mark Filings as Unread
+
+Mark one or more filings as unread for the current user.
+
+```bash
+curl -X POST "https://fin.anshulkr.com/api/v2/corporate_filings/mark-unread" \
+  -H "Authorization: Bearer your_access_token" \
+  -H "Content-Type: application/json" \
+  -d '{"corp_ids": ["corp-123"]}'
+```
+
+**Request Body**
+```json
+{
+  "corp_ids": ["corp-123"]
+}
+```
+
+**Response (200 OK)**
+```json
+{
+  "message": "1 filings marked as unread",
+  "count": 1
+}
+```
+
+#### Batch Read Status Check
+
+Check read/unread status for a batch of filings without fetching full filing data. Useful for the frontend to overlay read indicators on an existing list.
+
+```bash
+curl -X POST "https://fin.anshulkr.com/api/v2/corporate_filings/read-status" \
+  -H "Authorization: Bearer your_access_token" \
+  -H "Content-Type: application/json" \
+  -d '{"corp_ids": ["corp-123", "corp-456", "corp-789"]}'
+```
+
+**Request Body**
+```json
+{
+  "corp_ids": ["corp-123", "corp-456", "corp-789"]
+}
+```
+
+**Response (200 OK)**
+```json
+{
+  "read_corp_ids": ["corp-123"]
+}
+```
+
+Only corp_ids that have been read are returned. If a corp_id is not in the response array, it is unread.
+
+#### Error Responses
+
+**Missing Authentication (401 Unauthorized)**
+```json
+{
+  "message": "Authentication token is missing!"
+}
+```
+
+**Invalid Token (401 Unauthorized)**
+```json
+{
+  "message": "Invalid authentication token!"
+}
+```
+
+**Bad Request (400)**
+```json
+{
+  "message": "corp_ids array is required"
+}
+```
+
+**Database Unavailable (503)**
+```json
+{
+  "message": "Database service unavailable.",
+  "status": "error"
+}
+```
 
 
 ### Financial Results

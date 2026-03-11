@@ -73,6 +73,12 @@ class FailedJob(BaseJob):
     error_traceback: str = ""
     failed_at: datetime = Field(default_factory=datetime.utcnow)
 
+class ArticleGenerationJob(BaseJob):
+    """Job for generating a news article from a corporate filing"""
+    job_type: str = "article_generation"
+    corp_id: str = Field(..., description="Corporate filing ID")
+    filing_data: Dict[str, Any] = Field(..., description="Filing data needed for article generation")
+
 # Job type mapping for deserialization
 JOB_TYPE_MAPPING = {
     "announcement_scraping": AnnouncementScrapingJob,
@@ -80,6 +86,7 @@ JOB_TYPE_MAPPING = {
     "supabase_upload": SupabaseUploadJob,
     "investor_analysis": InvestorAnalysisJob,
     "failed_job": FailedJob,
+    "article_generation": ArticleGenerationJob,
 }
 
 def create_job_from_dict(job_data: Dict[str, Any]) -> BaseJob:

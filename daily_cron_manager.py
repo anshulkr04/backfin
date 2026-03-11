@@ -304,7 +304,7 @@ def test_job(job_name: str):
         'deals': run_deals_collection,
         'insider_trading': run_insider_trading_collection,
         'watchlist_digest': run_watchlist_digest,
-        'daily_data': run_daily_data_collections
+        'daily_data': run_daily_data_collections,
     }
     
     if job_name not in jobs:

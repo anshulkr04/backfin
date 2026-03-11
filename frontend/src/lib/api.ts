@@ -135,6 +135,12 @@ export interface FilingsParams {
   symbol?: string;
   isin?: string;
   page?: number;
+  page_size?: number;
+  watchlist?: boolean;
+  watchlist_id?: string;
+  read_filter?: "all" | "read" | "unread";
+  marketcap?: string;
+  include_duplicates?: boolean;
 }
 
 export async function getCorporateFilings(
@@ -148,8 +154,14 @@ export async function getCorporateFilings(
   if (params.symbol) qs.set("symbol", params.symbol);
   if (params.isin) qs.set("isin", params.isin);
   if (params.page) qs.set("page", String(params.page));
+  if (params.page_size) qs.set("page_size", String(params.page_size));
+  if (params.watchlist) qs.set("watchlist", "true");
+  if (params.read_filter && params.read_filter !== "all")
+    qs.set("read_filter", params.read_filter);
+  if (params.marketcap) qs.set("marketcap", params.marketcap);
+  if (params.include_duplicates) qs.set("include_duplicates", "true");
   const q = qs.toString();
-  return request(`/api/corporate_filings${q ? `?${q}` : ""}`, {}, token);
+  return request(`/api/v2/corporate_filings${q ? `?${q}` : ""}`, {}, token);
 }
 
 export async function getFilingById(corpId: string): Promise<Filing> {

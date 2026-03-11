@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/lib/auth";
-import { getCorporateFilings } from "@/lib/api";
-import type { Filing, FilingsParams } from "@/lib/api";
+import { getCorporateFilings, getWatchlists } from "@/lib/api";
+import type { Filing, FilingsParams, Watchlist } from "@/lib/api";
 import { AnnouncementList } from "@/components/announcement-list-new";
 import { AnnouncementDetail } from "@/components/announcement-detail-new";
-import { Radio, RefreshCcw, X } from "lucide-react";
+import { Radio, RefreshCcw, X, ChevronDown } from "lucide-react";
 import { useFilterStore } from "@/lib/filter-store";
 import { useNewAnnouncementSocket } from "@/lib/use-socket";
 import { markAsRead, getReadIds } from "@/lib/read-tracker";
@@ -33,10 +33,23 @@ export default function MarketFeedPage() {
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [activeCategoryLabel, setActiveCategoryLabel] = useState<string | null>(null);
 
+  // Watchlist state
+  const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
+  const [selectedWatchlist, setSelectedWatchlist] = useState<string>("none"); // "none" | "all" | watchlist._id
+  const [wlOpen, setWlOpen] = useState(false);
+
   // Load read IDs from localStorage on mount
   useEffect(() => {
     setReadIds(getReadIds());
   }, []);
+
+  // Load watchlists
+  useEffect(() => {
+    if (!token) return;
+    getWatchlists(token)
+      .then((res) => setWatchlists(res.watchlists ?? []))
+      .catch(() => {});
+  }, [token]);
 
   // WebSocket new announcement notifications
   const { newCount, resetCount } = useNewAnnouncementSocket();
@@ -77,11 +90,29 @@ export default function MarketFeedPage() {
       }
       try {
         const params: FilingsParams = { ...filters, page };
+
+        // Category filter
         if (selectedCategories.length > 0) {
-          params.category = selectedCategories[0];
+          params.category = selectedCategories.join(",");
         }
         if (selectedCompanies.length > 0) {
-          params.symbol = selectedCompanies[0];
+          params.symbol = selectedCompanies.join(",");
+        }
+
+        // Watchlist filter
+        if (selectedWatchlist === "all") {
+          params.watchlist = true;
+        } else if (selectedWatchlist !== "none") {
+          // Specific watchlist — pass its ISINs
+          const wl = watchlists.find((w) => w._id === selectedWatchlist);
+          if (wl?.isin?.length) {
+            params.isin = wl.isin.join(",");
+          }
+        }
+
+        // Read/unread filter (server-side via V2)
+        if (showUnread) {
+          params.read_filter = "unread";
         }
 
         const res = await getCorporateFilings(token, params);
@@ -102,7 +133,7 @@ export default function MarketFeedPage() {
         setLoadingMore(false);
       }
     },
-    [token, filters, selectedCategories, selectedCompanies, applyClientFilters]
+    [token, filters, selectedCategories, selectedCompanies, selectedWatchlist, watchlists, showUnread, applyClientFilters]
   );
 
   // Reset & fetch when filters change
@@ -113,7 +144,7 @@ export default function MarketFeedPage() {
     setCurrentPage(1);
     fetchFilings(1, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, selectedCategories, selectedSentiments, selectedCompanies, token]);
+  }, [filters, selectedCategories, selectedSentiments, selectedCompanies, selectedWatchlist, showUnread, token]);
 
   // Auto-refresh every 60s if enabled
   useEffect(() => {
@@ -161,9 +192,12 @@ export default function MarketFeedPage() {
     setActiveCategoryLabel(null);
   }, [setSelectedCategories]);
 
-  const displayedFilings = showUnread
-    ? filings.filter((f) => !readIds.has(f.corp_id))
-    : filings;
+  const wlLabel =
+    selectedWatchlist === "none"
+      ? "No Filter"
+      : selectedWatchlist === "all"
+      ? "All Watchlists"
+      : watchlists.find((w) => w._id === selectedWatchlist)?.watchlistName ?? "Watchlist";
 
   return (
     <div className="flex flex-col h-full">
@@ -188,6 +222,49 @@ export default function MarketFeedPage() {
           </span>
         </div>
         <div className="flex items-center gap-3">
+          {/* Watchlist filter dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setWlOpen(!wlOpen)}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 transition"
+            >
+              {wlLabel}
+              <ChevronDown size={12} className="text-gray-400" />
+            </button>
+            {wlOpen && (
+              <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1">
+                <button
+                  onClick={() => { setSelectedWatchlist("none"); setWlOpen(false); }}
+                  className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${
+                    selectedWatchlist === "none" ? "text-orange-600 font-medium" : "text-gray-700"
+                  }`}
+                >
+                  No Filter
+                </button>
+                <button
+                  onClick={() => { setSelectedWatchlist("all"); setWlOpen(false); }}
+                  className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${
+                    selectedWatchlist === "all" ? "text-orange-600 font-medium" : "text-gray-700"
+                  }`}
+                >
+                  All Watchlists
+                </button>
+                {watchlists.map((wl) => (
+                  <button
+                    key={wl._id}
+                    onClick={() => { setSelectedWatchlist(wl._id); setWlOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${
+                      selectedWatchlist === wl._id ? "text-orange-600 font-medium" : "text-gray-700"
+                    }`}
+                  >
+                    {wl.watchlistName}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Read/Unread toggle */}
           <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
             <button
               onClick={() => setShowUnread(false)}
@@ -252,7 +329,7 @@ export default function MarketFeedPage() {
             </button>
           )}
           <AnnouncementList
-            filings={displayedFilings}
+            filings={filings}
             loading={loading}
             selectedId={selectedFiling?.corp_id ?? null}
             onSelect={handleSelectFiling}

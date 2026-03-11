@@ -1166,7 +1166,7 @@ class NseScraper:
                         response = supabase.table("corporatefilings").insert(data).execute()
                         logger.info(f"Data uploaded to Supabase for {symbol} (ISIN: {isin})")
                         inserted = True  # Mark as successfully inserted
-                        
+
                         # FALLBACK: Register PDF hash if not already registered
                         # This handles cases where isin was not available during early hash check
                         if pdf_hash and isin and not is_duplicate:

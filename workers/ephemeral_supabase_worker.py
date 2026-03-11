@@ -281,6 +281,22 @@ class EphemeralSupabaseWorkerV2:
             if not fileurl and processed_data.get("pdf_file"):
                 fileurl = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{processed_data.get('pdf_file')}"
 
+            # Fetch company_id from stocklistdata using ISIN
+            company_id = processed_data.get("company_id")
+            isin = processed_data.get("isin")
+            if not company_id and isin and isin != "N/A":
+                try:
+                    cid_resp = supabase.table("stocklistdata") \
+                        .select("company_id") \
+                        .eq("isin", isin) \
+                        .limit(1) \
+                        .execute()
+                    if cid_resp.data and cid_resp.data[0].get("company_id"):
+                        company_id = cid_resp.data[0]["company_id"]
+                        logger.info(f"Child: Fetched company_id={company_id} for ISIN={isin}")
+                except Exception as cid_err:
+                    logger.warning(f"Child: Could not fetch company_id for ISIN {isin}: {cid_err}")
+
             upload_data = {
                 "corp_id": processed_data.get("corp_id"),
                 "securityid": processed_data.get("securityid"),
@@ -289,12 +305,12 @@ class EphemeralSupabaseWorkerV2:
                 "date": processed_data.get("date"),
                 "ai_summary": processed_data.get("summary"),
                 "category": category,
-                "isin": processed_data.get("isin"),
+                "isin": isin,
                 "companyname": processed_data.get("companyname"),
                 "symbol": processed_data.get("symbol"),
                 "sentiment": processed_data.get("sentiment"),
                 "headline": processed_data.get("headline"),
-                "company_id": processed_data.get("company_id"),
+                "company_id": company_id,
                 "pdf_hash": processed_data.get("pdf_hash"),
                 "pdf_size_bytes": processed_data.get("pdf_size_bytes"),
                 "is_duplicate": processed_data.get("is_duplicate", False),
@@ -390,6 +406,26 @@ class EphemeralSupabaseWorkerV2:
                             _queue_telegram_notification(upload_data)
                         except Exception as e:
                             logger.warning(f"Child: Failed to queue Telegram notification: {e}")
+
+                        # Queue article generation via Redis
+                        try:
+                            from src.queue.job_types import ArticleGenerationJob, serialize_job as _serialize_job
+                            article_job = ArticleGenerationJob(
+                                job_id=f"article_{upload_data.get('corp_id')}_{int(time.time())}",
+                                corp_id=upload_data.get("corp_id", ""),
+                                filing_data=upload_data,
+                            )
+                            redis_conn = redis.Redis(
+                                host=os.getenv("REDIS_HOST", "localhost"),
+                                port=int(os.getenv("REDIS_PORT", 6379)),
+                                db=int(os.getenv("REDIS_DB", 0)),
+                                password=os.getenv("REDIS_PASSWORD"),
+                                decode_responses=True,
+                            )
+                            redis_conn.lpush(QueueNames.ARTICLE_GENERATION, _serialize_job(article_job))
+                            logger.info(f"Child: Queued article generation for {upload_data.get('corp_id')}")
+                        except Exception as e:
+                            logger.warning(f"Child: Article generation queue push skipped: {e}")
 
             except Exception as e:
                 logger.exception(f"Child: Error during existence check/insert: {e}")

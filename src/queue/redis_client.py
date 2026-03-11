@@ -97,6 +97,9 @@ class QueueNames:
     TELEGRAM_NOTIFICATIONS = "backfin:queue:telegram_notifications"
     TELEGRAM_FAILED = "backfin:queue:telegram_failed"
     
+    # Article generation queue
+    ARTICLE_GENERATION = "backfin:queue:article_generation"
+    
     @classmethod
     def all_queues(cls):
         """Get all queue names"""
@@ -107,7 +110,8 @@ class QueueNames:
             cls.INVESTOR_PROCESSING,
             cls.FAILED_JOBS,
             cls.HIGH_PRIORITY,
-            cls.RETRY_QUEUE
+            cls.RETRY_QUEUE,
+            cls.ARTICLE_GENERATION,
         ]
 
 # Global Redis configuration - connection created lazily

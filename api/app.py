@@ -2014,6 +2014,304 @@ def get_filing_by_id(corp_id):
     return jsonify(response.data[0]), 200
 
 
+# ============================================================
+# V2 Corporate Filings API (Authenticated)
+# ============================================================
+
+@app.route('/api/v2/corporate_filings', methods=['GET', 'OPTIONS'])
+@auth_required
+def get_corporate_filings_v2(current_user):
+    """
+    Authenticated corporate filings endpoint with advanced filters.
+
+    Query Parameters:
+        - start_date (str): Start date (YYYY-MM-DD)
+        - end_date (str): End date (YYYY-MM-DD)
+        - category (str): Comma-separated category list
+        - symbol (str): Comma-separated symbol list
+        - isin (str): Comma-separated ISIN list
+        - watchlist (bool): If true, only show filings for user's watchlist ISINs (default: false)
+        - read_filter (str): 'all' | 'read' | 'unread' (default: 'all')
+        - marketcap (str): Comma-separated list of: large,mid,small,micro,nano
+        - include_duplicates (bool): Include duplicate filings (default: false)
+        - page (int): Page number (default: 1)
+        - page_size (int): Results per page (default: 15, max: 100)
+    """
+    if request.method == 'OPTIONS':
+        return _handle_options()
+
+    try:
+        user_id = current_user['UserID']
+
+        # Parse query parameters
+        start_date = request.args.get('start_date', '') or None
+        end_date = request.args.get('end_date', '') or None
+        category = request.args.get('category', '')
+        symbol = request.args.get('symbol', '')
+        isin = request.args.get('isin', '')
+        watchlist_only = request.args.get('watchlist', 'false').lower() == 'true'
+        read_filter = request.args.get('read_filter', 'all').lower()
+        marketcap = request.args.get('marketcap', '')
+        include_duplicates = request.args.get('include_duplicates', 'false').lower() == 'true'
+
+        # Pagination
+        try:
+            page = max(1, int(request.args.get('page', '1')))
+        except (ValueError, TypeError):
+            page = 1
+        try:
+            page_size = min(100, max(1, int(request.args.get('page_size', '15'))))
+        except (ValueError, TypeError):
+            page_size = 15
+
+        # Validate read_filter
+        if read_filter not in ('all', 'read', 'unread'):
+            read_filter = 'all'
+
+        # Build typed arrays (None if empty, else list)
+        category_list = [c.strip() for c in category.split(',') if c.strip()] or None
+        symbol_list = [s.strip() for s in symbol.split(',') if s.strip()] or None
+        isin_list = [i.strip() for i in isin.split(',') if i.strip()] or None
+        marketcap_list = [m.strip().lower() for m in marketcap.split(',') if m.strip()] or None
+
+        # Validate marketcap values
+        valid_caps = {'large', 'mid', 'small', 'micro', 'nano'}
+        if marketcap_list:
+            marketcap_list = [m for m in marketcap_list if m in valid_caps] or None
+
+        if not supabase_connected:
+            return jsonify({'message': 'Database service unavailable.', 'status': 'error'}), 503
+
+        logger.info(
+            f"V2 filings request: user={user_id}, watchlist={watchlist_only}, "
+            f"read={read_filter}, mcap={marketcap_list}, cat={category_list}, "
+            f"sym={symbol_list}, isin={isin_list}, page={page}/{page_size}"
+        )
+
+        # Call the RPC function
+        rpc_params = {
+            'p_user_id': user_id,
+            'p_start_date': start_date,
+            'p_end_date': end_date,
+            'p_categories': category_list,
+            'p_symbols': symbol_list,
+            'p_isins': isin_list,
+            'p_watchlist_only': watchlist_only,
+            'p_read_filter': read_filter,
+            'p_marketcap': marketcap_list,
+            'p_include_duplicates': include_duplicates,
+            'p_page': page,
+            'p_page_size': page_size,
+        }
+
+        response = supabase.rpc('get_corporate_filings_v2', rpc_params).execute()
+
+        if not response.data:
+            return jsonify({
+                'count': 0,
+                'total_count': 0,
+                'total_pages': 0,
+                'current_page': page,
+                'page_size': page_size,
+                'has_next': False,
+                'has_previous': False,
+                'filings': [],
+            }), 200
+
+        result = response.data
+        return jsonify(result), 200
+
+    except Exception as e:
+        logger.error(f"Error in get_corporate_filings_v2: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'count': 0,
+            'total_count': 0,
+            'total_pages': 0,
+            'current_page': 1,
+            'page_size': 15,
+            'has_next': False,
+            'has_previous': False,
+            'filings': [],
+            'error': 'Server error',
+        }), 200
+
+
+@app.route('/api/v2/corporate_filings/<corp_id>', methods=['GET', 'OPTIONS'])
+@auth_required
+def get_filing_by_id_v2(current_user, corp_id):
+    """Get a single filing by corp_id, with is_read status for the current user."""
+    if request.method == 'OPTIONS':
+        return _handle_options()
+
+    try:
+        user_id = current_user['UserID']
+
+        if not supabase_connected:
+            return jsonify({'message': 'Database service unavailable.'}), 503
+
+        # Fetch the filing
+        filing_resp = supabase.table('corporatefilings').select(
+            """
+            corp_id, securityid, summary, fileurl, date, ai_summary,
+            category, isin, companyname, symbol, headline, sentiment, verified,
+            investorCorp!left(
+                id, investor_id, investor_name, aliasBool, aliasName,
+                verified, type, alias_id
+            )
+            """
+        ).eq('corp_id', corp_id).execute()
+
+        if not filing_resp.data:
+            return jsonify({'message': 'No filing found'}), 404
+
+        filing = filing_resp.data[0]
+
+        # Check read status
+        read_resp = supabase.table('user_read_filings') \
+            .select('corp_id') \
+            .eq('user_id', user_id) \
+            .eq('corp_id', corp_id) \
+            .execute()
+
+        filing['is_read'] = bool(read_resp.data)
+
+        return jsonify(filing), 200
+
+    except Exception as e:
+        logger.error(f"Error in get_filing_by_id_v2: {str(e)}")
+        return jsonify({'message': 'Error retrieving filing'}), 500
+
+
+@app.route('/api/v2/corporate_filings/mark-read', methods=['POST', 'OPTIONS'])
+@auth_required
+def mark_filings_read(current_user):
+    """
+    Mark one or more filings as read for the current user.
+
+    Body JSON:
+        { "corp_ids": ["corp-123", "corp-456"] }
+    """
+    if request.method == 'OPTIONS':
+        return _handle_options()
+
+    try:
+        user_id = current_user['UserID']
+        data = request.get_json()
+
+        if not data or 'corp_ids' not in data:
+            return jsonify({'message': 'corp_ids array is required'}), 400
+
+        corp_ids = data['corp_ids']
+        if not isinstance(corp_ids, list) or len(corp_ids) == 0:
+            return jsonify({'message': 'corp_ids must be a non-empty array'}), 400
+
+        if len(corp_ids) > 200:
+            return jsonify({'message': 'Maximum 200 corp_ids per request'}), 400
+
+        if not supabase_connected:
+            return jsonify({'message': 'Database service unavailable.'}), 503
+
+        # Upsert read records (on conflict do nothing — already read)
+        rows = [{'user_id': user_id, 'corp_id': cid} for cid in corp_ids]
+        supabase.table('user_read_filings').upsert(rows, on_conflict='user_id,corp_id').execute()
+
+        logger.info(f"User {user_id} marked {len(corp_ids)} filings as read")
+
+        return jsonify({'message': f'{len(corp_ids)} filings marked as read', 'count': len(corp_ids)}), 200
+
+    except Exception as e:
+        logger.error(f"Error in mark_filings_read: {str(e)}")
+        return jsonify({'message': f'Failed to mark filings as read: {str(e)}'}), 500
+
+
+@app.route('/api/v2/corporate_filings/mark-unread', methods=['POST', 'OPTIONS'])
+@auth_required
+def mark_filings_unread(current_user):
+    """
+    Mark one or more filings as unread for the current user.
+
+    Body JSON:
+        { "corp_ids": ["corp-123", "corp-456"] }
+    """
+    if request.method == 'OPTIONS':
+        return _handle_options()
+
+    try:
+        user_id = current_user['UserID']
+        data = request.get_json()
+
+        if not data or 'corp_ids' not in data:
+            return jsonify({'message': 'corp_ids array is required'}), 400
+
+        corp_ids = data['corp_ids']
+        if not isinstance(corp_ids, list) or len(corp_ids) == 0:
+            return jsonify({'message': 'corp_ids must be a non-empty array'}), 400
+
+        if not supabase_connected:
+            return jsonify({'message': 'Database service unavailable.'}), 503
+
+        # Delete read records
+        supabase.table('user_read_filings') \
+            .delete() \
+            .eq('user_id', user_id) \
+            .in_('corp_id', corp_ids) \
+            .execute()
+
+        logger.info(f"User {user_id} marked {len(corp_ids)} filings as unread")
+
+        return jsonify({'message': f'{len(corp_ids)} filings marked as unread', 'count': len(corp_ids)}), 200
+
+    except Exception as e:
+        logger.error(f"Error in mark_filings_unread: {str(e)}")
+        return jsonify({'message': f'Failed to mark filings as unread: {str(e)}'}), 500
+
+
+@app.route('/api/v2/corporate_filings/read-status', methods=['POST', 'OPTIONS'])
+@auth_required
+def get_read_status(current_user):
+    """
+    Get read status for a batch of filings. Useful for the frontend to check
+    read status without fetching full filing data.
+
+    Body JSON:
+        { "corp_ids": ["corp-123", "corp-456"] }
+
+    Returns:
+        { "read_corp_ids": ["corp-123"] }
+    """
+    if request.method == 'OPTIONS':
+        return _handle_options()
+
+    try:
+        user_id = current_user['UserID']
+        data = request.get_json()
+
+        if not data or 'corp_ids' not in data:
+            return jsonify({'message': 'corp_ids array is required'}), 400
+
+        corp_ids = data['corp_ids']
+        if not isinstance(corp_ids, list) or len(corp_ids) == 0:
+            return jsonify({'read_corp_ids': []}), 200
+
+        if not supabase_connected:
+            return jsonify({'message': 'Database service unavailable.'}), 503
+
+        response = supabase.table('user_read_filings') \
+            .select('corp_id') \
+            .eq('user_id', user_id) \
+            .in_('corp_id', corp_ids) \
+            .execute()
+
+        read_ids = [r['corp_id'] for r in response.data] if response.data else []
+        return jsonify({'read_corp_ids': read_ids}), 200
+
+    except Exception as e:
+        logger.error(f"Error in get_read_status: {str(e)}")
+        return jsonify({'message': f'Failed to get read status: {str(e)}'}), 500
+
+
 @app.route('/api/financial_results', methods=['GET', 'OPTIONS'])
 def get_financial_results():
     """
@@ -3810,6 +4108,217 @@ def scraper_status():
     ]
     
     return jsonify(status), 200
+
+# ============================================================================
+# NEWS / ARTICLES API  (PUBLIC — no auth required)
+# ============================================================================
+
+@app.route('/api/news/articles', methods=['GET', 'OPTIONS'])
+def get_news_articles():
+    """
+    List published news articles with pagination and filters.
+
+    Query params:
+        page (int): Page number (default 1)
+        limit (int): Items per page (default 20, max 50)
+        category (str): Filter by filing category
+        article_category (str): Filter by article category
+        symbol (str): Filter by stock symbol
+        isin (str): Filter by ISIN
+        tag (str): Filter by tag (any match)
+        sentiment (str): Filter by sentiment
+        sector (str): Filter by sector
+    """
+    if request.method == 'OPTIONS':
+        return _handle_options()
+
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+        limit = min(50, max(1, int(request.args.get('limit', 20))))
+        offset = (page - 1) * limit
+
+        query = supabase.table("news_articles") \
+            .select("id, headline, slug, seo_description, sentiment, tags, category, article_category, "
+                    "symbol, companyname, isin, sector, filing_date, published_at, view_count, key_figures") \
+            .eq("status", "published") \
+            .order("published_at", desc=True)
+
+        # Apply filters
+        category = request.args.get('category')
+        if category:
+            query = query.eq("category", category)
+
+        article_category = request.args.get('article_category')
+        if article_category:
+            query = query.eq("article_category", article_category)
+
+        symbol = request.args.get('symbol')
+        if symbol:
+            query = query.ilike("symbol", symbol)
+
+        isin = request.args.get('isin')
+        if isin:
+            query = query.eq("isin", isin)
+
+        sentiment = request.args.get('sentiment')
+        if sentiment:
+            query = query.eq("sentiment", sentiment)
+
+        sector = request.args.get('sector')
+        if sector:
+            query = query.ilike("sector", f"%{sector}%")
+
+        tag = request.args.get('tag')
+        if tag:
+            query = query.contains("tags", [tag])
+
+        resp = query.range(offset, offset + limit - 1).execute()
+        articles = resp.data or []
+
+        return jsonify({
+            "articles": articles,
+            "page": page,
+            "limit": limit,
+            "count": len(articles),
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error fetching news articles: {e}")
+        return jsonify({"error": "Failed to fetch articles"}), 500
+
+
+@app.route('/api/news/articles/<slug>', methods=['GET', 'OPTIONS'])
+def get_news_article_by_slug(slug):
+    """
+    Get a single published article by slug. All articles are free and return the full body.
+    """
+    if request.method == 'OPTIONS':
+        return _handle_options()
+
+    try:
+        resp = supabase.table("news_articles") \
+            .select("*") \
+            .eq("slug", slug) \
+            .eq("status", "published") \
+            .limit(1) \
+            .execute()
+
+        if not resp.data:
+            return jsonify({"error": "Article not found"}), 404
+
+        article = resp.data[0]
+
+        # Increment view count (fire-and-forget)
+        try:
+            supabase.rpc("increment_view_count", {"article_id": article["id"]}).execute()
+        except Exception:
+            # Fallback: manual increment
+            try:
+                supabase.table("news_articles") \
+                    .update({"view_count": (article.get("view_count") or 0) + 1}) \
+                    .eq("id", article["id"]) \
+                    .execute()
+            except Exception:
+                pass
+
+        return jsonify(article), 200
+
+    except Exception as e:
+        logger.error(f"Error fetching article by slug '{slug}': {e}")
+        return jsonify({"error": "Failed to fetch article"}), 500
+
+
+@app.route('/api/news/latest', methods=['GET', 'OPTIONS'])
+def get_latest_news():
+    """Get the N most recent published articles (default 10, max 30)."""
+    if request.method == 'OPTIONS':
+        return _handle_options()
+
+    try:
+        n = min(30, max(1, int(request.args.get('n', 10))))
+
+        resp = supabase.table("news_articles") \
+            .select("id, headline, slug, seo_description, sentiment, tags, category, article_category, "
+                    "symbol, companyname, isin, sector, filing_date, published_at, view_count") \
+            .eq("status", "published") \
+            .order("published_at", desc=True) \
+            .limit(n) \
+            .execute()
+
+        return jsonify({"articles": resp.data or []}), 200
+
+    except Exception as e:
+        logger.error(f"Error fetching latest news: {e}")
+        return jsonify({"error": "Failed to fetch latest news"}), 500
+
+
+@app.route('/api/news/categories', methods=['GET', 'OPTIONS'])
+def get_news_categories():
+    """List distinct article categories that have published articles, with counts."""
+    if request.method == 'OPTIONS':
+        return _handle_options()
+
+    try:
+        # Fetch all published articles' article_category
+        resp = supabase.table("news_articles") \
+            .select("article_category") \
+            .eq("status", "published") \
+            .execute()
+
+        rows = resp.data or []
+        cat_counts = {}
+        for row in rows:
+            cat = row.get("article_category")
+            if cat:
+                cat_counts[cat] = cat_counts.get(cat, 0) + 1
+
+        categories = [{"category": k, "count": v} for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])]
+        return jsonify({"categories": categories}), 200
+
+    except Exception as e:
+        logger.error(f"Error fetching news categories: {e}")
+        return jsonify({"error": "Failed to fetch categories"}), 500
+
+
+@app.route('/api/news/company/<symbol_or_isin>', methods=['GET', 'OPTIONS'])
+def get_news_by_company(symbol_or_isin):
+    """Get all published articles for a company (by symbol or ISIN)."""
+    if request.method == 'OPTIONS':
+        return _handle_options()
+
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+        limit = min(50, max(1, int(request.args.get('limit', 20))))
+        offset = (page - 1) * limit
+
+        # Detect if ISIN (starts with INE) or symbol
+        val = symbol_or_isin.strip().upper()
+        query = supabase.table("news_articles") \
+            .select("id, headline, slug, seo_description, sentiment, tags, category, article_category, "
+                    "symbol, companyname, isin, sector, filing_date, published_at, view_count, key_figures") \
+            .eq("status", "published") \
+            .order("published_at", desc=True)
+
+        if val.startswith("INE"):
+            query = query.eq("isin", val)
+        else:
+            query = query.ilike("symbol", val)
+
+        resp = query.range(offset, offset + limit - 1).execute()
+        articles = resp.data or []
+
+        return jsonify({
+            "articles": articles,
+            "company": val,
+            "page": page,
+            "limit": limit,
+            "count": len(articles),
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error fetching company news for '{symbol_or_isin}': {e}")
+        return jsonify({"error": "Failed to fetch company news"}), 500
+
 
 # Custom error handlers
 @app.errorhandler(404)

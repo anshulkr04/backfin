@@ -1634,6 +1634,7 @@ class BseScraper:
                                 sent_to_supabase_at=datetime.now(timezone.utc).isoformat()
                             )
                         inserted = True
+
                         try:
                             mark_local_sent_to_supabase(corp_id)
                             logger.info(f"Marked local corporatefiling {corp_id} as sent_to_supabase")

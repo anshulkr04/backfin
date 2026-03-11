@@ -34,27 +34,50 @@ export default function DashboardPage() {
   const [selectedFiling, setSelectedFiling] = useState<Filing | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
-  const fetchData = useCallback(async () => {
+  // Fetch watchlists once on mount
+  useEffect(() => {
+    if (!token) return;
+    getWatchlists(token)
+      .then((res) => setWatchlists(res.watchlists ?? []))
+      .catch(() => {});
+  }, [token]);
+
+  const fetchFilings = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const [filRes, wlRes] = await Promise.all([
-        getCorporateFilings(token, { page: 1, start_date: today, end_date: today }),
-        getWatchlists(token).catch(() => ({ watchlists: [] })),
-      ]);
+
+      // Build params with watchlist filter
+      const params: Record<string, any> = {
+        page: 1,
+        page_size: 8,
+        start_date: today,
+        end_date: today,
+      };
+
+      if (selectedWatchlist === "all") {
+        params.watchlist = true;
+      } else {
+        // Specific watchlist — pass its ISINs
+        const wl = watchlists.find((w) => w._id === selectedWatchlist);
+        if (wl?.isin?.length) {
+          params.isin = wl.isin.join(",");
+        }
+      }
+
+      const filRes = await getCorporateFilings(token, params);
       setFilings(filRes.filings.slice(0, 8));
-      setWatchlists(wlRes.watchlists ?? []);
     } catch (err) {
       console.error("Failed to fetch:", err);
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, selectedWatchlist, watchlists]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchFilings();
+  }, [fetchFilings]);
 
   const wlLabel =
     selectedWatchlist === "all"

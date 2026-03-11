@@ -1,0 +1,33 @@
+# Article Generation Worker Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Set PYTHONPATH so 'from src.xxx import' works correctly
+ENV PYTHONPATH=/app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install xai-sdk for Grok article generation
+RUN pip install --no-cache-dir xai-sdk
+
+# Copy application code
+COPY . .
+
+ENV PYTHONUNBUFFERED=1
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD pgrep -f "article_generation_worker.py" || exit 1
+
+# Run the worker
+CMD ["python", "workers/article_generation_worker.py"]
