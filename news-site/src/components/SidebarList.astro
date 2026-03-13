@@ -1,0 +1,45 @@
+---
+import { timeAgo, categoryToSlug } from "../lib/api";
+import type { Article } from "../lib/api";
+
+interface Props {
+  articles: Article[];
+  title: string;
+}
+
+const { articles, title } = Astro.props;
+---
+
+<div class="bg-white border border-border rounded-xl overflow-hidden">
+  <div class="px-5 py-4 border-b border-border">
+    <h3 class="font-display font-bold text-sm text-foreground flex items-center gap-2">
+      <span class="w-2 h-2 bg-accent rounded-full animate-pulse"></span>
+      {title}
+    </h3>
+  </div>
+  <div class="divide-y divide-border">
+    {articles.map((article, i) => {
+      const categorySlug = categoryToSlug(article.article_category);
+      const articleUrl = `/${categorySlug}/${article.slug}/`;
+      return (
+        <a href={articleUrl} class="group block px-5 py-3.5 hover:bg-surface transition-colors">
+          <div class="flex items-start gap-3">
+            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent text-xs font-bold flex items-center justify-center mt-0.5">
+              {i + 1}
+            </span>
+            <div class="min-w-0 flex-1">
+              <h4 class="font-medium text-sm text-foreground group-hover:text-accent transition-colors line-clamp-2 leading-snug">
+                {article.headline}
+              </h4>
+              <div class="flex items-center gap-2 mt-1.5 text-xs text-muted">
+                <span class="font-medium">{article.symbol}</span>
+                <span class="text-border">&bull;</span>
+                <time datetime={article.published_at}>{timeAgo(article.published_at)}</time>
+              </div>
+            </div>
+          </div>
+        </a>
+      );
+    })}
+  </div>
+</div>

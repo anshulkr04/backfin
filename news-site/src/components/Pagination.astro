@@ -1,0 +1,64 @@
+---
+interface Props {
+  currentPage: number;
+  totalPages: number;
+  baseUrl: string;
+}
+
+const { currentPage, totalPages, baseUrl } = Astro.props;
+
+const pages: (number | "...")[] = [];
+for (let i = 1; i <= totalPages; i++) {
+  if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+    pages.push(i);
+  } else if (pages[pages.length - 1] !== "...") {
+    pages.push("...");
+  }
+}
+
+function pageUrl(page: number): string {
+  if (page === 1) return baseUrl;
+  const sep = baseUrl.includes("?") ? "&" : "?";
+  return `${baseUrl}${sep}page=${page}`;
+}
+---
+
+{totalPages > 1 && (
+  <nav class="flex items-center justify-center gap-1.5 mt-10">
+    {currentPage > 1 && (
+      <a
+        href={pageUrl(currentPage - 1)}
+        class="px-3 py-2 text-sm font-medium text-muted hover:text-foreground bg-surface hover:bg-gray-100 rounded-lg transition-colors"
+      >
+        &larr; Prev
+      </a>
+    )}
+
+    {pages.map((p) =>
+      p === "..." ? (
+        <span class="px-2 py-2 text-sm text-muted">...</span>
+      ) : (
+        <a
+          href={pageUrl(p)}
+          class:list={[
+            "px-3.5 py-2 text-sm font-medium rounded-lg transition-colors",
+            p === currentPage
+              ? "bg-accent text-white"
+              : "text-muted hover:text-foreground bg-surface hover:bg-gray-100",
+          ]}
+        >
+          {p}
+        </a>
+      )
+    )}
+
+    {currentPage < totalPages && (
+      <a
+        href={pageUrl(currentPage + 1)}
+        class="px-3 py-2 text-sm font-medium text-muted hover:text-foreground bg-surface hover:bg-gray-100 rounded-lg transition-colors"
+      >
+        Next &rarr;
+      </a>
+    )}
+  </nav>
+)}

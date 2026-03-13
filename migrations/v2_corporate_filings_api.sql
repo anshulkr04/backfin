@@ -53,18 +53,19 @@ DECLARE
     v_total_count BIGINT;
     v_total_pages INTEGER;
     v_filings JSONB;
-    v_start_ts TIMESTAMPTZ;
-    v_end_ts TIMESTAMPTZ;
+    v_start_iso TEXT;
+    v_end_iso TEXT;
 BEGIN
     -- Calculate offset
     v_offset := (p_page - 1) * p_page_size;
 
-    -- Parse date strings to timestamps
+    -- Build ISO date strings for TEXT comparison (cf.date is TEXT, not TIMESTAMPTZ)
+    -- This matches V1 behavior: gte('date', '2026-03-13T00:00:00') / lte('date', '2026-03-13T23:59:59')
     IF p_start_date IS NOT NULL AND p_start_date != '' THEN
-        v_start_ts := (p_start_date || 'T00:00:00')::TIMESTAMPTZ;
+        v_start_iso := p_start_date || 'T00:00:00';
     END IF;
     IF p_end_date IS NOT NULL AND p_end_date != '' THEN
-        v_end_ts := (p_end_date || 'T23:59:59')::TIMESTAMPTZ;
+        v_end_iso := p_end_date || 'T23:59:59';
     END IF;
 
     -- Get total count with all filters applied
@@ -74,9 +75,9 @@ BEGIN
     LEFT JOIN user_read_filings urf
         ON urf.corp_id = cf.corp_id AND urf.user_id = p_user_id
     WHERE
-        -- Date filters
-        (v_start_ts IS NULL OR cf.date >= v_start_ts)
-        AND (v_end_ts IS NULL OR cf.date <= v_end_ts)
+        -- Date filters (TEXT comparison — ISO 8601 strings sort lexicographically)
+        (v_start_iso IS NULL OR cf.date >= v_start_iso)
+        AND (v_end_iso IS NULL OR cf.date <= v_end_iso)
         -- Category filters
         AND (p_categories IS NULL OR cf.category = ANY(p_categories))
         AND (p_categories IS NOT NULL OR cf.category IS DISTINCT FROM 'Procedural/Administrative')
@@ -159,8 +160,8 @@ BEGIN
         LEFT JOIN user_read_filings urf
             ON urf.corp_id = cf.corp_id AND urf.user_id = p_user_id
         WHERE
-            (v_start_ts IS NULL OR cf.date >= v_start_ts)
-            AND (v_end_ts IS NULL OR cf.date <= v_end_ts)
+            (v_start_iso IS NULL OR cf.date >= v_start_iso)
+            AND (v_end_iso IS NULL OR cf.date <= v_end_iso)
             AND (p_categories IS NULL OR cf.category = ANY(p_categories))
             AND (p_categories IS NOT NULL OR cf.category IS DISTINCT FROM 'Procedural/Administrative')
             AND cf.category IS DISTINCT FROM 'Error'

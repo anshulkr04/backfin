@@ -1,0 +1,226 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description?: string;
+  ogImage?: string;
+  article?: {
+    headline: string;
+    published_at: string;
+    article_category: string;
+    tags: string[];
+    companyname: string;
+    seo_description: string;
+    body: string;
+  };
+  canonicalUrl?: string;
+}
+
+const {
+  title,
+  description = "India's fastest AI-powered corporate news. Every NSE & BSE filing — summarized and delivered in real-time.",
+  ogImage = "/og-default.png",
+  article,
+  canonicalUrl,
+} = Astro.props;
+
+const siteUrl = "https://news.marketwire.app";
+const canonical = canonicalUrl ?? Astro.url.href;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content={article ? "article" : "website"} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={`${siteUrl}${ogImage}`} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content="MarketWire News" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={`${siteUrl}${ogImage}`} />
+
+    {article && (
+      <script
+        type="application/ld+json"
+        set:html={JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "NewsArticle",
+          headline: article.headline,
+          datePublished: article.published_at,
+          description: article.seo_description,
+          articleSection: article.article_category,
+          keywords: article.tags?.join(", "),
+          publisher: {
+            "@type": "Organization",
+            name: "MarketWire",
+            url: siteUrl,
+          },
+          mainEntityOfPage: canonical,
+        })}
+      />
+    )}
+
+    <!-- RSS -->
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title="MarketWire News RSS"
+      href="/rss.xml"
+    />
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <header class="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-border">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+          <!-- Logo -->
+          <a href="/" class="flex items-center gap-2 group">
+            <div class="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
+              <span class="text-white font-bold text-sm">M</span>
+            </div>
+            <span class="font-display font-bold text-xl text-foreground">
+              MarketWire
+              <span class="text-accent">News</span>
+            </span>
+          </a>
+
+          <!-- Nav -->
+          <nav class="hidden md:flex items-center gap-1">
+            <a href="/" class="px-3 py-2 text-sm font-medium text-muted hover:text-foreground transition-colors rounded-lg hover:bg-surface">
+              Home
+            </a>
+            <a href="/earnings-and-results/" class="px-3 py-2 text-sm font-medium text-muted hover:text-foreground transition-colors rounded-lg hover:bg-surface">
+              Earnings
+            </a>
+            <a href="/mergers-and-acquisitions/" class="px-3 py-2 text-sm font-medium text-muted hover:text-foreground transition-colors rounded-lg hover:bg-surface">
+              M&A
+            </a>
+            <a href="/fundraising-and-capital-markets/" class="px-3 py-2 text-sm font-medium text-muted hover:text-foreground transition-colors rounded-lg hover:bg-surface">
+              Fundraising
+            </a>
+            <a href="/dividends-and-corporate-actions/" class="px-3 py-2 text-sm font-medium text-muted hover:text-foreground transition-colors rounded-lg hover:bg-surface">
+              Dividends
+            </a>
+            <a href="/wire/" class="px-3 py-2 text-sm font-medium text-muted hover:text-foreground transition-colors rounded-lg hover:bg-surface">
+              Wire
+            </a>
+          </nav>
+
+          <!-- CTA + Search -->
+          <div class="flex items-center gap-3">
+            <a href="/search/" class="p-2 text-muted hover:text-foreground transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+            </a>
+            <a
+              href="https://marketwire.app"
+              class="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              Try MarketWire
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+              </svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="flex-1">
+      <slot />
+    </main>
+
+    <footer class="bg-gray-900 text-gray-400 mt-16">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <!-- Brand -->
+          <div class="md:col-span-1">
+            <a href="/" class="flex items-center gap-2 mb-4">
+              <div class="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
+                <span class="text-white font-bold text-sm">M</span>
+              </div>
+              <span class="font-display font-bold text-lg text-white">
+                MarketWire <span class="text-accent">News</span>
+              </span>
+            </a>
+            <p class="text-sm leading-relaxed">
+              AI-powered corporate news from every NSE & BSE filing. Summarized, classified, delivered.
+            </p>
+          </div>
+
+          <!-- Categories -->
+          <div>
+            <h4 class="text-white font-semibold text-sm mb-4">Categories</h4>
+            <ul class="space-y-2 text-sm">
+              <li><a href="/earnings-and-results/" class="hover:text-white transition-colors">Earnings & Results</a></li>
+              <li><a href="/mergers-and-acquisitions/" class="hover:text-white transition-colors">Mergers & Acquisitions</a></li>
+              <li><a href="/fundraising-and-capital-markets/" class="hover:text-white transition-colors">Fundraising</a></li>
+              <li><a href="/dividends-and-corporate-actions/" class="hover:text-white transition-colors">Dividends</a></li>
+              <li><a href="/business-operations/" class="hover:text-white transition-colors">Business Operations</a></li>
+            </ul>
+          </div>
+
+          <!-- More -->
+          <div>
+            <h4 class="text-white font-semibold text-sm mb-4">More</h4>
+            <ul class="space-y-2 text-sm">
+              <li><a href="/leadership-changes/" class="hover:text-white transition-colors">Leadership Changes</a></li>
+              <li><a href="/regulatory-and-legal/" class="hover:text-white transition-colors">Regulatory & Legal</a></li>
+              <li><a href="/debt-and-credit/" class="hover:text-white transition-colors">Debt & Credit</a></li>
+              <li><a href="/investor-relations/" class="hover:text-white transition-colors">Investor Relations</a></li>
+              <li><a href="/strategic-agreements/" class="hover:text-white transition-colors">Strategic Agreements</a></li>
+            </ul>
+          </div>
+
+          <!-- Product -->
+          <div>
+            <h4 class="text-white font-semibold text-sm mb-4">Product</h4>
+            <ul class="space-y-2 text-sm">
+              <li><a href="https://marketwire.app" class="hover:text-white transition-colors">MarketWire Platform</a></li>
+              <li><a href="/wire/" class="hover:text-white transition-colors">Live Wire</a></li>
+              <li><a href="/rss.xml" class="hover:text-white transition-colors">RSS Feed</a></li>
+            </ul>
+            <div class="mt-6 p-4 bg-gray-800 rounded-lg">
+              <p class="text-sm text-gray-300 font-medium mb-2">Get filing alerts</p>
+              <p class="text-xs mb-3">Real-time notifications for filings that matter.</p>
+              <a href="https://marketwire.app" class="inline-flex items-center text-accent text-sm font-semibold hover:underline">
+                Start Free &rarr;
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-t border-gray-800 mt-10 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p class="text-xs">&copy; {new Date().getFullYear()} MarketWire. All rights reserved.</p>
+          <p class="text-xs">
+            Data sourced from BSE &amp; NSE corporate filings. Not investment advice.
+          </p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,104 @@
+---
+export const prerender = false;
+
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import ArticleCard from "../../components/ArticleCard.astro";
+import { getArticles } from "../../lib/api";
+
+const query = Astro.url.searchParams.get("q") || "";
+const page = parseInt(Astro.url.searchParams.get("page") || "1");
+const limit = 18;
+
+let articles: any[] = [];
+let totalCount = 0;
+
+if (query.trim()) {
+  try {
+    // Search by symbol, tag, or category
+    const [bySymbol, byTag] = await Promise.all([
+      getArticles({ symbol: query.trim(), page, limit }),
+      getArticles({ tag: query.trim(), page, limit }),
+    ]);
+
+    // Merge and deduplicate
+    const seen = new Set<string>();
+    const merged: any[] = [];
+    for (const a of [...bySymbol.articles, ...byTag.articles]) {
+      if (!seen.has(a.slug)) {
+        seen.add(a.slug);
+        merged.push(a);
+      }
+    }
+    articles = merged.slice(0, limit);
+    totalCount = Math.max(bySymbol.count, byTag.count);
+  } catch (e) {
+    console.error("Search error:", e);
+  }
+}
+---
+
+<BaseLayout
+  title={query ? `Search: ${query} — MarketWire News` : "Search — MarketWire News"}
+  description="Search corporate news articles from BSE & NSE filings."
+>
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    {/* Search bar */}
+    <div class="max-w-2xl mx-auto mb-10">
+      <h1 class="font-display font-bold text-2xl text-foreground text-center mb-6">
+        Search News
+      </h1>
+      <form method="GET" action="/search/" class="relative">
+        <input
+          type="text"
+          name="q"
+          value={query}
+          placeholder="Search by company symbol, tag, or keyword..."
+          class="w-full px-5 py-3.5 pl-12 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+        />
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+        </svg>
+        <button
+          type="submit"
+          class="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          Search
+        </button>
+      </form>
+    </div>
+
+    {/* Results */}
+    {query && (
+      <div class="mb-6">
+        <p class="text-sm text-muted">
+          {totalCount > 0
+            ? `Found ${totalCount} result${totalCount !== 1 ? "s" : ""} for "${query}"`
+            : `No results for "${query}"`}
+        </p>
+      </div>
+    )}
+
+    {articles.length > 0 ? (
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {articles.map((article) => (
+          <ArticleCard article={article} />
+        ))}
+      </div>
+    ) : query ? (
+      <div class="text-center py-16 text-muted">
+        <p class="text-lg font-medium mb-2">No matches found</p>
+        <p class="text-sm">
+          Try searching by a company symbol (e.g., RELIANCE) or a tag.
+        </p>
+      </div>
+    ) : null}
+  </div>
+</BaseLayout>

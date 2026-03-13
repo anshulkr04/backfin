@@ -128,7 +128,7 @@ export function DateFilterModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]">
       <div className="fixed inset-0 bg-black/20" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-2xl w-[720px] flex flex-col">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-[720px] mx-4 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Date</h2>
@@ -154,9 +154,10 @@ export function DateFilterModal({
         </div>
 
         {/* Body: presets + calendars */}
-        <div className="flex">
+        <div className="flex flex-col sm:flex-row">
           {/* Presets */}
-          <div className="w-[160px] border-r border-gray-100 py-4 px-4 space-y-1">
+          <div className="sm:w-[160px] border-b sm:border-b-0 sm:border-r border-gray-100 py-3 sm:py-4 px-4">
+            <div className="flex sm:flex-col gap-1 flex-wrap">
             {PRESETS.map((p) => (
               <button
                 key={p.label}
@@ -169,10 +170,11 @@ export function DateFilterModal({
                 {p.label}
               </button>
             ))}
+            </div>
           </div>
 
           {/* Calendars */}
-          <div className="flex-1 py-4 px-6">
+          <div className="flex-1 py-4 px-4 sm:px-6 overflow-x-auto">
             <div className="flex items-center justify-between mb-4">
               <button
                 onClick={prevMonth}
@@ -180,7 +182,7 @@ export function DateFilterModal({
               >
                 <ChevronLeft size={16} />
               </button>
-              <div className="flex gap-16">
+              <div className="flex gap-8 sm:gap-16">
                 <span className="text-sm font-semibold text-gray-900">
                   {format(month1, "MMMM yyyy")}
                 </span>
@@ -196,7 +198,7 @@ export function DateFilterModal({
               </button>
             </div>
 
-            <div className="flex gap-8">
+            <div className="flex gap-4 sm:gap-8 flex-col sm:flex-row">
               <CalendarGrid
                 month={month1}
                 start={localStart}

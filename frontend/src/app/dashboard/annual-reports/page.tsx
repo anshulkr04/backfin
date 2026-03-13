@@ -6,7 +6,7 @@ import { getCorporateFilings } from "@/lib/api";
 import type { Filing } from "@/lib/api";
 import { AnnouncementList } from "@/components/announcement-list-new";
 import { AnnouncementDetail } from "@/components/announcement-detail-new";
-import { FileSpreadsheet, RefreshCcw } from "lucide-react";
+import { FileSpreadsheet, RefreshCcw, ArrowLeft } from "lucide-react";
 
 export default function AnnualReportsPage() {
   const { token } = useAuth();
@@ -56,10 +56,18 @@ export default function AnnualReportsPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white">
+      <div className="px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 flex items-center justify-between bg-white">
         <div className="flex items-center gap-2">
+          {selected && (
+            <button
+              onClick={() => setSelected(null)}
+              className="md:hidden p-1 -ml-1 mr-1 text-gray-500 hover:text-gray-900 transition"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          )}
           <FileSpreadsheet size={18} className="text-blue-600" />
-          <h1 className="text-lg font-bold text-gray-900">Annual Reports</h1>
+          <h1 className="text-base md:text-lg font-bold text-gray-900">Annual Reports</h1>
           <span className="text-xs text-gray-400 ml-2">{totalCount.toLocaleString()} reports</span>
         </div>
         <button onClick={() => fetchData(1)} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 transition">
@@ -67,10 +75,10 @@ export default function AnnualReportsPage() {
         </button>
       </div>
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-[420px] shrink-0 border-r border-gray-100 flex flex-col overflow-hidden">
+        <div className={`w-full md:w-[420px] md:shrink-0 border-r border-gray-100 flex flex-col overflow-hidden ${selected ? "hidden md:flex" : "flex"}`}>
           <AnnouncementList filings={filings} loading={loading} selectedId={selected?.corp_id ?? null} onSelect={setSelected} hasNext={hasNext} onLoadMore={() => { if (!loadingMore && hasNext) fetchData(currentPage + 1, true); }} loadingMore={loadingMore} />
         </div>
-        <div className="flex-1 overflow-hidden">
+        <div className={`flex-1 overflow-hidden ${selected ? "flex flex-col" : "hidden md:flex md:flex-col"}`}>
           {selected ? <AnnouncementDetail filing={selected} /> : (
             <div className="flex flex-col items-center justify-center h-full text-gray-400">
               <FileSpreadsheet size={32} className="mb-3 text-gray-300" />

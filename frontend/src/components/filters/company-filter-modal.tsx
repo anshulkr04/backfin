@@ -8,7 +8,7 @@ import type { Company } from "@/lib/api";
 interface Props {
   open: boolean;
   selectedSymbols: string[];
-  onApply: (symbols: string[]) => void;
+  onApply: (isins: string[]) => void;
   onClose: () => void;
 }
 
@@ -63,7 +63,7 @@ export function CompanyFilterModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]">
       <div className="fixed inset-0 bg-black/20" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-2xl w-[480px] max-h-[70vh] flex flex-col">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-[480px] mx-4 max-h-[70vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Company</h2>
@@ -136,9 +136,9 @@ export function CompanyFilterModal({
             results.map((c, i) => (
               <button
                 key={`${c.isin}-${i}`}
-                onClick={() => toggleSymbol(c.newnsecode || c.newname)}
+                onClick={() => toggleSymbol(c.isin || c.newnsecode || c.newname)}
                 className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition flex items-center justify-between ${
-                  local.includes(c.newnsecode || c.newname)
+                  local.includes(c.isin || c.newnsecode || c.newname)
                     ? "bg-blue-50 text-blue-700"
                     : "text-gray-700 hover:bg-gray-50"
                 }`}
@@ -150,7 +150,7 @@ export function CompanyFilterModal({
                     {c.isin && ` · ${c.isin}`}
                   </p>
                 </div>
-                {local.includes(c.newnsecode || c.newname) && (
+                {local.includes(c.isin || c.newnsecode || c.newname) && (
                   <span className="text-blue-600 text-xs font-medium">
                     Selected
                   </span>

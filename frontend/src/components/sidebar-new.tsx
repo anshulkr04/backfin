@@ -30,6 +30,7 @@ import { DateFilterModal } from "@/components/filters/date-filter-modal";
 import { CategoryFilterModal } from "@/components/filters/category-filter-modal";
 import { CompanyFilterModal } from "@/components/filters/company-filter-modal";
 import { SentimentFilterModal } from "@/components/filters/sentiment-filter-modal";
+import { WatchlistFilterModal } from "@/components/filters/watchlist-filter-modal";
 import { useFilterStore } from "@/lib/filter-store";
 
 const navItems = [
@@ -52,16 +53,24 @@ const MARKET_FEED_ITEMS = [
   { href: "/dashboard/corporate-actions", label: "Corporate Actions", description: "Dividends, splits, and more.", icon: GitPullRequest },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  onClose?: () => void;
+}
+
+export function Sidebar({ onClose }: SidebarProps = {}) {
   const {
     filters,
     selectedCategories,
     selectedSentiments,
     selectedCompanies,
+    selectedWatchlistId,
+    watchlistOnly,
     setFilters,
     setSelectedCategories,
     setSelectedSentiments,
     setSelectedCompanies,
+    setSelectedWatchlistId,
+    setWatchlistOnly,
     resetAll: resetFilters,
   } = useFilterStore();
   const pathname = usePathname();
@@ -73,6 +82,7 @@ export function Sidebar() {
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [companyOpen, setCompanyOpen] = useState(false);
   const [sentimentOpen, setSentimentOpen] = useState(false);
+  const [watchlistOpen, setWatchlistOpen] = useState(false);
   const [marketFeedMenuOpen, setMarketFeedMenuOpen] = useState(false);
   const marketFeedBtnRef = useRef<HTMLDivElement>(null);
 
@@ -85,7 +95,8 @@ export function Sidebar() {
     (filters?.start_date) ||
     selectedCategories.length > 0 ||
     selectedCompanies.length > 0 ||
-    selectedSentiments.length > 0;
+    selectedSentiments.length > 0 ||
+    watchlistOnly;
 
   const resetAll = () => {
     resetFilters();
@@ -102,12 +113,20 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="w-[200px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col h-full">
-        {/* Logo */}
-        <div className="px-5 py-4 border-b border-gray-100">
-          <Link href="/dashboard" className="block">
+      <aside className="w-full md:w-[200px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col h-full">
+        {/* Logo + mobile close */}
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <Link href="/dashboard" className="block" onClick={onClose}>
             <Logo variant="full" theme="dark" className="h-6" />
           </Link>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 rounded-lg hover:bg-gray-100 transition text-gray-400 hover:text-gray-600 md:hidden"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {/* Nav */}
@@ -137,6 +156,7 @@ export function Sidebar() {
                 ) : (
                   <Link
                     href={item.href}
+                    onClick={onClose}
                     className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition ${
                       isActive
                         ? "bg-orange-50 text-orange-600"
@@ -197,9 +217,19 @@ export function Sidebar() {
               </button>
 
               {/* Watchlists */}
-              <button className="flex items-center justify-between w-full px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition">
+              <button
+                onClick={() => setWatchlistOpen(true)}
+                className="flex items-center justify-between w-full px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition"
+              >
                 <span className="font-medium">Watchlists</span>
-                <ChevronRight size={14} className="text-gray-400" />
+                <span className="flex items-center gap-1 text-xs text-gray-500">
+                  {watchlistOnly && (
+                    <span className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded text-[10px] font-medium">
+                      On
+                    </span>
+                  )}
+                  <ChevronRight size={14} className="text-gray-400" />
+                </span>
               </button>
 
               {/* Category */}
@@ -301,6 +331,16 @@ export function Sidebar() {
         onApply={(sents) => setSelectedSentiments(sents)}
         onClose={() => setSentimentOpen(false)}
       />
+      <WatchlistFilterModal
+        open={watchlistOpen}
+        selectedWatchlistId={selectedWatchlistId}
+        watchlistOnly={watchlistOnly}
+        onApply={(id, only) => {
+          setSelectedWatchlistId(id);
+          setWatchlistOnly(only);
+        }}
+        onClose={() => setWatchlistOpen(false)}
+      />
 
       {/* Market Feed sub-menu popup */}
       {marketFeedMenuOpen && (
@@ -309,7 +349,7 @@ export function Sidebar() {
             className="fixed inset-0 bg-black/20"
             onClick={() => setMarketFeedMenuOpen(false)}
           />
-          <div className="relative bg-white rounded-xl shadow-2xl w-[580px] overflow-hidden">
+          <div className="relative bg-white rounded-xl shadow-2xl w-[calc(100vw-2rem)] max-w-[580px] mx-4 overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
               <h2 className="text-base font-semibold text-gray-900">
                 Market Feed
@@ -322,12 +362,12 @@ export function Sidebar() {
               </button>
             </div>
             <div className="p-5">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {MARKET_FEED_ITEMS.map((mfItem) => (
                   <Link
                     key={mfItem.href}
                     href={mfItem.href}
-                    onClick={() => setMarketFeedMenuOpen(false)}
+                    onClick={() => { setMarketFeedMenuOpen(false); onClose?.(); }}
                     className="flex items-start gap-3.5 p-4 rounded-xl hover:bg-gray-50 transition group"
                   >
                     <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 group-hover:bg-gray-200 transition">

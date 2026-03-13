@@ -1,0 +1,145 @@
+---
+export const prerender = false;
+
+import BaseLayout from "../layouts/BaseLayout.astro";
+import HeroCard from "../components/HeroCard.astro";
+import ArticleCard from "../components/ArticleCard.astro";
+import SidebarList from "../components/SidebarList.astro";
+import CategoryTabs from "../components/CategoryTabs.astro";
+import CTABanner from "../components/CTABanner.astro";
+import { getLatestArticles, getArticles, getCategories } from "../lib/api";
+
+// Fetch data at build time
+let heroArticle = null;
+let breakingNews: any[] = [];
+let latestArticles: any[] = [];
+let categories: any[] = [];
+
+try {
+  const latest = await getLatestArticles(20);
+  if (latest.length > 0) {
+    heroArticle = latest[0];
+    breakingNews = latest.slice(1, 7);
+    latestArticles = latest.slice(1);
+  }
+  categories = await getCategories();
+} catch (e) {
+  console.error("Failed to fetch articles:", e);
+}
+
+// Pick trending by view_count if available, else just latest
+const trending = [...(latestArticles || [])]
+  .sort((a, b) => (b.view_count || 0) - (a.view_count || 0))
+  .slice(0, 5);
+---
+
+<BaseLayout title="MarketWire News — AI-Powered Corporate News from BSE & NSE Filings">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    {/* ── Hero + Sidebar ──────────────────────────────────────── */}
+    {heroArticle ? (
+      <section class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+        {/* Hero — takes 2/3 */}
+        <div class="lg:col-span-2">
+          <HeroCard article={heroArticle} />
+        </div>
+
+        {/* Sidebar — 1/3 */}
+        <div class="flex flex-col gap-6">
+          <SidebarList articles={breakingNews} title="Breaking News" />
+        </div>
+      </section>
+    ) : (
+      <section class="text-center py-20 text-muted">
+        <div class="w-16 h-16 mx-auto mb-4 bg-accent/10 rounded-2xl flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 7.5h1.5m-1.5 3h1.5m-7.5 3h7.5m-7.5 3h7.5m3-9h3.375c.621 0 1.125.504 1.125 1.125V18a2.25 2.25 0 01-2.25 2.25M16.5 7.5V18a2.25 2.25 0 002.25 2.25M16.5 7.5V4.875c0-.621-.504-1.125-1.125-1.125H4.125C3.504 3.75 3 4.254 3 4.875V18a2.25 2.25 0 002.25 2.25h13.5" />
+          </svg>
+        </div>
+        <h2 class="font-display font-bold text-xl text-foreground mb-2">No articles yet</h2>
+        <p class="text-sm">Articles will appear here once our AI starts processing filings.</p>
+      </section>
+    )}
+
+    {/* ── Category Tabs ────────────────────────────────────────── */}
+    <section class="mb-8">
+      <CategoryTabs />
+    </section>
+
+    {/* ── Trending / Hot Topics ────────────────────────────────── */}
+    {trending.length > 0 && (
+      <section class="mb-10">
+        <div class="flex items-center gap-2 mb-5">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.048 8.287 8.287 0 009 9.6a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18a3.75 3.75 0 00.495-7.467 5.99 5.99 0 00-1.925 3.546 5.974 5.974 0 01-2.133-1A3.75 3.75 0 0012 18z" />
+          </svg>
+          <h2 class="font-display font-bold text-lg text-foreground">Hot Topics</h2>
+        </div>
+        <div class="flex gap-3 overflow-x-auto pb-2">
+          {trending.map((article) => (
+            <a
+              href={`/${article.article_category ? article.article_category.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") : "news"}/${article.slug}/`}
+              class="flex-shrink-0 flex items-center gap-3 px-4 py-3 bg-surface border border-border rounded-xl hover:border-accent/30 hover:shadow-sm transition-all group"
+            >
+              <div class="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                <span class="text-accent font-bold text-sm">{article.symbol?.slice(0, 3)}</span>
+              </div>
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-foreground group-hover:text-accent transition-colors line-clamp-1 max-w-[200px]">
+                  {article.headline}
+                </p>
+                <p class="text-xs text-muted">{article.companyname}</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+    )}
+
+    {/* ── Article Grid ─────────────────────────────────────────── */}
+    {latestArticles.length > 0 && (
+      <section class="mb-10">
+        <h2 class="font-display font-bold text-lg text-foreground mb-5">Latest News</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {latestArticles.map((article) => (
+            <ArticleCard article={article} />
+          ))}
+        </div>
+      </section>
+    )}
+
+    {/* ── Category Breakdown (by counts) ───────────────────────── */}
+    {categories.length > 0 && (
+      <section class="mb-10">
+        <h2 class="font-display font-bold text-lg text-foreground mb-5">Browse by Category</h2>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {categories.map(({ category, count }) => {
+            const slug = category
+              .toLowerCase()
+              .replace(/&/g, "and")
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/(^-|-$)/g, "");
+            return (
+              <a
+                href={`/${slug}/`}
+                class="flex items-center justify-between p-4 bg-surface border border-border rounded-xl hover:border-accent/30 hover:shadow-sm transition-all group"
+              >
+                <span class="font-medium text-sm text-foreground group-hover:text-accent transition-colors">
+                  {category}
+                </span>
+                <span class="text-xs text-muted bg-white px-2 py-1 rounded-full">
+                  {count}
+                </span>
+              </a>
+            );
+          })}
+        </div>
+      </section>
+    )}
+
+    {/* ── CTA Banner ───────────────────────────────────────────── */}
+    <CTABanner />
+
+  </div>
+</BaseLayout>

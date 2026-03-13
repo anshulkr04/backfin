@@ -198,8 +198,8 @@ def main():
     # Define date range
     # From: November 25, 2025
     # To: January 16, 2026 (today)
-    start_date = datetime(2026, 2, 22)
-    end_date = datetime(2026, 3,7 )
+    start_date = datetime(2026, 3, 8)
+    end_date = datetime(2026, 3,12 )
     
     try:
         collect_historical_data(start_date, end_date)

@@ -15,6 +15,7 @@ import {
   Trash2,
   TrendingUp,
   TrendingDown,
+  ArrowLeft,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { getCategoryClasses } from "@/lib/categories";
@@ -100,10 +101,18 @@ export default function SavedPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <div className="px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
+          {selectedItem && (
+            <button
+              onClick={() => setSelectedItem(null)}
+              className="md:hidden p-1 -ml-1 mr-1 text-gray-500 hover:text-gray-900 transition"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          )}
           <Bookmark size={18} className="text-orange-500" />
-          <h1 className="text-lg font-bold text-gray-900">Saved Announcements</h1>
+          <h1 className="text-base md:text-lg font-bold text-gray-900">Saved Announcements</h1>
           <span className="text-xs text-gray-400 ml-2">
             {savedItems.length} item{savedItems.length !== 1 ? "s" : ""}
           </span>
@@ -113,7 +122,7 @@ export default function SavedPage() {
       {/* Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left panel - List */}
-        <div className="w-[420px] shrink-0 border-r border-gray-100 flex flex-col overflow-hidden">
+        <div className={`w-full md:w-[420px] md:shrink-0 border-r border-gray-100 flex flex-col overflow-hidden ${selectedItem ? "hidden md:flex" : "flex"}`}>
           {/* Sort bar */}
           <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
             <span className="text-xs text-gray-400">Sort by:</span>
@@ -225,11 +234,11 @@ export default function SavedPage() {
         </div>
 
         {/* Right panel - Detail */}
-        <div className="flex-1 overflow-hidden">
+        <div className={`flex-1 overflow-hidden ${selectedItem ? "flex flex-col" : "hidden md:flex md:flex-col"}`}>
           {selectedItem ? (
             <div className="h-full overflow-y-auto">
               {/* Breadcrumb + Actions */}
-              <div className="px-8 py-3 border-b border-gray-100 flex items-center justify-between">
+              <div className="px-4 md:px-8 py-3 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div className="text-[11px] text-gray-400 flex items-center gap-1.5 flex-wrap">
                   <span className="hover:text-gray-600 cursor-pointer">
                     Saved
@@ -247,7 +256,7 @@ export default function SavedPage() {
                     {selectedItem.companyname}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0 ml-4">
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={handleUnsaveFromDetail}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-green-200 bg-green-50 text-green-700 hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition group/save"
@@ -274,7 +283,7 @@ export default function SavedPage() {
                 </div>
               </div>
 
-              <div className="px-8 py-5">
+              <div className="px-4 md:px-8 py-5">
                 {/* Title */}
                 <h1 className="text-lg font-bold text-gray-900 leading-snug mb-2">
                   {selectedItem.headline || selectedItem.summary}

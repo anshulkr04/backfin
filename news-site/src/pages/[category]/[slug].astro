@@ -1,0 +1,208 @@
+---
+export const prerender = false;
+
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import ArticleCard from "../../components/ArticleCard.astro";
+import CTABanner from "../../components/CTABanner.astro";
+import {
+  getArticleBySlug,
+  getArticles,
+  sentimentColor,
+  formatDate,
+  timeAgo,
+  categoryToSlug,
+  slugToCategory,
+} from "../../lib/api";
+
+const { category, slug } = Astro.params;
+
+if (!slug) {
+  return Astro.redirect("/404");
+}
+
+const article = await getArticleBySlug(slug);
+
+if (!article) {
+  return Astro.redirect("/404");
+}
+
+// Fetch related articles (same category, exclude current)
+let relatedArticles: any[] = [];
+try {
+  const { articles } = await getArticles({
+    article_category: article.article_category,
+    limit: 4,
+  });
+  relatedArticles = articles.filter((a) => a.slug !== article.slug).slice(0, 3);
+} catch {}
+
+const categorySlug = categoryToSlug(article.article_category);
+
+// Parse key_figures if it's a JSON string
+let keyFigures: Record<string, string> = {};
+try {
+  if (article.key_figures) {
+    keyFigures = typeof article.key_figures === "string"
+      ? JSON.parse(article.key_figures)
+      : article.key_figures;
+  }
+} catch {}
+
+const keyFigureEntries = Object.entries(keyFigures).filter(([_, v]) => v);
+
+// Parse tags
+const tags = Array.isArray(article.tags) ? article.tags : [];
+---
+
+<BaseLayout
+  title={`${article.headline} — MarketWire News`}
+  description={article.seo_description}
+  article={{
+    headline: article.headline,
+    published_at: article.published_at,
+    article_category: article.article_category,
+    tags: tags,
+    companyname: article.companyname,
+    seo_description: article.seo_description,
+    body: article.body,
+  }}
+>
+  <article class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    {/* ── Breadcrumb ──────────────────────────────────────────── */}
+    <nav class="flex items-center gap-2 text-sm text-muted mb-6">
+      <a href="/" class="hover:text-foreground transition-colors">Home</a>
+      <span class="text-border">/</span>
+      <a href={`/${categorySlug}/`} class="hover:text-foreground transition-colors">
+        {article.article_category}
+      </a>
+      <span class="text-border">/</span>
+      <span class="text-foreground truncate max-w-xs">{article.headline}</span>
+    </nav>
+
+    {/* ── Header ──────────────────────────────────────────────── */}
+    <header class="mb-8">
+      <div class="flex items-center gap-3 mb-4">
+        <a href={`/${categorySlug}/`} class="badge badge-category">
+          {article.article_category}
+        </a>
+        <span class={`badge ${sentimentColor(article.sentiment)}`}>
+          {article.sentiment}
+        </span>
+      </div>
+
+      <h1 class="font-display font-bold text-3xl md:text-4xl lg:text-[2.75rem] leading-tight text-foreground mb-4">
+        {article.headline}
+      </h1>
+
+      <p class="text-lg text-muted leading-relaxed mb-5">
+        {article.seo_description}
+      </p>
+
+      <div class="flex flex-wrap items-center gap-4 text-sm text-muted pb-6 border-b border-border">
+        <a
+          href={`/company/${article.symbol}/`}
+          class="font-semibold text-foreground hover:text-accent transition-colors"
+        >
+          {article.companyname}
+        </a>
+        <span class="text-border">|</span>
+        <span>{article.symbol}</span>
+        {article.sector && (
+          <>
+            <span class="text-border">|</span>
+            <span>{article.sector}</span>
+          </>
+        )}
+        <span class="text-border">|</span>
+        <time datetime={article.published_at}>
+          {formatDate(article.published_at)}
+        </time>
+        <span class="text-xs text-muted bg-surface px-2 py-1 rounded">
+          {timeAgo(article.published_at)}
+        </span>
+      </div>
+    </header>
+
+    {/* ── Key Figures ─────────────────────────────────────────── */}
+    {keyFigureEntries.length > 0 && (
+      <div class="bg-surface border border-border rounded-xl p-5 mb-8">
+        <h3 class="font-display font-bold text-sm text-foreground mb-3 flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+          </svg>
+          Key Figures
+        </h3>
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {keyFigureEntries.map(([key, value]) => (
+            <div class="bg-white rounded-lg p-3 border border-border">
+              <dt class="text-xs text-muted mb-1">{key}</dt>
+              <dd class="text-sm font-semibold text-foreground">{value}</dd>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {/* ── Article Body ────────────────────────────────────────── */}
+    <div class="prose prose-gray max-w-none mb-8
+      prose-headings:font-display prose-headings:text-foreground
+      prose-h2:text-xl prose-h2:font-bold prose-h2:mt-8 prose-h2:mb-3
+      prose-h3:text-lg prose-h3:font-semibold prose-h3:mt-6 prose-h3:mb-2
+      prose-p:text-base prose-p:leading-relaxed prose-p:text-gray-700
+      prose-strong:text-foreground
+      prose-li:text-gray-700
+      prose-a:text-accent prose-a:no-underline hover:prose-a:underline">
+      <Fragment set:html={article.body} />
+    </div>
+
+    {/* ── Tags ────────────────────────────────────────────────── */}
+    {tags.length > 0 && (
+      <div class="flex flex-wrap gap-2 mb-8 pb-8 border-b border-border">
+        {tags.map((tag) => (
+          <span class="px-3 py-1.5 bg-surface text-muted text-xs font-medium rounded-full border border-border">
+            #{tag}
+          </span>
+        ))}
+      </div>
+    )}
+
+    {/* ── Source Link ──────────────────────────────────────────── */}
+    {article.source_url && (
+      <div class="bg-surface border border-border rounded-xl p-5 mb-8 flex items-center justify-between">
+        <div>
+          <p class="font-medium text-sm text-foreground">Source Filing</p>
+          <p class="text-xs text-muted mt-0.5">View the original corporate filing PDF</p>
+        </div>
+        <a
+          href={article.source_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          View PDF
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+          </svg>
+        </a>
+      </div>
+    )}
+
+    {/* ── CTA ──────────────────────────────────────────────────── */}
+    <div class="mb-10">
+      <CTABanner />
+    </div>
+
+    {/* ── Related Articles ────────────────────────────────────── */}
+    {relatedArticles.length > 0 && (
+      <section>
+        <h2 class="font-display font-bold text-lg text-foreground mb-5">Related Articles</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {relatedArticles.map((a) => (
+            <ArticleCard article={a} />
+          ))}
+        </div>
+      </section>
+    )}
+  </article>
+</BaseLayout>

@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { searchCompanies, getCorporateFilings } from "@/lib/api";
 import type { Company, Filing } from "@/lib/api";
 import { Search as SearchIcon, Building2, ArrowLeft } from "lucide-react";
-import { AnnouncementDetail } from "@/components/announcement-detail";
+import { AnnouncementDetail } from "@/components/announcement-detail-new";
 
 export default function SearchPage() {
   const { token } = useAuth();

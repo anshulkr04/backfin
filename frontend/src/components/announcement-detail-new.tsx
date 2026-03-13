@@ -50,7 +50,7 @@ export function AnnouncementDetail({ filing, onCategoryFilter }: Props) {
   return (
     <div className="h-full overflow-y-auto">
       {/* Breadcrumb + Actions row */}
-      <div className="px-8 py-3 border-b border-gray-100 flex items-center justify-between">
+      <div className="px-4 md:px-8 py-3 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
         <div className="text-[11px] text-gray-400 flex items-center gap-1.5 flex-wrap">
           <span className="hover:text-gray-600 cursor-pointer">Market Feed</span>
           <span>›</span>
@@ -66,7 +66,7 @@ export function AnnouncementDetail({ filing, onCategoryFilter }: Props) {
           <span className="text-gray-900 font-medium">{filing.companyname}</span>
         </div>
         {/* Actions on the right */}
-        <div className="flex items-center gap-2 shrink-0 ml-4">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => { if (!saved) setShowSaveModal(true); }}
             disabled={saving || saved}
@@ -87,7 +87,8 @@ export function AnnouncementDetail({ filing, onCategoryFilter }: Props) {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
             >
               <ExternalLink size={13} />
-              View Original Filing
+              <span className="hidden sm:inline">View Original Filing</span>
+              <span className="sm:hidden">Original</span>
             </a>
           )}
           <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition">
@@ -98,7 +99,7 @@ export function AnnouncementDetail({ filing, onCategoryFilter }: Props) {
       </div>
 
       {/* Main content */}
-      <div className="px-8 py-5">
+      <div className="px-4 md:px-8 py-5">
         {/* Title */}
         <h1 className="text-lg font-bold text-gray-900 leading-snug mb-2">
           {filing.headline || filing.summary}
@@ -221,7 +222,7 @@ export function AnnouncementDetail({ filing, onCategoryFilter }: Props) {
       {showSaveModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="fixed inset-0 bg-black/20" onClick={() => { setShowSaveModal(false); setNote(""); }} />
-          <div className="relative bg-white rounded-xl shadow-2xl w-[460px] p-6">
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-[460px] mx-4 p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Save Item</h2>
 
             <div className="bg-gray-50 rounded-lg p-3 mb-4">

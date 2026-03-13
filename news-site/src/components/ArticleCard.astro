@@ -1,0 +1,48 @@
+---
+import { sentimentColor, timeAgo, categoryToSlug } from "../lib/api";
+import type { Article } from "../lib/api";
+
+interface Props {
+  article: Article;
+}
+
+const { article } = Astro.props;
+const categorySlug = categoryToSlug(article.article_category);
+const articleUrl = `/${categorySlug}/${article.slug}/`;
+---
+
+<a href={articleUrl} class="group block">
+  <article class="bg-white border border-border rounded-xl p-5 hover:shadow-lg hover:border-accent/30 transition-all duration-200">
+    <!-- Top row: category + time -->
+    <div class="flex items-center justify-between mb-3">
+      <span class="badge badge-category text-[11px]">
+        {article.article_category}
+      </span>
+      <time datetime={article.published_at} class="text-xs text-muted">
+        {timeAgo(article.published_at)}
+      </time>
+    </div>
+
+    <!-- Headline -->
+    <h3 class="font-display font-semibold text-base leading-snug text-foreground group-hover:text-accent transition-colors mb-2 line-clamp-2">
+      {article.headline}
+    </h3>
+
+    <!-- Description -->
+    <p class="text-sm text-muted leading-relaxed mb-3 line-clamp-2">
+      {article.seo_description}
+    </p>
+
+    <!-- Bottom row: company + sentiment -->
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2 text-xs text-muted">
+        <span class="font-medium text-foreground">{article.companyname}</span>
+        <span class="text-border">&bull;</span>
+        <span>{article.symbol}</span>
+      </div>
+      <span class={`badge text-[10px] ${sentimentColor(article.sentiment)}`}>
+        {article.sentiment}
+      </span>
+    </div>
+  </article>
+</a>

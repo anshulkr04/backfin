@@ -111,7 +111,7 @@ export function CategoryFilterModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]">
       <div className="fixed inset-0 bg-black/20" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-2xl w-[620px] max-h-[80vh] flex flex-col">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-[620px] mx-4 max-h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Category</h2>
@@ -172,7 +172,7 @@ export function CategoryFilterModal({
 
         {/* Groups */}
         <div className="flex-1 overflow-y-auto px-6 pb-4">
-          <div className="grid grid-cols-2 gap-x-10 gap-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-6">
             {CATEGORY_GROUPS.map((group) => {
               const filtered = group.categories.filter((c) =>
                 c.toLowerCase().includes(lowerSearch)

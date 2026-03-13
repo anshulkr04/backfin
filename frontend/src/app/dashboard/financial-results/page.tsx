@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { getFinancialResults } from "@/lib/api";
 import type { FinancialResult } from "@/lib/api";
-import { BarChart3, RefreshCcw, TrendingUp, TrendingDown } from "lucide-react";
+import { BarChart3, RefreshCcw, TrendingUp, TrendingDown, ArrowLeft } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { InlineDatePicker } from "@/components/inline-date-picker";
 
@@ -88,10 +88,18 @@ export default function FinancialResultsPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white">
+      <div className="px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-white">
         <div className="flex items-center gap-2">
+          {selected && (
+            <button
+              onClick={() => setSelected(null)}
+              className="md:hidden p-1 -ml-1 mr-1 text-gray-500 hover:text-gray-900 transition"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          )}
           <BarChart3 size={18} className="text-indigo-500" />
-          <h1 className="text-lg font-bold text-gray-900">Financial Results</h1>
+          <h1 className="text-base md:text-lg font-bold text-gray-900">Financial Results</h1>
           <span className="text-xs text-gray-400 ml-2">
             {totalCount.toLocaleString()} results
           </span>
@@ -115,7 +123,7 @@ export default function FinancialResultsPage() {
       {/* Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* List */}
-        <div className="w-[480px] shrink-0 border-r border-gray-100 overflow-y-auto">
+        <div className={`w-full md:w-[480px] md:shrink-0 border-r border-gray-100 overflow-y-auto ${selected ? "hidden md:block" : "block"}`}>
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
@@ -186,9 +194,9 @@ export default function FinancialResultsPage() {
         </div>
 
         {/* Detail */}
-        <div className="flex-1 overflow-y-auto">
+        <div className={`flex-1 overflow-y-auto ${selected ? "block" : "hidden md:block"}`}>
           {selected ? (
-            <div className="p-8">
+            <div className="p-4 md:p-8">
               <h2 className="text-lg font-bold text-gray-900 mb-1">
                 {selected.corporatefilings?.companyname || selected.company_id}
               </h2>

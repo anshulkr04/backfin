@@ -38,7 +38,7 @@ export function SentimentFilterModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[25vh]">
       <div className="fixed inset-0 bg-black/20" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-2xl w-[320px]">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-[320px] mx-4">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Sentiment</h2>

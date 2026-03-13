@@ -88,7 +88,7 @@ export default function DashboardPage() {
   return (
     <div className="h-full overflow-y-auto bg-gray-50/50">
       {/* Top bar */}
-      <div className="px-6 py-4 flex items-center justify-between bg-white border-b border-gray-100">
+      <div className="px-4 md:px-6 py-3 md:py-4 flex items-center justify-between bg-white border-b border-gray-100">
         {/* Watchlist selector */}
         <div className="relative">
           <button
@@ -143,10 +143,10 @@ export default function DashboardPage() {
       </div>
 
       {/* Dashboard grid */}
-      <div className="p-6">
-        <div className="grid grid-cols-12 gap-5">
-          {/* ── Announcements card (left, spans 7 cols) ── */}
-          <div className="col-span-7 bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="p-4 md:p-6">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+          {/* Announcements card (full width on mobile, spans 7 cols on desktop) */}
+          <div className="md:col-span-7 bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
               <h2 className="text-sm font-bold text-gray-900">
                 Announcements
@@ -196,8 +196,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* ── Right column (5 cols) ── */}
-          <div className="col-span-5 flex flex-col gap-5">
+          {/* Right column (full width on mobile, 5 cols on desktop) */}
+          <div className="md:col-span-5 flex flex-col gap-5">
             {/* Upcoming Results */}
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
@@ -253,8 +253,8 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Movers & Shakers + Latest Financial Results (side by side) */}
-            <div className="grid grid-cols-2 gap-5">
+            {/* Movers & Shakers + Latest Financial Results (side by side on larger screens) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               {/* Movers & Shakers */}
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
@@ -363,7 +363,7 @@ export default function DashboardPage() {
 
       {/* Panel */}
       <div
-        className={`fixed top-0 right-0 h-full w-[52%] max-w-[720px] bg-white shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        className={`fixed top-0 right-0 h-full w-full md:w-[52%] md:max-w-[720px] bg-white shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
           panelOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >

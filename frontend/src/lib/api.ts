@@ -103,6 +103,7 @@ export interface Filing {
   symbol: string;
   headline: string | null;
   sentiment: string | null;
+  is_read?: boolean;
   investorCorp?: InvestorInfo[];
 }
 
@@ -164,8 +165,42 @@ export async function getCorporateFilings(
   return request(`/api/v2/corporate_filings${q ? `?${q}` : ""}`, {}, token);
 }
 
-export async function getFilingById(corpId: string): Promise<Filing> {
-  return request(`/api/corporate_filings/${corpId}`);
+export async function getFilingById(corpId: string, token?: string | null): Promise<Filing> {
+  return request(`/api/v2/corporate_filings/${corpId}`, {}, token);
+}
+
+// ─── V2 Read Tracking ───────────────────────────────
+export async function markFilingsRead(
+  token: string,
+  corpIds: string[]
+): Promise<{ message: string; count: number }> {
+  return request(
+    "/api/v2/corporate_filings/mark-read",
+    { method: "POST", body: JSON.stringify({ corp_ids: corpIds }) },
+    token
+  );
+}
+
+export async function markFilingsUnread(
+  token: string,
+  corpIds: string[]
+): Promise<{ message: string; count: number }> {
+  return request(
+    "/api/v2/corporate_filings/mark-unread",
+    { method: "POST", body: JSON.stringify({ corp_ids: corpIds }) },
+    token
+  );
+}
+
+export async function getReadStatus(
+  token: string,
+  corpIds: string[]
+): Promise<{ read_corp_ids: string[] }> {
+  return request(
+    "/api/v2/corporate_filings/read-status",
+    { method: "POST", body: JSON.stringify({ corp_ids: corpIds }) },
+    token
+  );
 }
 
 // ─── Company Search ─────────────────────────────────

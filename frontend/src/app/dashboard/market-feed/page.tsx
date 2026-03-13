@@ -2,14 +2,20 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/lib/auth";
-import { getCorporateFilings, getWatchlists } from "@/lib/api";
+import { getCorporateFilings, getWatchlists, markFilingsRead } from "@/lib/api";
 import type { Filing, FilingsParams, Watchlist } from "@/lib/api";
 import { AnnouncementList } from "@/components/announcement-list-new";
 import { AnnouncementDetail } from "@/components/announcement-detail-new";
-import { Radio, RefreshCcw, X, ChevronDown } from "lucide-react";
+import { Radio, RefreshCcw, X, ChevronDown, ArrowLeft, SlidersHorizontal } from "lucide-react";
 import { useFilterStore } from "@/lib/filter-store";
+import { useMobileDetailStore } from "@/lib/mobile-detail-store";
 import { useNewAnnouncementSocket } from "@/lib/use-socket";
-import { markAsRead, getReadIds } from "@/lib/read-tracker";
+import { format } from "date-fns";
+import { DateFilterModal } from "@/components/filters/date-filter-modal";
+import { CategoryFilterModal } from "@/components/filters/category-filter-modal";
+import { CompanyFilterModal } from "@/components/filters/company-filter-modal";
+import { SentimentFilterModal } from "@/components/filters/sentiment-filter-modal";
+import { WatchlistFilterModal } from "@/components/filters/watchlist-filter-modal";
 
 export default function MarketFeedPage() {
   const { token } = useAuth();
@@ -18,8 +24,18 @@ export default function MarketFeedPage() {
     selectedCategories,
     selectedSentiments,
     selectedCompanies,
+    selectedWatchlistId,
+    watchlistOnly,
+    setFilters,
     setSelectedCategories,
+    setSelectedSentiments,
+    setSelectedCompanies,
+    setSelectedWatchlistId,
+    setWatchlistOnly,
+    resetAll: resetFilters,
   } = useFilterStore();
+
+  const { setDetailOpen } = useMobileDetailStore();
 
   const [filings, setFilings] = useState<Filing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,16 +48,22 @@ export default function MarketFeedPage() {
   const [showUnread, setShowUnread] = useState(false);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [activeCategoryLabel, setActiveCategoryLabel] = useState<string | null>(null);
-
-  // Watchlist state
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
-  const [selectedWatchlist, setSelectedWatchlist] = useState<string>("none"); // "none" | "all" | watchlist._id
   const [wlOpen, setWlOpen] = useState(false);
 
-  // Load read IDs from localStorage on mount
-  useEffect(() => {
-    setReadIds(getReadIds());
-  }, []);
+  // Mobile filter sheet
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  // Filter modals (shared between sidebar on desktop and mobile sheet)
+  const [dateOpen, setDateOpen] = useState(false);
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [companyOpen, setCompanyOpen] = useState(false);
+  const [sentimentOpen, setSentimentOpen] = useState(false);
+  const [watchlistFilterOpen, setWatchlistFilterOpen] = useState(false);
+
+  // Derive selectedWatchlist from filter store
+  const selectedWatchlist = watchlistOnly
+    ? (selectedWatchlistId ?? "all")
+    : "none";
 
   // Load watchlists
   useEffect(() => {
@@ -53,6 +75,16 @@ export default function MarketFeedPage() {
 
   // WebSocket new announcement notifications
   const { newCount, resetCount } = useNewAnnouncementSocket();
+
+  // Signal layout when filing detail is open on mobile (for close button in bottom tabs)
+  useEffect(() => {
+    if (selectedFiling) {
+      setDetailOpen(true, () => setSelectedFiling(null));
+    } else {
+      setDetailOpen(false, null);
+    }
+    return () => setDetailOpen(false, null);
+  }, [selectedFiling, setDetailOpen]);
 
   // Track filter version to reset on change
   const filterVersion = useRef(0);
@@ -72,7 +104,7 @@ export default function MarketFeedPage() {
       }
       if (selectedCompanies.length > 1) {
         filtered = filtered.filter((f) =>
-          selectedCompanies.includes(f.symbol)
+          selectedCompanies.includes(f.isin)
         );
       }
       return filtered;
@@ -96,7 +128,10 @@ export default function MarketFeedPage() {
           params.category = selectedCategories.join(",");
         }
         if (selectedCompanies.length > 0) {
-          params.symbol = selectedCompanies.join(",");
+          // selectedCompanies now contains ISINs from company filter
+          const existingIsins = params.isin ? params.isin.split(",") : [];
+          const allIsins = [...new Set([...existingIsins, ...selectedCompanies])];
+          params.isin = allIsins.join(",");
         }
 
         // Watchlist filter
@@ -118,10 +153,22 @@ export default function MarketFeedPage() {
         const res = await getCorporateFilings(token, params);
         const newFilings = applyClientFilters(res.filings ?? []);
 
+        // Build read IDs from server-side is_read flag
+        const newReadIds = new Set<string>();
+        for (const f of newFilings) {
+          if (f.is_read) newReadIds.add(f.corp_id);
+        }
+
         if (append) {
           setFilings((prev) => [...prev, ...newFilings]);
+          setReadIds((prev) => {
+            const merged = new Set(prev);
+            newReadIds.forEach((id) => merged.add(id));
+            return merged;
+          });
         } else {
           setFilings(newFilings);
+          setReadIds(newReadIds);
         }
         setTotalCount(res.total_count ?? 0);
         setCurrentPage(res.current_page);
@@ -133,7 +180,7 @@ export default function MarketFeedPage() {
         setLoadingMore(false);
       }
     },
-    [token, filters, selectedCategories, selectedCompanies, selectedWatchlist, watchlists, showUnread, applyClientFilters]
+    [token, filters, selectedCategories, selectedCompanies, selectedWatchlistId, watchlistOnly, watchlists, showUnread, applyClientFilters]
   );
 
   // Reset & fetch when filters change
@@ -144,7 +191,7 @@ export default function MarketFeedPage() {
     setCurrentPage(1);
     fetchFilings(1, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, selectedCategories, selectedSentiments, selectedCompanies, selectedWatchlist, showUnread, token]);
+  }, [filters, selectedCategories, selectedSentiments, selectedCompanies, selectedWatchlistId, watchlistOnly, showUnread, token]);
 
   // Auto-refresh every 60s if enabled
   useEffect(() => {
@@ -170,12 +217,14 @@ export default function MarketFeedPage() {
   const handleSelectFiling = useCallback(
     (filing: Filing) => {
       setSelectedFiling(filing);
-      if (filing.corp_id) {
-        markAsRead(filing.corp_id);
+      if (filing.corp_id && token) {
+        // Optimistically mark as read locally
         setReadIds((prev) => new Set(prev).add(filing.corp_id));
+        // Mark as read on the server (fire-and-forget)
+        markFilingsRead(token, [filing.corp_id]).catch(() => {});
       }
     },
-    []
+    [token]
   );
 
   const handleCategoryFilter = useCallback(
@@ -199,13 +248,34 @@ export default function MarketFeedPage() {
       ? "All Watchlists"
       : watchlists.find((w) => w._id === selectedWatchlist)?.watchlistName ?? "Watchlist";
 
+  // Count active filters for mobile badge
+  const activeFilterCount =
+    (selectedCategories.length > 0 ? 1 : 0) +
+    (selectedCompanies.length > 0 ? 1 : 0) +
+    (selectedSentiments.length > 0 ? 1 : 0) +
+    (watchlistOnly ? 1 : 0);
+
+  // Date filter state
+  const startDate = filters?.start_date ? new Date(filters.start_date) : null;
+  const endDate = filters?.end_date ? new Date(filters.end_date) : null;
+  const dateLabel = startDate ? format(startDate, "d MMM") : format(new Date(), "d MMM");
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <div className="px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div className="flex items-center gap-2">
+          {/* Mobile back button when viewing detail */}
+          {selectedFiling && (
+            <button
+              onClick={() => setSelectedFiling(null)}
+              className="md:hidden p-1 -ml-1 mr-1 text-gray-500 hover:text-gray-900 transition"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          )}
           <Radio size={18} className="text-orange-500" />
-          <h1 className="text-lg font-bold text-gray-900">
+          <h1 className="text-base md:text-lg font-bold text-gray-900">
             {activeCategoryLabel || "Live Market Feed"}
           </h1>
           {activeCategoryLabel && (
@@ -221,7 +291,7 @@ export default function MarketFeedPage() {
             {totalCount.toLocaleString()} announcements
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3 flex-wrap">
           {/* Watchlist filter dropdown */}
           <div className="relative">
             <button
@@ -234,7 +304,7 @@ export default function MarketFeedPage() {
             {wlOpen && (
               <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1">
                 <button
-                  onClick={() => { setSelectedWatchlist("none"); setWlOpen(false); }}
+                  onClick={() => { setSelectedWatchlistId(null); setWatchlistOnly(false); setWlOpen(false); }}
                   className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${
                     selectedWatchlist === "none" ? "text-orange-600 font-medium" : "text-gray-700"
                   }`}
@@ -242,7 +312,7 @@ export default function MarketFeedPage() {
                   No Filter
                 </button>
                 <button
-                  onClick={() => { setSelectedWatchlist("all"); setWlOpen(false); }}
+                  onClick={() => { setSelectedWatchlistId(null); setWatchlistOnly(true); setWlOpen(false); }}
                   className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${
                     selectedWatchlist === "all" ? "text-orange-600 font-medium" : "text-gray-700"
                   }`}
@@ -252,7 +322,7 @@ export default function MarketFeedPage() {
                 {watchlists.map((wl) => (
                   <button
                     key={wl._id}
-                    onClick={() => { setSelectedWatchlist(wl._id); setWlOpen(false); }}
+                    onClick={() => { setSelectedWatchlistId(wl._id); setWatchlistOnly(true); setWlOpen(false); }}
                     className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${
                       selectedWatchlist === wl._id ? "text-orange-600 font-medium" : "text-gray-700"
                     }`}
@@ -299,7 +369,7 @@ export default function MarketFeedPage() {
             <RefreshCcw size={14} />
             Refresh
           </button>
-          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+          <label className="hidden md:flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
             <input
               type="checkbox"
               checked={autoRefresh}
@@ -313,7 +383,8 @@ export default function MarketFeedPage() {
 
       {/* Content */}
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-[420px] shrink-0 border-r border-gray-100 flex flex-col overflow-hidden relative">
+        {/* List panel - full width on mobile, fixed width on desktop */}
+        <div className={`w-full md:w-[420px] md:shrink-0 border-r border-gray-100 flex flex-col overflow-hidden relative ${selectedFiling ? "hidden md:flex" : "flex"}`}>
           {/* Floating new announcement pill */}
           {newCount > 0 && (
             <button
@@ -325,7 +396,7 @@ export default function MarketFeedPage() {
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
               </span>
               {newCount} new {newCount > 1 ? "announcements" : "announcement"}
-              <span className="text-gray-400">↑</span>
+              <span className="text-gray-400">&uarr;</span>
             </button>
           )}
           <AnnouncementList
@@ -339,7 +410,8 @@ export default function MarketFeedPage() {
             readIds={readIds}
           />
         </div>
-        <div className="flex-1 overflow-hidden">
+        {/* Detail panel - full width on mobile, flex-1 on desktop */}
+        <div className={`flex-1 overflow-hidden ${selectedFiling ? "flex flex-col" : "hidden md:flex md:flex-col"}`}>
           {selectedFiling ? (
             <AnnouncementDetail filing={selectedFiling} onCategoryFilter={handleCategoryFilter} />
           ) : (

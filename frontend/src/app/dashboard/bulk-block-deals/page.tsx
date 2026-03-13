@@ -68,17 +68,17 @@ export default function BulkBlockDealsPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white">
+      <div className="px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-white">
         <div className="flex items-center gap-2">
           <Layers size={18} className="text-emerald-500" />
-          <h1 className="text-lg font-bold text-gray-900">
+          <h1 className="text-base md:text-lg font-bold text-gray-900">
             Bulk & Block Deals
           </h1>
           <span className="text-xs text-gray-400 ml-2">
             {totalCount.toLocaleString()} deals
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3 flex-wrap">
           {/* Deal type filter */}
           <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
             {["", "BULK", "BLOCK"].map((d) => (
@@ -137,7 +137,8 @@ export default function BulkBlockDealsPage() {
             No deals found for today
           </div>
         ) : (
-          <table className="w-full text-[13px]">
+          <div className="overflow-x-auto">
+          <table className="w-full text-[13px] min-w-[700px]">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
                 <th className="text-left px-5 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
@@ -220,6 +221,7 @@ export default function BulkBlockDealsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         {hasNext && !loading && (
           <div className="p-4 text-center border-t border-gray-50">

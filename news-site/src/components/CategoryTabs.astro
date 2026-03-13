@@ -1,0 +1,40 @@
+---
+import { categoryToSlug, CATEGORIES } from "../lib/api";
+
+interface Props {
+  active?: string;
+}
+
+const { active } = Astro.props;
+---
+
+<div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+  <a
+    href="/"
+    class:list={[
+      "flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors",
+      !active
+        ? "bg-accent text-white"
+        : "bg-surface text-muted hover:text-foreground hover:bg-gray-100",
+    ]}
+  >
+    All
+  </a>
+  {CATEGORIES.map((cat) => {
+    const slug = categoryToSlug(cat);
+    const isActive = active === cat;
+    return (
+      <a
+        href={`/${slug}/`}
+        class:list={[
+          "flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap",
+          isActive
+            ? "bg-accent text-white"
+            : "bg-surface text-muted hover:text-foreground hover:bg-gray-100",
+        ]}
+      >
+        {cat}
+      </a>
+    );
+  })}
+</div>

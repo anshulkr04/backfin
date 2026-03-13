@@ -43,6 +43,11 @@ body {
   animation: fade-in 0.4s ease-out both;
 }
 
+/* Safe-area for iOS bottom bar */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 /* Auth page dot progress fill */
 @keyframes dot-fill {
   from { transform: scaleX(0); }

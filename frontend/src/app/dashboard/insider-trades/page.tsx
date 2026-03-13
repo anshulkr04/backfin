@@ -9,6 +9,7 @@ import {
   RefreshCcw,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowLeft,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { InlineDatePicker } from "@/components/inline-date-picker";
@@ -79,15 +80,23 @@ export default function InsiderTradesPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white">
+      <div className="px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-white">
         <div className="flex items-center gap-2">
+          {selected && (
+            <button
+              onClick={() => setSelected(null)}
+              className="md:hidden p-1 -ml-1 mr-1 text-gray-500 hover:text-gray-900 transition"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          )}
           <UserCheck size={18} className="text-purple-500" />
-          <h1 className="text-lg font-bold text-gray-900">Insider Trades</h1>
+          <h1 className="text-base md:text-lg font-bold text-gray-900">Insider Trades</h1>
           <span className="text-xs text-gray-400 ml-2">
             {totalCount.toLocaleString()} trades
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3 flex-wrap">
           <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
             {["", "NSE", "BSE"].map((ex) => (
               <button
@@ -121,7 +130,7 @@ export default function InsiderTradesPage() {
       {/* Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* List */}
-        <div className="w-[440px] shrink-0 border-r border-gray-100 overflow-y-auto">
+        <div className={`w-full md:w-[440px] md:shrink-0 border-r border-gray-100 overflow-y-auto ${selected ? "hidden md:block" : "block"}`}>
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
@@ -202,9 +211,9 @@ export default function InsiderTradesPage() {
         </div>
 
         {/* Detail */}
-        <div className="flex-1 overflow-y-auto">
+        <div className={`flex-1 overflow-y-auto ${selected ? "block" : "hidden md:block"}`}>
           {selected ? (
-            <div className="p-8">
+            <div className="p-4 md:p-8">
               <h2 className="text-lg font-bold text-gray-900 mb-1">
                 {selected.sec_name || selected.symbol}
               </h2>
