@@ -6,7 +6,7 @@
 -- 1. user_read_filings table — tracks which filings each user has read
 -- ============================================================
 CREATE TABLE IF NOT EXISTS user_read_filings (
-    user_id TEXT NOT NULL,
+    user_id UUID NOT NULL,
     corp_id TEXT NOT NULL,
     read_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (user_id, corp_id)
@@ -73,7 +73,7 @@ BEGIN
     INTO v_total_count
     FROM corporatefilings cf
     LEFT JOIN user_read_filings urf
-        ON urf.corp_id = cf.corp_id AND urf.user_id = p_user_id
+        ON urf.corp_id = cf.corp_id AND urf.user_id = p_user_id::uuid
     WHERE
         -- Date filters (TEXT comparison — ISO 8601 strings sort lexicographically)
         (v_start_iso IS NULL OR cf.date >= v_start_iso)
@@ -92,7 +92,7 @@ BEGIN
             OR cf.isin IN (
                 SELECT DISTINCT w.isin
                 FROM watchlistdata w
-                WHERE w.userid = p_user_id AND w.isin IS NOT NULL
+                WHERE w.userid = p_user_id::uuid AND w.isin IS NOT NULL
             )
         )
         -- Market cap filter
@@ -106,7 +106,7 @@ BEGIN
                     OR ('small' = ANY(p_marketcap) AND s.market_cap >= 500 AND s.market_cap < 5000)
                     OR ('micro' = ANY(p_marketcap) AND s.market_cap >= 100 AND s.market_cap < 500)
                     OR ('nano' = ANY(p_marketcap) AND s.market_cap < 100)
-            )
+                )
         )
         -- Duplicate filter
         AND (p_include_duplicates OR cf.is_duplicate IS NOT TRUE)
@@ -158,7 +158,7 @@ BEGIN
         ) AS filing
         FROM corporatefilings cf
         LEFT JOIN user_read_filings urf
-            ON urf.corp_id = cf.corp_id AND urf.user_id = p_user_id
+            ON urf.corp_id = cf.corp_id AND urf.user_id = p_user_id::uuid
         WHERE
             (v_start_iso IS NULL OR cf.date >= v_start_iso)
             AND (v_end_iso IS NULL OR cf.date <= v_end_iso)
@@ -172,7 +172,7 @@ BEGIN
                 OR cf.isin IN (
                     SELECT DISTINCT w.isin
                     FROM watchlistdata w
-                    WHERE w.userid = p_user_id AND w.isin IS NOT NULL
+                    WHERE w.userid = p_user_id::uuid AND w.isin IS NOT NULL
                 )
             )
             AND (

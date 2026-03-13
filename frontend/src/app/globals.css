@@ -53,3 +53,33 @@ body {
   from { transform: scaleX(0); }
   to { transform: scaleX(1); }
 }
+
+/* Mobile touch & scroll improvements */
+@media (max-width: 767px) {
+  /* Prevent pull-to-refresh on scrollable areas */
+  html {
+    overscroll-behavior-y: contain;
+  }
+
+  /* Smoother momentum scrolling on iOS */
+  .overflow-y-auto,
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent text size adjustment on orientation change */
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* Larger touch targets for interactive elements */
+  button, a, [role="button"] {
+    min-height: 36px;
+  }
+
+  /* Remove tap highlight on mobile */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
