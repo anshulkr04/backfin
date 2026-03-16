@@ -5,12 +5,11 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import {
   getCorporateFilings,
-  getWatchlists,
   type Filing,
-  type Watchlist,
+  type FilingsParams,
 } from "@/lib/api";
 import { format, parseISO } from "date-fns";
-import { Settings, ChevronDown, X } from "lucide-react";
+import { Settings, X } from "lucide-react";
 import Link from "next/link";
 import { AnnouncementDetail } from "@/components/announcement-detail-new";
 
@@ -28,19 +27,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const [filings, setFilings] = useState<Filing[]>([]);
   const [loading, setLoading] = useState(true);
-  const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
-  const [selectedWatchlist, setSelectedWatchlist] = useState("all");
-  const [wlOpen, setWlOpen] = useState(false);
   const [selectedFiling, setSelectedFiling] = useState<Filing | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-
-  // Fetch watchlists once on mount
-  useEffect(() => {
-    if (!token) return;
-    getWatchlists(token)
-      .then((res) => setWatchlists(res.watchlists ?? []))
-      .catch(() => {});
-  }, [token]);
 
   const fetchFilings = useCallback(async () => {
     if (!token) return;
@@ -48,93 +36,33 @@ export default function DashboardPage() {
     try {
       const today = new Date().toISOString().slice(0, 10);
 
-      // Build params with watchlist filter
-      const params: Record<string, any> = {
+      // Build params with server-side watchlist filter
+      const params: FilingsParams = {
         page: 1,
         page_size: 8,
         start_date: today,
         end_date: today,
+        watchlist: true,
       };
 
-      if (selectedWatchlist === "all") {
-        const allIsins = watchlists.flatMap((w) => w.isin ?? []);
-        if (allIsins.length > 0) {
-          params.isin = allIsins.join(",");
-        }
-      } else {
-        // Specific watchlist — pass its ISINs
-        const wl = watchlists.find((w) => w._id === selectedWatchlist);
-        if (wl?.isin?.length) {
-          params.isin = wl.isin.join(",");
-        }
-      }
-
-      const filRes = await getCorporateFilings(params);
+      const filRes = await getCorporateFilings(params, token);
       setFilings(filRes.filings.slice(0, 8));
     } catch (err) {
       console.error("Failed to fetch:", err);
     } finally {
       setLoading(false);
     }
-  }, [token, selectedWatchlist, watchlists]);
+  }, [token]);
 
   useEffect(() => {
     fetchFilings();
   }, [fetchFilings]);
 
-  const wlLabel =
-    selectedWatchlist === "all"
-      ? "All Watchlists"
-      : watchlists.find((w) => w._id === selectedWatchlist)?.watchlistName ??
-        "All Watchlists";
-
   return (
     <div className="h-full overflow-y-auto bg-gray-50/50">
       {/* Top bar */}
       <div className="px-4 md:px-6 py-3 md:py-4 flex items-center justify-between bg-white border-b border-gray-100">
-        {/* Watchlist selector */}
-        <div className="relative">
-          <button
-            onClick={() => setWlOpen(!wlOpen)}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
-          >
-            {wlLabel}
-            <ChevronDown size={14} className="text-gray-400" />
-          </button>
-          {wlOpen && (
-            <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1">
-              <button
-                onClick={() => {
-                  setSelectedWatchlist("all");
-                  setWlOpen(false);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${
-                  selectedWatchlist === "all"
-                    ? "text-orange-600 font-medium"
-                    : "text-gray-700"
-                }`}
-              >
-                All Watchlists
-              </button>
-              {watchlists.map((wl) => (
-                <button
-                  key={wl._id}
-                  onClick={() => {
-                    setSelectedWatchlist(wl._id);
-                    setWlOpen(false);
-                  }}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${
-                    selectedWatchlist === wl._id
-                      ? "text-orange-600 font-medium"
-                      : "text-gray-700"
-                  }`}
-                >
-                  {wl.watchlistName}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <h2 className="text-sm font-bold text-gray-900">Watchlist Feed</h2>
 
         <button
           onClick={() => router.push("/dashboard/watchlists")}

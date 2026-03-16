@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/lib/auth";
-import { getCorporateFilings, getWatchlists, type Filing, FilingsParams, Watchlist } from "@/lib/api";
+import { getCorporateFilings, getWatchlists, markFilingsRead, getReadStatus, type Filing, FilingsParams, Watchlist } from "@/lib/api";
 import { AnnouncementList } from "@/components/announcement-list-new";
 import { AnnouncementDetail } from "@/components/announcement-detail-new";
-import { Radio, RefreshCcw, X, ChevronDown, ArrowLeft, SlidersHorizontal, ChevronRight, Calendar, Building2, Tag, TrendingUp, List } from "lucide-react";
+import { Radio, RefreshCcw, X, ArrowLeft, SlidersHorizontal, ChevronRight, Calendar, Building2, Tag, TrendingUp, List } from "lucide-react";
 import { useFilterStore } from "@/lib/filter-store";
 import { useMobileDetailStore } from "@/lib/mobile-detail-store";
 import { useNewAnnouncementSocket } from "@/lib/use-socket";
@@ -47,7 +47,7 @@ export default function MarketFeedPage() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [activeCategoryLabel, setActiveCategoryLabel] = useState<string | null>(null);
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
-  const [wlOpen, setWlOpen] = useState(false);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
   // Mobile filter sheet
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
@@ -57,11 +57,6 @@ export default function MarketFeedPage() {
   const [companyOpen, setCompanyOpen] = useState(false);
   const [sentimentOpen, setSentimentOpen] = useState(false);
   const [watchlistFilterOpen, setWatchlistFilterOpen] = useState(false);
-
-  // Derive selectedWatchlist from filter store
-  const selectedWatchlist = watchlistOnly
-    ? (selectedWatchlistId ?? "all")
-    : "none";
 
   // Load watchlists
   useEffect(() => {
@@ -126,28 +121,17 @@ export default function MarketFeedPage() {
           params.category = selectedCategories.join(",");
         }
         if (selectedCompanies.length > 0) {
-          // selectedCompanies now contains ISINs from company filter
           const existingIsins = params.isin ? params.isin.split(",") : [];
           const allIsins = [...new Set([...existingIsins, ...selectedCompanies])];
           params.isin = allIsins.join(",");
         }
 
-        // Watchlist filter — resolve to ISINs client-side
-        if (selectedWatchlist === "all") {
-          const allIsins = watchlists.flatMap((w) => w.isin ?? []);
-          if (allIsins.length > 0) {
-            const existingIsins = params.isin ? params.isin.split(",") : [];
-            params.isin = [...new Set([...existingIsins, ...allIsins])].join(",");
-          }
-        } else if (selectedWatchlist !== "none") {
-          // Specific watchlist — pass its ISINs
-          const wl = watchlists.find((w) => w._id === selectedWatchlist);
-          if (wl?.isin?.length) {
-            params.isin = wl.isin.join(",");
-          }
+        // Watchlist filter — use server-side V2 watchlist param
+        if (watchlistOnly) {
+          params.watchlist = true;
         }
 
-        const res = await getCorporateFilings(params);
+        const res = await getCorporateFilings(params, token);
         const newFilings = applyClientFilters(res.filings ?? []);
 
         if (append) {
@@ -158,6 +142,22 @@ export default function MarketFeedPage() {
         setTotalCount(res.total_count ?? 0);
         setCurrentPage(res.current_page);
         setHasNext(res.has_next);
+
+        // Fetch read status for the returned filings
+        const corpIds = newFilings.map((f) => f.corp_id);
+        if (corpIds.length > 0) {
+          try {
+            const statusRes = await getReadStatus(token, corpIds);
+            const newReadIds = new Set(statusRes.read_corp_ids ?? []);
+            if (append) {
+              setReadIds((prev) => new Set([...prev, ...newReadIds]));
+            } else {
+              setReadIds(newReadIds);
+            }
+          } catch {
+            // Read status is non-critical
+          }
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -165,7 +165,7 @@ export default function MarketFeedPage() {
         setLoadingMore(false);
       }
     },
-    [token, filters, selectedCategories, selectedCompanies, selectedWatchlistId, watchlistOnly, watchlists, applyClientFilters]
+    [token, filters, selectedCategories, selectedCompanies, selectedWatchlistId, watchlistOnly, applyClientFilters]
   );
 
   // Reset & fetch when filters change
@@ -202,8 +202,14 @@ export default function MarketFeedPage() {
   const handleSelectFiling = useCallback(
     (filing: Filing) => {
       setSelectedFiling(filing);
+      // Mark as read
+      if (token && !readIds.has(filing.corp_id)) {
+        markFilingsRead(token, [filing.corp_id])
+          .then(() => setReadIds((prev) => new Set([...prev, filing.corp_id])))
+          .catch(() => {});
+      }
     },
-    []
+    [token, readIds]
   );
 
   const handleCategoryFilter = useCallback(
@@ -219,13 +225,6 @@ export default function MarketFeedPage() {
     setSelectedCategories([]);
     setActiveCategoryLabel(null);
   }, [setSelectedCategories]);
-
-  const wlLabel =
-    selectedWatchlist === "none"
-      ? "No Filter"
-      : selectedWatchlist === "all"
-      ? "All Watchlists"
-      : watchlists.find((w) => w._id === selectedWatchlist)?.watchlistName ?? "Watchlist";
 
   // Count active filters for mobile badge
   const activeFilterCount =
@@ -291,48 +290,7 @@ export default function MarketFeedPage() {
             )}
           </button>
 
-          {/* Watchlist filter dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setWlOpen(!wlOpen)}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 transition"
-            >
-              {wlLabel}
-              <ChevronDown size={12} className="text-gray-400" />
-            </button>
-            {wlOpen && (
-              <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1">
-                <button
-                  onClick={() => { setSelectedWatchlistId(null); setWatchlistOnly(false); setWlOpen(false); }}
-                  className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${
-                    selectedWatchlist === "none" ? "text-orange-600 font-medium" : "text-gray-700"
-                  }`}
-                >
-                  No Filter
-                </button>
-                <button
-                  onClick={() => { setSelectedWatchlistId(null); setWatchlistOnly(true); setWlOpen(false); }}
-                  className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${
-                    selectedWatchlist === "all" ? "text-orange-600 font-medium" : "text-gray-700"
-                  }`}
-                >
-                  All Watchlists
-                </button>
-                {watchlists.map((wl) => (
-                  <button
-                    key={wl._id}
-                    onClick={() => { setSelectedWatchlistId(wl._id); setWatchlistOnly(true); setWlOpen(false); }}
-                    className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${
-                      selectedWatchlist === wl._id ? "text-orange-600 font-medium" : "text-gray-700"
-                    }`}
-                  >
-                    {wl.watchlistName}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
+          {/* Refresh & auto-refresh */}
           <button
             onClick={() => {
               setFilings([]);
@@ -382,6 +340,7 @@ export default function MarketFeedPage() {
             hasNext={hasNext}
             onLoadMore={handleLoadMore}
             loadingMore={loadingMore}
+            readIds={readIds}
           />
         </div>
         {/* Detail panel - full width on mobile, flex-1 on desktop */}

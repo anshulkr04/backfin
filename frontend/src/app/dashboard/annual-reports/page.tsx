@@ -32,7 +32,7 @@ export default function AnnualReportsPage() {
           end_date: today,
           category: "Annual Report",
           page: p,
-        });
+        }, token);
         if (append) {
           setFilings((prev) => [...prev, ...(res.filings ?? [])]);
         } else {

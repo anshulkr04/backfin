@@ -32,7 +32,7 @@ export default function InvestorPresentationsPage() {
           end_date: today,
           category: "Investor Presentation",
           page: p,
-        });
+        }, token);
         if (append) {
           setFilings((prev) => [...prev, ...(res.filings ?? [])]);
         } else {

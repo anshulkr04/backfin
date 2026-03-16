@@ -2475,13 +2475,16 @@ def get_corporate_filings_v2(current_user):
     """
     Authenticated corporate filings endpoint with advanced filters.
 
-    Query Parameters:
-        - start_date (str): Start date (YYYY-MM-DD)
-        - end_date (str): End date (YYYY-MM-DD)
-        - category (str): Comma-separated category list
-        - symbol (str): Comma-separated symbol list
-        - isin (str): Comma-separated ISIN list
-        - watchlist (bool): If true, only show filings for user's watchlist ISINs (default: false)
+    Uses Supabase RPC function for reliable type handling and server-side
+    filtering (watchlist, read/unread, marketcap, duplicates).
+
+    Query params:
+        - start_date (str): YYYY-MM-DD
+        - end_date (str): YYYY-MM-DD
+        - category (str): Comma-separated list of categories
+        - symbol (str): Comma-separated list of symbols
+        - isin (str): Comma-separated list of ISINs
+        - watchlist (bool): Show only watchlist companies (default: false)
         - read_filter (str): 'all' | 'read' | 'unread' (default: 'all')
         - marketcap (str): Comma-separated list of: large,mid,small,micro,nano
         - include_duplicates (bool): Include duplicate filings (default: false)
@@ -2545,9 +2548,9 @@ def get_corporate_filings_v2(current_user):
             f"sym={symbol_list}, isin={isin_list}, page={page}/{page_size}"
         )
 
-        # Call the RPC function
+        # Call the Supabase RPC function
         rpc_params = {
-            "p_user_id": user_id,
+            "p_user_id": str(user_id),
             "p_start_date": start_date,
             "p_end_date": end_date,
             "p_categories": category_list,
@@ -2563,32 +2566,19 @@ def get_corporate_filings_v2(current_user):
 
         response = supabase.rpc("get_corporate_filings_v2", rpc_params).execute()
 
-        if not response.data:
-            logger.warning("V2 filings RPC returned empty/null data")
-            return jsonify(
-                {
-                    "count": 0,
-                    "total_count": 0,
-                    "total_pages": 0,
-                    "current_page": page,
-                    "page_size": page_size,
-                    "has_next": False,
-                    "has_previous": False,
-                    "filings": [],
-                }
-            ), 200
-
         result = response.data
-        # Supabase RPC with RETURNS JSONB returns the JSONB value directly.
-        # Handle case where it might be wrapped in an array by some client versions.
+        # Supabase RPC with RETURNS JSONB returns the value directly.
+        # Handle case where it might be wrapped in an array.
         if (
             isinstance(result, list)
             and len(result) == 1
             and isinstance(result[0], dict)
         ):
             result = result[0]
+
         logger.info(
-            f"V2 filings RPC returned: count={result.get('count', '?')}, total={result.get('total_count', '?')}"
+            f"V2 filings RPC returned: count={result.get('count', '?')}, "
+            f"total={result.get('total_count', '?')}"
         )
         return jsonify(result), 200
 
@@ -2607,7 +2597,7 @@ def get_corporate_filings_v2(current_user):
                 "has_next": False,
                 "has_previous": False,
                 "filings": [],
-                "error": "Server error",
+                "error": str(e),
             }
         ), 200
 

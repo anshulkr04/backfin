@@ -32,7 +32,7 @@ export default function ConcallTranscriptsPage() {
           end_date: today,
           category: "Concall Transcript",
           page: p,
-        });
+        }, token);
         if (append) {
           setFilings((prev) => [...prev, ...(res.filings ?? [])]);
         } else {
