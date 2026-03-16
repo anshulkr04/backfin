@@ -2610,7 +2610,7 @@ def get_filing_by_id_v2(current_user, corp_id):
         return _handle_options()
 
     try:
-        user_id = current_user["UserID"]
+        user_id = str(current_user["UserID"])
 
         if not supabase_connected:
             return jsonify({"message": "Database service unavailable."}), 503
@@ -2668,7 +2668,7 @@ def mark_filings_read(current_user):
         return _handle_options()
 
     try:
-        user_id = current_user["UserID"]
+        user_id = str(current_user["UserID"])
         data = request.get_json()
 
         if not data or "corp_ids" not in data:
@@ -2685,7 +2685,7 @@ def mark_filings_read(current_user):
             return jsonify({"message": "Database service unavailable."}), 503
 
         # Upsert read records (on conflict do nothing — already read)
-        rows = [{"user_id": user_id, "corp_id": cid} for cid in corp_ids]
+        rows = [{"user_id": user_id, "corp_id": str(cid)} for cid in corp_ids]
         supabase.table("user_read_filings").upsert(
             rows, on_conflict="user_id,corp_id"
         ).execute()
@@ -2717,7 +2717,7 @@ def mark_filings_unread(current_user):
         return _handle_options()
 
     try:
-        user_id = current_user["UserID"]
+        user_id = str(current_user["UserID"])
         data = request.get_json()
 
         if not data or "corp_ids" not in data:
@@ -2732,7 +2732,7 @@ def mark_filings_unread(current_user):
 
         # Delete read records
         supabase.table("user_read_filings").delete().eq("user_id", user_id).in_(
-            "corp_id", corp_ids
+            "corp_id", [str(c) for c in corp_ids]
         ).execute()
 
         logger.info(f"User {user_id} marked {len(corp_ids)} filings as unread")
@@ -2766,7 +2766,7 @@ def get_read_status(current_user):
         return _handle_options()
 
     try:
-        user_id = current_user["UserID"]
+        user_id = str(current_user["UserID"])
         data = request.get_json()
 
         if not data or "corp_ids" not in data:
@@ -2783,7 +2783,7 @@ def get_read_status(current_user):
             supabase.table("user_read_filings")
             .select("corp_id")
             .eq("user_id", user_id)
-            .in_("corp_id", corp_ids)
+            .in_("corp_id", [str(c) for c in corp_ids])
             .execute()
         )
 

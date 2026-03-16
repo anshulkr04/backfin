@@ -1,6 +1,23 @@
 -- Migration: V2 Corporate Filings RPC (Fixed)
 -- Fixes UUID/TEXT type mismatches, improves reliability
 -- Run this in the Supabase SQL Editor
+--
+-- TYPE MAP (from actual schema):
+--   UserData.UserID           = UUID
+--   corporatefilings.corp_id  = UUID
+--   user_read_filings.user_id = TEXT   ← stores UUID as string
+--   user_read_filings.corp_id = TEXT   ← stores UUID as string
+--   watchlistdata.userid      = UUID
+--   watchlistnamedata.userid  = TEXT
+--   stocklistdata.isin        = TEXT
+--   corporatefilings.isin     = TEXT
+--   investorCorp.corp_id      = UUID
+--
+-- Key casts needed:
+--   JOIN user_read_filings.corp_id (TEXT) = corporatefilings.corp_id (UUID)
+--     → use: urf.corp_id = cf.corp_id::text
+--   WHERE watchlistdata.userid (UUID) = p_user_id (TEXT)
+--     → use: w.userid = p_user_id::uuid
 
 -- ============================================================
 -- 1. user_read_filings table (idempotent)
@@ -43,11 +60,8 @@ BEGIN
         AND column_name = 'user_id'
         AND data_type = 'uuid'
     ) THEN
-        -- Drop the primary key first
         ALTER TABLE user_read_filings DROP CONSTRAINT IF EXISTS user_read_filings_pkey;
-        -- Change column type
         ALTER TABLE user_read_filings ALTER COLUMN user_id TYPE TEXT USING user_id::text;
-        -- Re-add primary key
         ALTER TABLE user_read_filings ADD PRIMARY KEY (user_id, corp_id);
         RAISE NOTICE 'Migrated user_read_filings.user_id from UUID to TEXT';
     END IF;
@@ -83,8 +97,10 @@ DECLARE
     v_filings JSONB;
     v_start_iso TEXT;
     v_end_iso TEXT;
+    v_effective_page_size INTEGER;
 BEGIN
-    v_offset := (GREATEST(p_page, 1) - 1) * LEAST(GREATEST(p_page_size, 1), 100);
+    v_effective_page_size := LEAST(GREATEST(p_page_size, 1), 100);
+    v_offset := (GREATEST(p_page, 1) - 1) * v_effective_page_size;
 
     -- Build ISO date strings (cf.date is TEXT in ISO 8601 format)
     IF p_start_date IS NOT NULL AND p_start_date != '' THEN
@@ -95,33 +111,29 @@ BEGIN
     END IF;
 
     -- Count matching filings
+    -- NOTE: urf.corp_id is TEXT, cf.corp_id is UUID → cast with ::text
+    -- NOTE: w.userid is UUID, p_user_id is TEXT → cast with ::uuid
     SELECT COUNT(*)
     INTO v_total_count
     FROM corporatefilings cf
     LEFT JOIN user_read_filings urf
-        ON urf.corp_id = cf.corp_id AND urf.user_id = p_user_id
+        ON urf.corp_id = cf.corp_id::text AND urf.user_id = p_user_id
     WHERE
-        -- Date filters
         (v_start_iso IS NULL OR cf.date >= v_start_iso)
         AND (v_end_iso IS NULL OR cf.date <= v_end_iso)
-        -- Category
         AND (p_categories IS NULL OR cf.category = ANY(p_categories))
         AND (p_categories IS NOT NULL OR cf.category IS DISTINCT FROM 'Procedural/Administrative')
         AND cf.category IS DISTINCT FROM 'Error'
-        -- Symbol
         AND (p_symbols IS NULL OR cf.symbol = ANY(p_symbols))
-        -- ISIN
         AND (p_isins IS NULL OR cf.isin = ANY(p_isins))
-        -- Watchlist (compare as TEXT)
         AND (
             NOT p_watchlist_only
             OR cf.isin IN (
                 SELECT DISTINCT w.isin
                 FROM watchlistdata w
-                WHERE w.userid::text = p_user_id AND w.isin IS NOT NULL
+                WHERE w.userid = p_user_id::uuid AND w.isin IS NOT NULL
             )
         )
-        -- Market cap
         AND (
             p_marketcap IS NULL
             OR cf.isin IN (
@@ -134,16 +146,14 @@ BEGIN
                     OR ('nano' = ANY(p_marketcap) AND s.market_cap < 100)
             )
         )
-        -- Duplicates
         AND (p_include_duplicates OR cf.is_duplicate IS NOT TRUE)
-        -- Read/unread
         AND (
             p_read_filter = 'all'
             OR (p_read_filter = 'read' AND urf.corp_id IS NOT NULL)
             OR (p_read_filter = 'unread' AND urf.corp_id IS NULL)
         );
 
-    v_total_pages := GREATEST(1, CEIL(v_total_count::FLOAT / LEAST(GREATEST(p_page_size, 1), 100))::INTEGER);
+    v_total_pages := GREATEST(1, CEIL(v_total_count::FLOAT / v_effective_page_size)::INTEGER);
 
     -- Fetch paginated filings with investorCorp
     SELECT COALESCE(jsonb_agg(filing ORDER BY (filing->>'date') DESC), '[]'::jsonb)
@@ -184,7 +194,7 @@ BEGIN
         ) AS filing
         FROM corporatefilings cf
         LEFT JOIN user_read_filings urf
-            ON urf.corp_id = cf.corp_id AND urf.user_id = p_user_id
+            ON urf.corp_id = cf.corp_id::text AND urf.user_id = p_user_id
         WHERE
             (v_start_iso IS NULL OR cf.date >= v_start_iso)
             AND (v_end_iso IS NULL OR cf.date <= v_end_iso)
@@ -198,7 +208,7 @@ BEGIN
                 OR cf.isin IN (
                     SELECT DISTINCT w.isin
                     FROM watchlistdata w
-                    WHERE w.userid::text = p_user_id AND w.isin IS NOT NULL
+                    WHERE w.userid = p_user_id::uuid AND w.isin IS NOT NULL
                 )
             )
             AND (
@@ -220,7 +230,7 @@ BEGIN
                 OR (p_read_filter = 'unread' AND urf.corp_id IS NULL)
             )
         ORDER BY cf.date DESC
-        LIMIT LEAST(GREATEST(p_page_size, 1), 100)
+        LIMIT v_effective_page_size
         OFFSET v_offset
     ) sub;
 
@@ -229,7 +239,7 @@ BEGIN
         'total_count', v_total_count,
         'total_pages', v_total_pages,
         'current_page', GREATEST(p_page, 1),
-        'page_size', LEAST(GREATEST(p_page_size, 1), 100),
+        'page_size', v_effective_page_size,
         'has_next', GREATEST(p_page, 1) < v_total_pages,
         'has_previous', GREATEST(p_page, 1) > 1,
         'count', jsonb_array_length(v_filings)
