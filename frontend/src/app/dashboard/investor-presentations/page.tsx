@@ -7,6 +7,7 @@ import type { Filing } from "@/lib/api";
 import { AnnouncementList } from "@/components/announcement-list-new";
 import { AnnouncementDetail } from "@/components/announcement-detail-new";
 import { Presentation, RefreshCcw, ArrowLeft } from "lucide-react";
+import { FeedNavStrip } from "@/components/feed-nav-strip";
 
 export default function InvestorPresentationsPage() {
   const { token } = useAuth();
@@ -26,7 +27,7 @@ export default function InvestorPresentationsPage() {
       if (append) setLoadingMore(true);
       else setLoading(true);
       try {
-        const res = await getCorporateFilings(token, {
+        const res = await getCorporateFilings({
           start_date: today,
           end_date: today,
           category: "Investor Presentation",
@@ -56,6 +57,7 @@ export default function InvestorPresentationsPage() {
 
   return (
     <div className="flex flex-col h-full">
+      <FeedNavStrip />
       <div className="px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 flex items-center justify-between bg-white">
         <div className="flex items-center gap-2">
           {selected && (

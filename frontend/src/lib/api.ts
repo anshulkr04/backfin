@@ -137,15 +137,9 @@ export interface FilingsParams {
   isin?: string;
   page?: number;
   page_size?: number;
-  watchlist?: boolean;
-  watchlist_id?: string;
-  read_filter?: "all" | "read" | "unread";
-  marketcap?: string;
-  include_duplicates?: boolean;
 }
 
 export async function getCorporateFilings(
-  token: string,
   params: FilingsParams = {}
 ): Promise<FilingsResponse> {
   const qs = new URLSearchParams();
@@ -156,51 +150,12 @@ export async function getCorporateFilings(
   if (params.isin) qs.set("isin", params.isin);
   if (params.page) qs.set("page", String(params.page));
   if (params.page_size) qs.set("page_size", String(params.page_size));
-  if (params.watchlist) qs.set("watchlist", "true");
-  if (params.read_filter && params.read_filter !== "all")
-    qs.set("read_filter", params.read_filter);
-  if (params.marketcap) qs.set("marketcap", params.marketcap);
-  if (params.include_duplicates) qs.set("include_duplicates", "true");
   const q = qs.toString();
-  return request(`/api/v2/corporate_filings${q ? `?${q}` : ""}`, {}, token);
+  return request(`/api/corporate_filings${q ? `?${q}` : ""}`);
 }
 
-export async function getFilingById(corpId: string, token?: string | null): Promise<Filing> {
-  return request(`/api/v2/corporate_filings/${corpId}`, {}, token);
-}
-
-// ─── V2 Read Tracking ───────────────────────────────
-export async function markFilingsRead(
-  token: string,
-  corpIds: string[]
-): Promise<{ message: string; count: number }> {
-  return request(
-    "/api/v2/corporate_filings/mark-read",
-    { method: "POST", body: JSON.stringify({ corp_ids: corpIds }) },
-    token
-  );
-}
-
-export async function markFilingsUnread(
-  token: string,
-  corpIds: string[]
-): Promise<{ message: string; count: number }> {
-  return request(
-    "/api/v2/corporate_filings/mark-unread",
-    { method: "POST", body: JSON.stringify({ corp_ids: corpIds }) },
-    token
-  );
-}
-
-export async function getReadStatus(
-  token: string,
-  corpIds: string[]
-): Promise<{ read_corp_ids: string[] }> {
-  return request(
-    "/api/v2/corporate_filings/read-status",
-    { method: "POST", body: JSON.stringify({ corp_ids: corpIds }) },
-    token
-  );
+export async function getFilingById(corpId: string): Promise<Filing> {
+  return request(`/api/corporate_filings/${corpId}`);
 }
 
 // ─── Company Search ─────────────────────────────────

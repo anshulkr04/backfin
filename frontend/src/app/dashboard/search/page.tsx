@@ -49,7 +49,7 @@ export default function SearchPage() {
     setSelectedFiling(null);
     setLoadingFilings(true);
     try {
-      const res = await getCorporateFilings(token, { symbol: c.newnsecode });
+      const res = await getCorporateFilings({ symbol: c.newnsecode });
       setCompanyFilings(res.filings ?? []);
     } catch {
       setCompanyFilings([]);

@@ -57,7 +57,10 @@ export default function DashboardPage() {
       };
 
       if (selectedWatchlist === "all") {
-        params.watchlist = true;
+        const allIsins = watchlists.flatMap((w) => w.isin ?? []);
+        if (allIsins.length > 0) {
+          params.isin = allIsins.join(",");
+        }
       } else {
         // Specific watchlist — pass its ISINs
         const wl = watchlists.find((w) => w._id === selectedWatchlist);
@@ -66,7 +69,7 @@ export default function DashboardPage() {
         }
       }
 
-      const filRes = await getCorporateFilings(token, params);
+      const filRes = await getCorporateFilings(params);
       setFilings(filRes.filings.slice(0, 8));
     } catch (err) {
       console.error("Failed to fetch:", err);

@@ -2,11 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/lib/auth";
-import { getCorporateFilings, getWatchlists, markFilingsRead } from "@/lib/api";
-import type { Filing, FilingsParams, Watchlist } from "@/lib/api";
+import { getCorporateFilings, getWatchlists, type Filing, FilingsParams, Watchlist } from "@/lib/api";
 import { AnnouncementList } from "@/components/announcement-list-new";
 import { AnnouncementDetail } from "@/components/announcement-detail-new";
-import { Radio, RefreshCcw, X, ChevronDown, ArrowLeft, SlidersHorizontal } from "lucide-react";
+import { Radio, RefreshCcw, X, ChevronDown, ArrowLeft, SlidersHorizontal, ChevronRight, Calendar, Building2, Tag, TrendingUp, List } from "lucide-react";
 import { useFilterStore } from "@/lib/filter-store";
 import { useMobileDetailStore } from "@/lib/mobile-detail-store";
 import { useNewAnnouncementSocket } from "@/lib/use-socket";
@@ -16,6 +15,7 @@ import { CategoryFilterModal } from "@/components/filters/category-filter-modal"
 import { CompanyFilterModal } from "@/components/filters/company-filter-modal";
 import { SentimentFilterModal } from "@/components/filters/sentiment-filter-modal";
 import { WatchlistFilterModal } from "@/components/filters/watchlist-filter-modal";
+import { FeedNavStrip } from "@/components/feed-nav-strip";
 
 export default function MarketFeedPage() {
   const { token } = useAuth();
@@ -45,8 +45,6 @@ export default function MarketFeedPage() {
   const [hasNext, setHasNext] = useState(false);
   const [selectedFiling, setSelectedFiling] = useState<Filing | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
-  const [showUnread, setShowUnread] = useState(false);
-  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [activeCategoryLabel, setActiveCategoryLabel] = useState<string | null>(null);
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [wlOpen, setWlOpen] = useState(false);
@@ -134,9 +132,13 @@ export default function MarketFeedPage() {
           params.isin = allIsins.join(",");
         }
 
-        // Watchlist filter
+        // Watchlist filter — resolve to ISINs client-side
         if (selectedWatchlist === "all") {
-          params.watchlist = true;
+          const allIsins = watchlists.flatMap((w) => w.isin ?? []);
+          if (allIsins.length > 0) {
+            const existingIsins = params.isin ? params.isin.split(",") : [];
+            params.isin = [...new Set([...existingIsins, ...allIsins])].join(",");
+          }
         } else if (selectedWatchlist !== "none") {
           // Specific watchlist — pass its ISINs
           const wl = watchlists.find((w) => w._id === selectedWatchlist);
@@ -145,30 +147,13 @@ export default function MarketFeedPage() {
           }
         }
 
-        // Read/unread filter (server-side via V2)
-        if (showUnread) {
-          params.read_filter = "unread";
-        }
-
-        const res = await getCorporateFilings(token, params);
+        const res = await getCorporateFilings(params);
         const newFilings = applyClientFilters(res.filings ?? []);
-
-        // Build read IDs from server-side is_read flag
-        const newReadIds = new Set<string>();
-        for (const f of newFilings) {
-          if (f.is_read) newReadIds.add(f.corp_id);
-        }
 
         if (append) {
           setFilings((prev) => [...prev, ...newFilings]);
-          setReadIds((prev) => {
-            const merged = new Set(prev);
-            newReadIds.forEach((id) => merged.add(id));
-            return merged;
-          });
         } else {
           setFilings(newFilings);
-          setReadIds(newReadIds);
         }
         setTotalCount(res.total_count ?? 0);
         setCurrentPage(res.current_page);
@@ -180,7 +165,7 @@ export default function MarketFeedPage() {
         setLoadingMore(false);
       }
     },
-    [token, filters, selectedCategories, selectedCompanies, selectedWatchlistId, watchlistOnly, watchlists, showUnread, applyClientFilters]
+    [token, filters, selectedCategories, selectedCompanies, selectedWatchlistId, watchlistOnly, watchlists, applyClientFilters]
   );
 
   // Reset & fetch when filters change
@@ -191,7 +176,7 @@ export default function MarketFeedPage() {
     setCurrentPage(1);
     fetchFilings(1, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, selectedCategories, selectedSentiments, selectedCompanies, selectedWatchlistId, watchlistOnly, showUnread, token]);
+  }, [filters, selectedCategories, selectedSentiments, selectedCompanies, selectedWatchlistId, watchlistOnly, token]);
 
   // Auto-refresh every 60s if enabled
   useEffect(() => {
@@ -217,14 +202,8 @@ export default function MarketFeedPage() {
   const handleSelectFiling = useCallback(
     (filing: Filing) => {
       setSelectedFiling(filing);
-      if (filing.corp_id && token) {
-        // Optimistically mark as read locally
-        setReadIds((prev) => new Set(prev).add(filing.corp_id));
-        // Mark as read on the server (fire-and-forget)
-        markFilingsRead(token, [filing.corp_id]).catch(() => {});
-      }
     },
-    [token]
+    []
   );
 
   const handleCategoryFilter = useCallback(
@@ -260,8 +239,14 @@ export default function MarketFeedPage() {
   const endDate = filters?.end_date ? new Date(filters.end_date) : null;
   const dateLabel = startDate ? format(startDate, "d MMM") : format(new Date(), "d MMM");
 
+  // Has any active date filter?
+  const hasDateFilter = !!(filters?.start_date);
+
   return (
     <div className="flex flex-col h-full">
+      {/* Mobile feed type navigation strip */}
+      <FeedNavStrip />
+
       {/* Header */}
       <div className="px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -287,11 +272,25 @@ export default function MarketFeedPage() {
               <X size={14} />
             </button>
           )}
-          <span className="text-xs text-gray-400 ml-2">
+          <span className="text-xs text-gray-400 ml-2 hidden md:inline">
             {totalCount.toLocaleString()} announcements
           </span>
         </div>
         <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+          {/* Mobile filter trigger button */}
+          <button
+            onClick={() => setMobileFilterOpen(true)}
+            className="md:hidden relative flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 transition"
+          >
+            <SlidersHorizontal size={14} />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-4 h-4 bg-orange-500 text-white text-[10px] font-bold rounded-full">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
           {/* Watchlist filter dropdown */}
           <div className="relative">
             <button
@@ -334,30 +333,6 @@ export default function MarketFeedPage() {
             )}
           </div>
 
-          {/* Read/Unread toggle */}
-          <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-            <button
-              onClick={() => setShowUnread(false)}
-              className={`px-3 py-1.5 text-xs font-medium transition ${
-                !showUnread
-                  ? "bg-gray-900 text-white"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setShowUnread(true)}
-              className={`px-3 py-1.5 text-xs font-medium transition ${
-                showUnread
-                  ? "bg-gray-900 text-white"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Unread
-            </button>
-          </div>
-
           <button
             onClick={() => {
               setFilings([]);
@@ -367,7 +342,7 @@ export default function MarketFeedPage() {
             className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 transition"
           >
             <RefreshCcw size={14} />
-            Refresh
+            <span className="hidden md:inline">Refresh</span>
           </button>
           <label className="hidden md:flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
             <input
@@ -407,7 +382,6 @@ export default function MarketFeedPage() {
             hasNext={hasNext}
             onLoadMore={handleLoadMore}
             loadingMore={loadingMore}
-            readIds={readIds}
           />
         </div>
         {/* Detail panel - full width on mobile, flex-1 on desktop */}
@@ -422,6 +396,193 @@ export default function MarketFeedPage() {
           )}
         </div>
       </div>
+
+      {/* ── Mobile filter bottom sheet ── */}
+      {mobileFilterOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div
+            className="fixed inset-0 bg-black/30"
+            onClick={() => setMobileFilterOpen(false)}
+          />
+          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl safe-area-bottom animate-in slide-in-from-bottom duration-200">
+            {/* Handle bar */}
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 bg-gray-300 rounded-full" />
+            </div>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pb-3 border-b border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-900">Filters</h3>
+              <div className="flex items-center gap-3">
+                {(activeFilterCount > 0 || hasDateFilter) && (
+                  <button
+                    onClick={() => {
+                      resetFilters();
+                      setMobileFilterOpen(false);
+                    }}
+                    className="text-xs text-blue-600 font-medium"
+                  >
+                    Reset All
+                  </button>
+                )}
+                <button
+                  onClick={() => setMobileFilterOpen(false)}
+                  className="p-1 text-gray-400 hover:text-gray-600"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            {/* Filter options */}
+            <div className="px-4 py-3 space-y-1">
+              {/* Date */}
+              <button
+                onClick={() => { setMobileFilterOpen(false); setDateOpen(true); }}
+                className="flex items-center justify-between w-full px-3 py-3 hover:bg-gray-50 rounded-xl transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center">
+                    <Calendar size={16} className="text-blue-600" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-800">Date</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">{dateLabel}</span>
+                  <ChevronRight size={16} className="text-gray-400" />
+                </div>
+              </button>
+
+              {/* Company */}
+              <button
+                onClick={() => { setMobileFilterOpen(false); setCompanyOpen(true); }}
+                className="flex items-center justify-between w-full px-3 py-3 hover:bg-gray-50 rounded-xl transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center">
+                    <Building2 size={16} className="text-purple-600" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-800">Company</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedCompanies.length > 0 && (
+                    <span className="bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                      {selectedCompanies.length}
+                    </span>
+                  )}
+                  <ChevronRight size={16} className="text-gray-400" />
+                </div>
+              </button>
+
+              {/* Watchlists */}
+              <button
+                onClick={() => { setMobileFilterOpen(false); setWatchlistFilterOpen(true); }}
+                className="flex items-center justify-between w-full px-3 py-3 hover:bg-gray-50 rounded-xl transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-green-50 flex items-center justify-center">
+                    <List size={16} className="text-green-600" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-800">Watchlists</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {watchlistOnly && (
+                    <span className="bg-green-50 text-green-600 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                      On
+                    </span>
+                  )}
+                  <ChevronRight size={16} className="text-gray-400" />
+                </div>
+              </button>
+
+              {/* Category */}
+              <button
+                onClick={() => { setMobileFilterOpen(false); setCategoryOpen(true); }}
+                className="flex items-center justify-between w-full px-3 py-3 hover:bg-gray-50 rounded-xl transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center">
+                    <Tag size={16} className="text-amber-600" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-800">Category</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedCategories.length > 0 && (
+                    <span className="bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                      {selectedCategories.length}
+                    </span>
+                  )}
+                  <ChevronRight size={16} className="text-gray-400" />
+                </div>
+              </button>
+
+              {/* Sentiment */}
+              <button
+                onClick={() => { setMobileFilterOpen(false); setSentimentOpen(true); }}
+                className="flex items-center justify-between w-full px-3 py-3 hover:bg-gray-50 rounded-xl transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-rose-50 flex items-center justify-center">
+                    <TrendingUp size={16} className="text-rose-600" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-800">Sentiment</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedSentiments.length > 0 && (
+                    <span className="bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                      {selectedSentiments.length}
+                    </span>
+                  )}
+                  <ChevronRight size={16} className="text-gray-400" />
+                </div>
+              </button>
+            </div>
+            {/* Bottom spacing for safe area */}
+            <div className="h-4" />
+          </div>
+        </div>
+      )}
+
+      {/* ── Filter Modals (rendered here for mobile; sidebar renders its own for desktop) ── */}
+      <DateFilterModal
+        open={dateOpen}
+        startDate={startDate}
+        endDate={endDate}
+        onApply={(s, e) => {
+          setFilters({
+            ...filters,
+            start_date: s ? format(s, "yyyy-MM-dd") : undefined,
+            end_date: e ? format(e, "yyyy-MM-dd") : undefined,
+          });
+        }}
+        onClose={() => setDateOpen(false)}
+      />
+      <CategoryFilterModal
+        open={categoryOpen}
+        selected={selectedCategories}
+        onApply={(cats) => setSelectedCategories(cats)}
+        onClose={() => setCategoryOpen(false)}
+      />
+      <CompanyFilterModal
+        open={companyOpen}
+        selectedSymbols={selectedCompanies}
+        onApply={(syms) => setSelectedCompanies(syms)}
+        onClose={() => setCompanyOpen(false)}
+      />
+      <SentimentFilterModal
+        open={sentimentOpen}
+        selected={selectedSentiments}
+        onApply={(sents) => setSelectedSentiments(sents)}
+        onClose={() => setSentimentOpen(false)}
+      />
+      <WatchlistFilterModal
+        open={watchlistFilterOpen}
+        selectedWatchlistId={selectedWatchlistId}
+        watchlistOnly={watchlistOnly}
+        onApply={(id, only) => {
+          setSelectedWatchlistId(id);
+          setWatchlistOnly(only);
+        }}
+        onClose={() => setWatchlistFilterOpen(false)}
+      />
     </div>
   );
 }
