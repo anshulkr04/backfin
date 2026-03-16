@@ -2475,8 +2475,7 @@ def get_corporate_filings_v2(current_user):
     """
     Authenticated corporate filings endpoint with advanced filters.
 
-    Uses Supabase RPC function for reliable type handling and server-side
-    filtering (watchlist, read/unread, marketcap, duplicates).
+    Uses Supabase query builder (no RPC dependency).
 
     Query params:
         - start_date (str): YYYY-MM-DD
@@ -2495,7 +2494,7 @@ def get_corporate_filings_v2(current_user):
         return _handle_options()
 
     try:
-        user_id = current_user["UserID"]
+        user_id = str(current_user["UserID"])
 
         # Parse query parameters
         start_date = request.args.get("start_date", "") or None
@@ -2548,39 +2547,241 @@ def get_corporate_filings_v2(current_user):
             f"sym={symbol_list}, isin={isin_list}, page={page}/{page_size}"
         )
 
-        # Call the Supabase RPC function
-        rpc_params = {
-            "p_user_id": str(user_id),
-            "p_start_date": start_date,
-            "p_end_date": end_date,
-            "p_categories": category_list,
-            "p_symbols": symbol_list,
-            "p_isins": isin_list,
-            "p_watchlist_only": watchlist_only,
-            "p_read_filter": read_filter,
-            "p_marketcap": marketcap_list,
-            "p_include_duplicates": include_duplicates,
-            "p_page": page,
-            "p_page_size": page_size,
+        empty_response = {
+            "count": 0,
+            "total_count": 0,
+            "total_pages": 0,
+            "current_page": page,
+            "page_size": page_size,
+            "has_next": False,
+            "has_previous": False,
+            "filings": [],
         }
 
-        response = supabase.rpc("get_corporate_filings_v2", rpc_params).execute()
+        # ── Pre-fetch read corp_ids (TEXT column in user_read_filings) ──
+        all_read_corp_ids = set()
+        try:
+            read_resp = (
+                supabase.table("user_read_filings")
+                .select("corp_id")
+                .eq("user_id", user_id)
+                .execute()
+            )
+            all_read_corp_ids = {r["corp_id"] for r in (read_resp.data or [])}
+        except Exception as e:
+            logger.warning(f"Failed to fetch read filings: {e}")
 
-        result = response.data
-        # Supabase RPC with RETURNS JSONB returns the value directly.
-        # Handle case where it might be wrapped in an array.
-        if (
-            isinstance(result, list)
-            and len(result) == 1
-            and isinstance(result[0], dict)
-        ):
-            result = result[0]
+        # Short-circuit: user wants only read filings but has none
+        if read_filter == "read" and not all_read_corp_ids:
+            return jsonify(empty_response), 200
+
+        # ── Resolve watchlist ISINs (watchlistdata.userid is UUID) ──
+        watchlist_isins = None
+        if watchlist_only:
+            try:
+                wl_resp = (
+                    supabase.table("watchlistdata")
+                    .select("isin")
+                    .eq("userid", user_id)
+                    .not_.is_("isin", "null")
+                    .execute()
+                )
+                watchlist_isins = list(
+                    {r["isin"] for r in (wl_resp.data or []) if r.get("isin")}
+                )
+                if not watchlist_isins:
+                    return jsonify(empty_response), 200
+            except Exception as e:
+                logger.warning(f"Failed to fetch watchlist ISINs: {e}")
+
+        # ── Resolve marketcap ISINs ──
+        marketcap_isins = None
+        if marketcap_list:
+            try:
+                mcap_conditions = []
+                for cap in marketcap_list:
+                    if cap == "large":
+                        mcap_conditions.append("market_cap.gt.20000")
+                    elif cap == "mid":
+                        mcap_conditions.append(
+                            "and(market_cap.gte.5000,market_cap.lte.20000)"
+                        )
+                    elif cap == "small":
+                        mcap_conditions.append(
+                            "and(market_cap.gte.500,market_cap.lt.5000)"
+                        )
+                    elif cap == "micro":
+                        mcap_conditions.append(
+                            "and(market_cap.gte.100,market_cap.lt.500)"
+                        )
+                    elif cap == "nano":
+                        mcap_conditions.append("market_cap.lt.100")
+
+                if mcap_conditions:
+                    mcap_resp = (
+                        supabase.table("stocklistdata")
+                        .select("isin")
+                        .or_(",".join(mcap_conditions))
+                        .execute()
+                    )
+                    marketcap_isins = list(
+                        {r["isin"] for r in (mcap_resp.data or []) if r.get("isin")}
+                    )
+                    if not marketcap_isins:
+                        return jsonify(empty_response), 200
+            except Exception as e:
+                logger.warning(f"Failed to fetch marketcap ISINs: {e}")
+
+        # ── Combine ISIN filters (intersection) ──
+        effective_isins = None
+        isin_sets = []
+        if isin_list:
+            isin_sets.append(set(isin_list))
+        if watchlist_isins is not None:
+            isin_sets.append(set(watchlist_isins))
+        if marketcap_isins is not None:
+            isin_sets.append(set(marketcap_isins))
+
+        if isin_sets:
+            effective_isins = list(isin_sets[0].intersection(*isin_sets[1:]))
+            if not effective_isins:
+                return jsonify(empty_response), 200
+
+        # ── Shared filter builder ──
+        select_fields = """
+            corp_id, securityid, summary, fileurl, date, ai_summary,
+            category, isin, companyname, symbol, headline, sentiment, verified,
+            investorCorp!left(
+                id, investor_id, investor_name, aliasBool, aliasName,
+                verified, type, alias_id
+            )
+        """
+
+        def apply_filters(q):
+            if start_date:
+                try:
+                    q = q.gte("date", dt.datetime.strptime(start_date, "%Y-%m-%d").isoformat())
+                except ValueError:
+                    pass
+            if end_date:
+                try:
+                    end_dt = dt.datetime.strptime(end_date, "%Y-%m-%d").replace(
+                        hour=23, minute=59, second=59
+                    )
+                    q = q.lte("date", end_dt.isoformat())
+                except ValueError:
+                    pass
+            if category_list:
+                q = q.in_("category", category_list)
+            else:
+                q = q.neq("category", "Procedural/Administrative")
+            q = q.neq("category", "Error")
+            if symbol_list:
+                q = q.in_("symbol", symbol_list)
+            if effective_isins is not None:
+                q = q.in_("isin", effective_isins)
+            if not include_duplicates:
+                q = q.or_("is_duplicate.is.false,is_duplicate.is.null")
+            return q
+
+        # ── Handle read_filter=read: restrict to read corp_ids ──
+        read_corp_id_filter = None
+        if read_filter == "read":
+            read_corp_id_filter = list(all_read_corp_ids)
+
+        # ── Count query ──
+        count_query = supabase.table("corporatefilings").select(
+            "corp_id", count="exact"
+        )
+        count_query = apply_filters(count_query)
+        if read_corp_id_filter is not None:
+            count_query = count_query.in_("corp_id", read_corp_id_filter)
+
+        count_response = count_query.execute()
+        total_count = (
+            count_response.count
+            if hasattr(count_response, "count") and count_response.count is not None
+            else len(count_response.data) if count_response.data else 0
+        )
+
+        # For "unread" we can't get an exact count via PostgREST (no NOT IN for
+        # large sets), so we approximate: total minus read count.
+        if read_filter == "unread":
+            total_count = max(0, total_count - len(all_read_corp_ids))
+
+        total_pages = max(1, (total_count + page_size - 1) // page_size)
+
+        # ── Fetch filings ──
+        if read_filter == "unread":
+            # Fetch extra rows and post-filter out read filings
+            fetch_limit = page_size * 3
+            fetch_offset = 0
+            # Fetch enough to fill up to 'page' pages after filtering
+            fetch_total = fetch_limit * page
+
+            query = supabase.table("corporatefilings").select(select_fields)
+            query = apply_filters(query)
+            query = query.order("date", desc=True).range(0, fetch_total - 1)
+            response = query.execute()
+
+            # Remove read filings
+            all_filings = [
+                f for f in (response.data or [])
+                if str(f["corp_id"]) not in all_read_corp_ids
+            ]
+
+            # Paginate the filtered list
+            start_idx = (page - 1) * page_size
+            filings = all_filings[start_idx : start_idx + page_size]
+
+            for f in filings:
+                f["is_read"] = False
+
+        elif read_filter == "read":
+            from_index = (page - 1) * page_size
+            to_index = from_index + page_size - 1
+
+            query = supabase.table("corporatefilings").select(select_fields)
+            query = apply_filters(query)
+            if read_corp_id_filter:
+                query = query.in_("corp_id", read_corp_id_filter)
+            query = query.order("date", desc=True).range(from_index, to_index)
+            response = query.execute()
+
+            filings = response.data or []
+            for f in filings:
+                f["is_read"] = True
+
+        else:
+            # read_filter == "all"
+            from_index = (page - 1) * page_size
+            to_index = from_index + page_size - 1
+
+            query = supabase.table("corporatefilings").select(select_fields)
+            query = apply_filters(query)
+            query = query.order("date", desc=True).range(from_index, to_index)
+            response = query.execute()
+
+            filings = response.data or []
+            for f in filings:
+                f["is_read"] = str(f["corp_id"]) in all_read_corp_ids
 
         logger.info(
-            f"V2 filings RPC returned: count={result.get('count', '?')}, "
-            f"total={result.get('total_count', '?')}"
+            f"V2 filings returned: count={len(filings)}, total={total_count}"
         )
-        return jsonify(result), 200
+
+        return jsonify(
+            {
+                "filings": filings,
+                "total_count": total_count,
+                "total_pages": total_pages,
+                "current_page": page,
+                "page_size": page_size,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+                "count": len(filings),
+            }
+        ), 200
 
     except Exception as e:
         logger.error(f"Error in get_corporate_filings_v2: {str(e)}")
